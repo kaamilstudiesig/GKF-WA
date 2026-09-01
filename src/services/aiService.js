@@ -2,6 +2,7 @@ const axios = require('axios');
 const env = require('../config/env');
 const gymConfig = require('../config/gymConfig');
 const leadRepository = require('../db/leadRepository');
+const logger = require('../utils/logger');
 
 // Tool definitions for OpenAI-compatible function calling
 const AI_TOOLS = [
@@ -77,9 +78,10 @@ class AIService {
   }
 
   /**
-   * Builds the message array for OpenRouter chat completion
+   * Builds the message array for OpenRouter chat completion.
+   * Explicitly accepts incomingText to guarantee the latest user turn is included regardless of DB write timing.
    */
-  buildPromptMessages(lead, conversationHistory) {
+  buildPromptMessages(lead, conversationHistory = [], incomingText = '') {
     const messages = [];
 
     // System prompt with gym persona & instructions
@@ -102,8 +104,15 @@ class AIService {
       content: leadContext
     });
 
-    // Conversation history bounded to recent messages
-    for (const msg of conversationHistory) {
+    // Bounded conversation history (prior turns)
+    // Filter out the current incomingText if it was already inserted into history to prevent duplication
+    const priorHistory = [...conversationHistory];
+    const lastMsg = priorHistory[priorHistory.length - 1];
+    const historyAlreadyHasCurrent = lastMsg && lastMsg.direction === 'in' && lastMsg.text === incomingText;
+
+    const turnsToInclude = historyAlreadyHasCurrent ? priorHistory.slice(0, -1) : priorHistory;
+
+    for (const msg of turnsToInclude) {
       if (msg.direction === 'in') {
         messages.push({
           role: 'user',
@@ -115,6 +124,14 @@ class AIService {
           content: msg.text
         });
       }
+    }
+
+    // Explicitly append the current incomingText as the authoritative final user turn
+    if (incomingText) {
+      messages.push({
+        role: 'user',
+        content: incomingText
+      });
     }
 
     return messages;
@@ -137,7 +154,7 @@ class AIService {
     try {
       leadUpdate = JSON.parse(match[1]);
     } catch (err) {
-      console.warn('[AI Service] Failed to parse delimited LEAD_UPDATE JSON:', match[1], err.message);
+      logger.warn('Failed to parse delimited LEAD_UPDATE JSON:', { raw: match[1], error: err.message });
     }
 
     // Strip the delimited block from human-facing text
@@ -178,7 +195,10 @@ class AIService {
     }
 
     if (Object.keys(updates).length > 0) {
-      console.log(`[CRM Update] Applying updates for lead +${lead.wa_id}:`, JSON.stringify(updates));
+      logger.info('CRM updates applied for lead', {
+        wa_id: lead.wa_id,
+        updates: { ...updates, notes: updates.notes ? '[Notes Appended]' : undefined }
+      });
       return leadRepository.updateLead(lead.wa_id, updates);
     }
 
@@ -190,9 +210,14 @@ class AIService {
    */
   async processInboundMessage(lead, incomingText) {
     const conversationHistory = leadRepository.getConversationHistory(lead.wa_id, 20);
-    const messages = this.buildPromptMessages(lead, conversationHistory);
+    // Explicitly pass incomingText to buildPromptMessages
+    const messages = this.buildPromptMessages(lead, conversationHistory, incomingText);
 
-    console.log(`[AI Call] Initiating OpenRouter request for lead +${lead.wa_id} with model: ${this.model}`);
+    logger.debug('Initiating OpenRouter AI chat completion', {
+      wa_id: lead.wa_id,
+      model: this.model,
+      message_turns: messages.length
+    });
 
     // If API key is not set, simulate response in dev/test
     if (!env.openRouterApiKey || process.env.NODE_ENV === 'test') {
@@ -228,7 +253,7 @@ class AIService {
         throw new Error('Empty or invalid response from OpenRouter API');
       }
 
-      console.log('[AI Call Success] Raw AI Response:', JSON.stringify(message));
+      logger.debug('OpenRouter AI response received', { choice_finish: choice?.finish_reason });
 
       let replyText = message.content || '';
       let extractedUpdates = {};
@@ -241,10 +266,10 @@ class AIService {
           try {
             args = JSON.parse(toolCall.function?.arguments || '{}');
           } catch (e) {
-            console.warn('[AI Service] Failed to parse tool arguments:', toolCall.function?.arguments);
+            logger.warn('Failed to parse AI tool arguments:', { raw: toolCall.function?.arguments });
           }
 
-          console.log(`[AI Tool Executed] ${fnName}:`, args);
+          logger.info('AI tool call executed', { tool: fnName, args });
 
           if (fnName === 'save_lead') {
             extractedUpdates = { ...extractedUpdates, ...args };
@@ -284,23 +309,35 @@ class AIService {
         extractedUpdates
       };
     } catch (error) {
+      const isNetworkError = !error.response;
       const status = error.response?.status;
       const errorData = error.response?.data || error.message;
 
-      console.error(`[AI Service Error] Status ${status}:`, JSON.stringify(errorData));
+      logger.error('OpenRouter AI call failed:', {
+        status,
+        code: error.code,
+        isNetworkError,
+        message: error.message,
+        details: errorData
+      });
 
-      // Handle 429 (Rate Limit) or 5xx or Timeout gracefully
-      // Set needs_human = true and handoff_reason = 'ai_service_unavailable'
+      // Handle 429 (Rate Limit), network failures, or 5xx gracefully
+      const handoffReason = status === 429
+        ? 'rate_limit_exceeded'
+        : isNetworkError
+          ? 'ai_network_error'
+          : 'ai_service_unavailable';
+
       leadRepository.updateLead(lead.wa_id, {
         needs_human: 1,
-        handoff_reason: status === 429 ? 'rate_limit_exceeded' : 'ai_service_unavailable'
+        handoff_reason: handoffReason
       });
 
       return {
         replyText: gymConfig.fallbackMessages.systemError,
         extractedUpdates: {
           needs_human: true,
-          handoff_reason: 'ai_service_unavailable'
+          handoff_reason: handoffReason
         }
       };
     }
@@ -310,7 +347,7 @@ class AIService {
    * Deterministic mock processor for tests and local development without API keys
    */
   handleMockAIResponse(lead, incomingText) {
-    const textLower = incomingText.toLowerCase();
+    const textLower = (incomingText || '').toLowerCase();
     let replyText = "Welcome to Goldkraft Fitness! We're located in JP Nagar with 10,000 sq ft of elite functional training equipment. Are you looking for strength training, CrossFit, or personal coaching?";
     let updates = { status: 'contacted' };
 

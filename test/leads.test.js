@@ -4,7 +4,10 @@ const request = require('supertest');
 const fs = require('fs');
 const path = require('path');
 
+const testApiKey = 'leads_test_secret_key_123';
+
 process.env.NODE_ENV = 'test';
+process.env.DASHBOARD_API_KEY = testApiKey;
 process.env.DATABASE_PATH = path.join(__dirname, '../data/test_leads.db');
 
 const createApp = require('../src/app');
@@ -27,7 +30,7 @@ describe('Leads CRM & Query API', () => {
     const oneHourAgo = new Date(now - 1 * 60 * 60 * 1000).toISOString();
 
     // Lead 1: Open 24h window, qualified
-    const lead1 = leadRepository.getOrCreateLead('919100000001', 'Rahul Dravid', oneHourAgo);
+    leadRepository.getOrCreateLead('919100000001', 'Rahul Dravid', oneHourAgo);
     leadRepository.updateLead('919100000001', {
       status: 'qualified',
       interest: 'Quarterly Elite Membership',
@@ -42,7 +45,7 @@ describe('Leads CRM & Query API', () => {
     });
 
     // Lead 2: Closed 24h window, needs human
-    const lead2 = leadRepository.getOrCreateLead('919100000002', 'Ananya Roy', twentyFiveHoursAgo);
+    leadRepository.getOrCreateLead('919100000002', 'Ananya Roy', twentyFiveHoursAgo);
     leadRepository.updateLead('919100000002', {
       status: 'hot',
       interest: 'Trial Booking',
@@ -74,9 +77,12 @@ describe('Leads CRM & Query API', () => {
     });
   });
 
-  describe('GET /leads (List & Filter)', () => {
-    test('lists all leads with default pagination', async () => {
-      const res = await request(app).get('/leads');
+  describe('GET /leads (List & Filter with Authentication)', () => {
+    test('lists all leads with default pagination when authenticated', async () => {
+      const res = await request(app)
+        .get('/leads')
+        .set('Authorization', `Bearer ${testApiKey}`);
+
       assert.strictEqual(res.status, 200);
       assert.strictEqual(res.body.success, true);
       assert.strictEqual(res.body.pagination.total, 3);
@@ -84,14 +90,20 @@ describe('Leads CRM & Query API', () => {
     });
 
     test('filters leads by status', async () => {
-      const res = await request(app).get('/leads?status=qualified');
+      const res = await request(app)
+        .get('/leads?status=qualified')
+        .set('Authorization', `Bearer ${testApiKey}`);
+
       assert.strictEqual(res.status, 200);
       assert.strictEqual(res.body.data.length, 1);
       assert.strictEqual(res.body.data[0].wa_id, '919100000001');
     });
 
     test('filters leads by needs_human=true', async () => {
-      const res = await request(app).get('/leads?needs_human=true');
+      const res = await request(app)
+        .get('/leads?needs_human=true')
+        .set('Authorization', `Bearer ${testApiKey}`);
+
       assert.strictEqual(res.status, 200);
       assert.strictEqual(res.body.data.length, 1);
       assert.strictEqual(res.body.data[0].wa_id, '919100000002');
@@ -99,15 +111,50 @@ describe('Leads CRM & Query API', () => {
     });
 
     test('filters leads by needs_human=false', async () => {
-      const res = await request(app).get('/leads?needs_human=false');
+      const res = await request(app)
+        .get('/leads?needs_human=false')
+        .set('Authorization', `Bearer ${testApiKey}`);
+
       assert.strictEqual(res.status, 200);
       assert.strictEqual(res.body.data.length, 2);
+    });
+
+    test('rejects invalid status parameter with 400', async () => {
+      const res = await request(app)
+        .get('/leads?status=invalid_random_status')
+        .set('Authorization', `Bearer ${testApiKey}`);
+
+      assert.strictEqual(res.status, 400);
+      assert.strictEqual(res.body.success, false);
+      assert.ok(res.body.error.includes('Invalid status parameter'));
+    });
+
+    test('rejects invalid sort parameter with 400', async () => {
+      const res = await request(app)
+        .get('/leads?sort=hacked_order_by')
+        .set('Authorization', `Bearer ${testApiKey}`);
+
+      assert.strictEqual(res.status, 400);
+      assert.strictEqual(res.body.success, false);
+      assert.ok(res.body.error.includes('Invalid sort parameter'));
+    });
+
+    test('rejects invalid needs_human parameter with 400', async () => {
+      const res = await request(app)
+        .get('/leads?needs_human=maybe')
+        .set('Authorization', `Bearer ${testApiKey}`);
+
+      assert.strictEqual(res.status, 400);
+      assert.strictEqual(res.body.success, false);
     });
   });
 
   describe('GET /leads/:wa_id (Detail & Conversation History)', () => {
     test('fetches full details and conversation history for valid wa_id', async () => {
-      const res = await request(app).get('/leads/919100000001');
+      const res = await request(app)
+        .get('/leads/919100000001')
+        .set('Authorization', `Bearer ${testApiKey}`);
+
       assert.strictEqual(res.status, 200);
       assert.strictEqual(res.body.success, true);
       assert.strictEqual(res.body.data.display_name, 'Rahul Dravid');
@@ -118,9 +165,22 @@ describe('Leads CRM & Query API', () => {
     });
 
     test('returns 404 for non-existent lead wa_id', async () => {
-      const res = await request(app).get('/leads/919999999999');
+      const res = await request(app)
+        .get('/leads/919999999999')
+        .set('Authorization', `Bearer ${testApiKey}`);
+
       assert.strictEqual(res.status, 404);
       assert.strictEqual(res.body.success, false);
+    });
+
+    test('rejects malformed wa_id with 400', async () => {
+      const res = await request(app)
+        .get('/leads/abc12')
+        .set('Authorization', `Bearer ${testApiKey}`);
+
+      assert.strictEqual(res.status, 400);
+      assert.strictEqual(res.body.success, false);
+      assert.ok(res.body.error.includes('Invalid WhatsApp ID format'));
     });
   });
 });

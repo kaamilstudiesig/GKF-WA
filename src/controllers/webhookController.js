@@ -3,6 +3,7 @@ const gymConfig = require('../config/gymConfig');
 const leadRepository = require('../db/leadRepository');
 const aiService = require('../services/aiService');
 const whatsappService = require('../services/whatsappService');
+const logger = require('../utils/logger');
 
 class WebhookController {
   /**
@@ -14,14 +15,14 @@ class WebhookController {
     const token = req.query['hub.verify_token'];
     const challenge = req.query['hub.challenge'];
 
-    console.log(`[Webhook Handshake] Received mode="${mode}", token="${token}"`);
+    logger.debug('Received webhook verification handshake request', { mode, token_set: Boolean(token) });
 
     if (mode && token) {
       if (mode === 'subscribe' && token === env.metaWebhookVerifyToken) {
-        console.log('[Webhook Handshake Success] Verified token. Responding with challenge.');
+        logger.info('Webhook verification handshake successful');
         return res.status(200).send(challenge);
       } else {
-        console.warn('[Webhook Handshake Failed] Token mismatch or invalid mode.');
+        logger.warn('Webhook verification handshake failed: Token mismatch or invalid mode.');
         return res.status(403).json({ error: 'Verification token mismatch' });
       }
     }
@@ -36,14 +37,14 @@ class WebhookController {
   async handleIncoming(req, res) {
     const body = req.body;
 
-    console.log('[Webhook Inbound] Received POST payload:', JSON.stringify(body));
+    logger.debug('Received inbound webhook payload', { object: body?.object, entries_count: body?.entry?.length });
 
     // Confirm it is a WhatsApp Business Account webhook
     if (body.object !== 'whatsapp_business_account') {
       return res.status(404).json({ error: 'Not a whatsapp_business_account event' });
     }
 
-    // Immediately respond 200 to Meta to acknowledge receipt, or handle errors within
+    // Immediately acknowledge and process messages
     try {
       const entries = body.entry || [];
 
@@ -56,7 +57,11 @@ class WebhookController {
           // 1. Handle Status Receipts (sent, delivered, read)
           if (value.statuses && value.statuses.length > 0) {
             for (const statusObj of value.statuses) {
-              console.log(`[WhatsApp Status] Message ${statusObj.id} status is now "${statusObj.status}" for recipient ${statusObj.recipient_id}`);
+              logger.debug('Received message delivery status update', {
+                message_id: statusObj.id,
+                status: statusObj.status,
+                recipient_id: statusObj.recipient_id
+              });
             }
             continue; // Skip message processing for status updates
           }
@@ -74,17 +79,25 @@ class WebhookController {
             const msgType = msg.type;
 
             if (!waId || !messageId) {
-              console.warn('[Webhook Inbound Warning] Missing wa_id or message_id in message object:', msg);
+              logger.warn('Received message without valid wa_id or message_id', { msg });
               continue;
             }
 
             // Message Deduplication
             if (leadRepository.hasMessageBeenProcessed(messageId)) {
-              console.log(`[Webhook Deduplication] Message ${messageId} already processed. Skipping.`);
+              logger.info('Duplicate message detected. Skipping re-processing.', {
+                message_id: messageId,
+                wa_id: waId
+              });
               continue;
             }
 
-            console.log(`[Webhook Inbound Message] From +${waId} (${displayName || 'Unknown'}), Type: ${msgType}, ID: ${messageId}`);
+            logger.info('Processing inbound WhatsApp message', {
+              wa_id: waId,
+              display_name: displayName,
+              type: msgType,
+              message_id: messageId
+            });
 
             // Look up or create the lead record
             let lead = leadRepository.getOrCreateLead(waId, displayName, timestamp);
@@ -112,7 +125,10 @@ class WebhookController {
               }
             } else {
               // Handle Non-text media types (image, audio, document, location, interactive, etc.)
-              console.log(`[Webhook Non-Text Message] Received type "${msgType}" from +${waId}`);
+              logger.info('Received non-text media message', {
+                type: msgType,
+                wa_id: waId
+              });
 
               leadRepository.saveMessage({
                 messageId,
@@ -132,7 +148,7 @@ class WebhookController {
 
       return res.status(200).json({ status: 'success' });
     } catch (error) {
-      console.error('[Webhook Error] Error processing incoming webhook:', error);
+      logger.error('Error processing incoming webhook:', { error: error.message, stack: error.stack });
       // Still return 200 so Meta does not spam retries on unrecoverable app errors
       return res.status(200).json({ status: 'error_handled', message: error.message });
     }

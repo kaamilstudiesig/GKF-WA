@@ -1,6 +1,7 @@
 const axios = require('axios');
 const env = require('../config/env');
 const leadRepository = require('../db/leadRepository');
+const logger = require('../utils/logger');
 
 class WhatsAppService {
   constructor() {
@@ -33,12 +34,18 @@ class WhatsAppService {
       }
     };
 
-    console.log(`[WhatsApp Outbound] Sending to +${cleanWaId}: "${textBody.replace(/\n/g, ' ')}"`);
+    logger.info('Dispatching outbound WhatsApp text message', {
+      to: cleanWaId,
+      body: textBody
+    });
 
     // In local development or if token is not configured, log and record locally
     if (!env.metaAccessToken || !env.metaPhoneNumberId || process.env.NODE_ENV === 'test') {
       const simulatedMsgId = `wamid.simulated_${Date.now()}_${Math.random().toString(36).substring(2, 8)}`;
-      console.log(`[WhatsApp Outbound Simulated] Meta token not set or in test mode. Simulated message ID: ${simulatedMsgId}`);
+      logger.debug('Simulated outbound send (development/test mode)', {
+        message_id: simulatedMsgId,
+        to: cleanWaId
+      });
       
       leadRepository.saveMessage({
         messageId: simulatedMsgId,
@@ -66,7 +73,10 @@ class WhatsAppService {
       });
 
       const messageId = response.data?.messages?.[0]?.id || null;
-      console.log(`[WhatsApp Outbound Success] Delivered to Meta Cloud API. Message ID: ${messageId}`);
+      logger.info('Delivered message to Meta Cloud API', {
+        message_id: messageId,
+        to: cleanWaId
+      });
 
       leadRepository.saveMessage({
         messageId,
@@ -80,7 +90,10 @@ class WhatsAppService {
       return response.data;
     } catch (error) {
       const errorData = error.response?.data || error.message;
-      console.error(`[WhatsApp Outbound Error] Failed to send to +${cleanWaId}:`, JSON.stringify(errorData));
+      logger.error('Failed to send outbound WhatsApp message:', {
+        to: cleanWaId,
+        error: errorData
+      });
       
       // Still log the attempted outbound message to record system action
       leadRepository.saveMessage({

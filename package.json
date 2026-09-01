@@ -1,0 +1,30 @@
+{
+  "name": "goldkraft-whatsapp-ai-backend",
+  "version": "1.0.0",
+  "description": "WhatsApp AI Lead-Management Backend for Goldkraft Fitness via Meta Cloud API and OpenRouter",
+  "main": "src/server.js",
+  "scripts": {
+    "start": "node src/server.js",
+    "dev": "node --watch src/server.js",
+    "test": "node --test test/**/*.test.js"
+  },
+  "keywords": [
+    "whatsapp",
+    "meta-cloud-api",
+    "openrouter",
+    "ai-agent",
+    "crm",
+    "lead-management"
+  ],
+  "author": "Goldkraft Fitness Dev Team",
+  "license": "ISC",
+  "dependencies": {
+    "axios": "^1.7.9",
+    "better-sqlite3": "^11.8.1",
+    "dotenv": "^16.4.7",
+    "express": "^4.21.2"
+  },
+  "devDependencies": {
+    "supertest": "^7.0.0"
+  }
+}

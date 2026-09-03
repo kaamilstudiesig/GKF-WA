@@ -13,6 +13,8 @@ class DeterministicRouter {
   routeMessage(text = '', tenantConfig = {}, lead = {}) {
     const cleanText = text.toLowerCase().trim();
 
+    const gymName = tenantConfig.gymName || gymConfig.gymName;
+
     // 1. Operating Hours & Schedule
     const hoursKeywords = [
       'what time do you open', 'opening hours', 'gym timing', 'gym timings',
@@ -25,7 +27,7 @@ class DeterministicRouter {
       const sunday = tenantConfig.hours?.sunday || gymConfig.hours.sunday;
       return {
         matched: true,
-        replyText: `Goldkraft Fitness operating hours:\n• ${weekday}\n• ${sunday}\n\nWhen would you like to drop by for a workout or facility tour?`,
+        replyText: `${gymName} operating hours:\n• ${weekday}\n• ${sunday}\n\nWhen would you like to drop by for a workout or facility tour?`,
         updates: { status: 'contacted' }
       };
     }
@@ -37,8 +39,8 @@ class DeterministicRouter {
     ];
     if (locationKeywords.some(kw => cleanText === kw || cleanText.includes(kw))) {
       logger.debug('Deterministic route matched: Location', { wa_id: lead.wa_id });
-      const loc = tenantConfig.facility?.location || gymConfig.facility.location;
-      const parking = tenantConfig.facility?.parking || gymConfig.facility.parking;
+      const loc = tenantConfig.location || tenantConfig.facility?.location || gymConfig.facility.location;
+      const parking = tenantConfig.parking || tenantConfig.facility?.parking || gymConfig.facility.parking;
       return {
         matched: true,
         replyText: `We are located at: ${loc}.\n\nParking: ${parking}.\n\nAre you looking to visit for a personal consultation or trial session?`,
@@ -56,7 +58,7 @@ class DeterministicRouter {
       logger.debug('Deterministic route matched: Human Request', { wa_id: lead.wa_id });
       return {
         matched: true,
-        replyText: "Understood! I've notified our coaching team at Goldkraft Fitness. A senior staff member will reach out to you shortly.",
+        replyText: `Understood! I've notified our coaching team at ${gymName}. A senior staff member will reach out to you shortly.`,
         updates: {
           needs_human: true,
           handoff_reason: 'human_requested',
@@ -71,7 +73,7 @@ class DeterministicRouter {
       logger.debug('Deterministic route matched: Complaint', { wa_id: lead.wa_id });
       return {
         matched: true,
-        replyText: "We sincerely apologize for this experience. We take facility standards very seriously at Goldkraft Fitness. Our management has been notified and will contact you directly.",
+        replyText: `We sincerely apologize for this experience. We take facility standards very seriously at ${gymName}. Our management has been notified and will contact you directly.`,
         updates: {
           needs_human: true,
           handoff_reason: 'complaint',

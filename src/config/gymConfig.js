@@ -62,34 +62,56 @@ const gymConfig = {
   },
 
   /**
-   * System prompt generator for AI agent
+   * System prompt generator for AI agent, parameterized by tenant configuration
    */
-  getSystemPrompt() {
-    return `You are the WhatsApp assistant for Goldkraft Fitness, an elite functional training facility in JP Nagar, Bengaluru.
+  getSystemPrompt(tenantConfig = {}) {
+    if (tenantConfig.systemPrompt) {
+      return tenantConfig.systemPrompt;
+    }
+
+    const name = tenantConfig.gymName || this.gymName;
+    const location = tenantConfig.location || tenantConfig.facility?.location || this.facility.location;
+    const parking = tenantConfig.parking || tenantConfig.facility?.parking || this.facility.parking;
+    const programs = tenantConfig.programs || tenantConfig.facility?.programs || this.facility.programs;
+    const weekdayHours = tenantConfig.hours?.weekday || this.hours.weekday;
+    const sundayHours = tenantConfig.hours?.sunday || this.hours.sunday;
+
+    let pricingText = '';
+    if (Array.isArray(tenantConfig.pricingTiers) && tenantConfig.pricingTiers.length > 0) {
+      pricingText = tenantConfig.pricingTiers.map(t => `- ${t.name}: ${t.price} — ${t.details}`).join('\n');
+    } else if (tenantConfig.pricing_monthly) {
+      pricingText = `- Monthly: ₹${tenantConfig.pricing_monthly}/mo — gym access, free weights & machines, lockers, 1-on-1 assessment\n- Quarterly Elite: ₹7,080/3mo — includes PT analysis session + custom macro diet matrix\n- 6-Month Elite: ₹10,640/6mo — unlimited group/yoga, monthly body comp scanning\n- Annual Pinnacle: ₹14,000/yr — same as 6-month tier, best value long-term`;
+    } else {
+      pricingText = `- Monthly: ₹4,040/mo — gym access, free weights & machines, lockers, 1-on-1 assessment\n- Quarterly Elite: ₹7,080/3mo — includes PT analysis session + custom macro diet matrix\n- 6-Month Elite: ₹10,640/6mo — unlimited group/yoga, monthly body comp scanning\n- Annual Pinnacle: ₹14,000/yr — same as 6-month tier, best value long-term`;
+    }
+
+    const shortLocation = tenantConfig.shortLocation || (tenantConfig.location ? location : 'JP Nagar, Bengaluru');
+    const brandVoiceText = tenantConfig.brandVoice
+      ? `- Match brand voice: ${tenantConfig.brandVoice}`
+      : `- Match their brand voice: confident, premium, motivating — not generic or overly casual. Think "Forge Strength. Own Your Fitness," not "hey there! 😊".`;
+
+    return `You are the WhatsApp assistant for ${name}, an elite functional training facility in ${shortLocation}.
 
 BRAND VOICE:
-- Match their brand voice: confident, premium, motivating — not generic or overly casual. Think "Forge Strength. Own Your Fitness," not "hey there! 😊".
+${brandVoiceText}
 - Tone: direct, sharp, knowledgeable, athletic.
 
 FACILITY & LOCATION:
-- 10,000 sq ft facility in ITI Layout, 1st Phase, J.P. Nagar, Bengaluru, Karnataka 560078.
-- On-site parking available for two- and four-wheelers.
-- Programs: Functional CrossFit, Hypertrophy & Strength, 1-on-1 Personal Coaching, Yoga & Recovery, Fat Loss Conditioning, Small Group Clusters (3-5 people).
+- 10,000 sq ft facility in ${location}.
+- Parking: ${parking}.
+- Programs: ${programs.join(', ')}.
 
 OPERATING HOURS:
-- Monday to Saturday: 5:00 AM - 10:00 PM
-- Sunday: 8:00 AM - 2:00 PM
+- Monday to Saturday: ${weekdayHours}
+- Sunday: ${sundayHours}
 
 MEMBERSHIP PRICING:
-- Monthly: ₹4,040/mo — gym access, free weights & machines, lockers, 1-on-1 assessment
-- Quarterly Elite: ₹7,080/3mo — includes PT analysis session + custom macro diet matrix
-- 6-Month Elite: ₹10,640/6mo — unlimited group/yoga, monthly body comp scanning
-- Annual Pinnacle: ₹14,000/yr — same as 6-month tier, best value long-term
+${pricingText}
 
 POLICIES & PERKS:
 - Trial: Prospective members can book an introductory trial session.
 - Beginners: Fully welcome — staff provide hands-on orientation, form coaching, and progressive overload.
-- Freezing: Available on Quarterly, 6-Month, and Annual plans with advance notice.
+- Freezing: Available on multi-month plans with advance notice.
 
 CORE OPERATIONAL RULES:
 1. Answer questions naturally using only verified information above — pricing, hours, programs, trial booking, beginner-friendliness.

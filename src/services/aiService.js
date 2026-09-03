@@ -2,6 +2,7 @@ const axios = require('axios');
 const env = require('../config/env');
 const gymConfig = require('../config/gymConfig');
 const leadRepository = require('../db/leadRepository');
+const handoffRepository = require('../db/handoffRepository');
 const aiPolicy = require('./aiPolicy');
 const aiCostTracker = require('./aiCostTracker');
 const logger = require('../utils/logger');
@@ -88,10 +89,10 @@ class AIService {
   buildPromptMessages(lead, conversationHistory = [], incomingText = '', tenantConfig = {}) {
     const messages = [];
 
-    // System prompt with gym persona & instructions
+    // System prompt with gym persona & instructions parameterized by tenant
     messages.push({
       role: 'system',
-      content: gymConfig.getSystemPrompt()
+      content: gymConfig.getSystemPrompt(tenantConfig)
     });
 
     // Current lead CRM state context
@@ -185,6 +186,16 @@ SECURITY AND FACTUAL ACCURACY DIRECTIVES:
         wa_id: lead.wa_id,
         updates: { ...safeUpdates, notes: safeUpdates.notes ? '[Notes Appended]' : undefined }
       });
+
+      if (safeUpdates.needs_human) {
+        handoffRepository.recordHandoff({
+          tenantId,
+          waId: lead.wa_id,
+          reason: safeUpdates.handoff_reason || 'other',
+          summary: updates.summary || safeUpdates.notes || 'Staff intervention requested'
+        });
+      }
+
       return leadRepository.updateLead(lead.wa_id, safeUpdates, tenantId);
     }
 
@@ -310,6 +321,7 @@ SECURITY AND FACTUAL ACCURACY DIRECTIVES:
 
         // Second model call to obtain final customer reply after tool execution
         try {
+          const followUpStart = Date.now();
           const followUp = await axios.post(
             `${this.baseUrl}/chat/completions`,
             {
@@ -328,9 +340,30 @@ SECURITY AND FACTUAL ACCURACY DIRECTIVES:
               timeout: 12000
             }
           );
+
+          const followUpLatency = Date.now() - followUpStart;
+          const followUpUsage = followUp.data?.usage;
+          aiCostTracker.recordUsage({
+            tenantId,
+            requestId: `${requestId}_followup`,
+            model: this.model,
+            inputTokens: followUpUsage?.prompt_tokens ?? null,
+            outputTokens: followUpUsage?.completion_tokens ?? null,
+            cachedTokens: null,
+            latencyMs: followUpLatency,
+            success: true
+          });
+
           replyText = followUp.data?.choices?.[0]?.message?.content || replyText;
         } catch (followUpErr) {
           logger.warn('Follow-up generation after tool execution failed, using fallback text:', { error: followUpErr.message });
+          aiCostTracker.recordUsage({
+            tenantId,
+            requestId: `${requestId}_followup`,
+            model: this.model,
+            success: false,
+            errorType: followUpErr.response?.status ? `http_${followUpErr.response.status}` : followUpErr.code || 'network_error'
+          });
         }
       }
 
@@ -342,18 +375,20 @@ SECURITY AND FACTUAL ACCURACY DIRECTIVES:
         extractedUpdates = { ...extractedUpdates, ...leadUpdate };
       }
 
+      const gymName = tenantConfig.gymName || gymConfig.gymName;
+
       // Clean customer reply fallback
       if (!replyText) {
         if (extractedUpdates.needs_human) {
-          replyText = "Thanks for letting us know! One of our senior coaches from Goldkraft Fitness will get in touch with you right away to assist.";
+          replyText = `Thanks for letting us know! One of our coaches from ${gymName} will get in touch with you right away to assist.`;
         } else {
-          replyText = "Got it! How else can we help you crush your training goals at Goldkraft Fitness?";
+          replyText = `Got it! How else can we help you crush your training goals at ${gymName}?`;
         }
       }
 
       // Ensure customer never receives JSON or raw delimiter tags
       replyText = replyText.replace(/<<<[\s\S]*?>>>/g, '').replace(/\{[\s\S]*?\}/g, '').trim() ||
-        "Thanks for connecting with Goldkraft Fitness! How can we help you with your training goals today?";
+        `Thanks for connecting with ${gymName}! How can we help you with your training goals today?`;
 
       // Apply extractions via AIPolicy
       this.applyLeadUpdates(lead, extractedUpdates, tenantId);
@@ -368,12 +403,11 @@ SECURITY AND FACTUAL ACCURACY DIRECTIVES:
       const status = error.response?.status;
       const errorData = error.response?.data || error.message;
 
-      logger.error('OpenRouter AI call failed:', {
+      logger.warn('Primary OpenRouter AI call failed, recording usage and checking fallback:', {
+        primaryModel: this.model,
+        fallbackModel: this.fallbackModel,
         status,
-        code: error.code,
-        isNetworkError,
-        message: error.message,
-        details: errorData
+        message: error.message
       });
 
       aiCostTracker.recordUsage({
@@ -384,6 +418,71 @@ SECURITY AND FACTUAL ACCURACY DIRECTIVES:
         success: false,
         errorType: status ? `http_${status}` : error.code || 'network_error'
       });
+
+      // Attempt fallback model if configured and distinct from primary
+      if (this.fallbackModel && this.fallbackModel !== this.model) {
+        try {
+          const fallbackStart = Date.now();
+          const fallbackResponse = await axios.post(
+            `${this.baseUrl}/chat/completions`,
+            {
+              model: this.fallbackModel,
+              messages,
+              tools: AI_TOOLS,
+              tool_choice: 'auto',
+              temperature: 0.3,
+              max_tokens: 300
+            },
+            {
+              headers: {
+                'Authorization': `Bearer ${env.openRouterApiKey}`,
+                'Content-Type': 'application/json',
+                'HTTP-Referer': 'https://goldkraftfitness.com',
+                'X-Title': 'Goldkraft WhatsApp AI'
+              },
+              timeout: 12000
+            }
+          );
+
+          const fallbackLatency = Date.now() - fallbackStart;
+          const fallbackUsage = fallbackResponse.data?.usage;
+          aiCostTracker.recordUsage({
+            tenantId,
+            requestId: `${requestId}_fallback`,
+            model: this.fallbackModel,
+            inputTokens: fallbackUsage?.prompt_tokens ?? null,
+            outputTokens: fallbackUsage?.completion_tokens ?? null,
+            cachedTokens: null,
+            latencyMs: fallbackLatency,
+            success: true
+          });
+
+          const fallbackChoice = fallbackResponse.data?.choices?.[0];
+          const fallbackMsg = fallbackChoice?.message;
+          if (fallbackMsg) {
+            let fallbackReply = fallbackMsg.content || '';
+            const { cleanText, leadUpdate } = this.parseDelimitedLeadUpdate(fallbackReply);
+            const extracted = leadUpdate || {};
+            this.applyLeadUpdates(lead, extracted, tenantId);
+            return {
+              replyText: cleanText || gymConfig.fallbackMessages.systemError,
+              extractedUpdates: extracted
+            };
+          }
+        } catch (fallbackError) {
+          logger.error('Fallback model also failed:', {
+            fallbackModel: this.fallbackModel,
+            error: fallbackError.message
+          });
+          aiCostTracker.recordUsage({
+            tenantId,
+            requestId: `${requestId}_fallback`,
+            model: this.fallbackModel,
+            success: false,
+            errorType: fallbackError.response?.status ? `http_${fallbackError.response.status}` : fallbackError.code || 'network_error'
+          });
+        }
+      }
 
       const handoffReason = status === 429
         ? 'rate_limit_exceeded'

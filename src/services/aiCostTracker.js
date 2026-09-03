@@ -1,6 +1,15 @@
 const { getDatabase } = require('../db/database');
 const logger = require('../utils/logger');
 
+const MODEL_PRICING_USD_PER_M = {
+  'google/gemini-2.5-flash': { input: 0.10, output: 0.40 },
+  'google/gemini-2.5-flash-lite': { input: 0.075, output: 0.30 },
+  'google/gemini-flash-1.5': { input: 0.075, output: 0.30 },
+  'meta-llama/llama-3.3-70b-instruct': { input: 0.12, output: 0.30 },
+  'openrouter/free': { input: 0.0, output: 0.0 }
+};
+const DEFAULT_MODEL_RATE = { input: 0.10, output: 0.40 };
+
 class AICostTracker {
   constructor(db = null) {
     this.customDb = db;
@@ -11,7 +20,7 @@ class AICostTracker {
   }
 
   /**
-   * Records an AI usage event into the database.
+   * Records an AI usage event into the database with model-specific pricing.
    * Does not fabricate tokens if provider does not supply them.
    */
   recordUsage({
@@ -28,10 +37,11 @@ class AICostTracker {
     const now = new Date().toISOString();
     let estimatedCostInr = null;
 
-    // Approximate cost in INR for Gemini 2.5 Flash (~$0.10/M in, $0.40/M out @ ~₹85/$)
+    // Model-aware cost calculation in INR (@ ~₹85/USD)
     if (typeof inputTokens === 'number' && typeof outputTokens === 'number') {
-      const inputCostUsd = (inputTokens / 1000000) * 0.10;
-      const outputCostUsd = (outputTokens / 1000000) * 0.40;
+      const rate = MODEL_PRICING_USD_PER_M[model] || DEFAULT_MODEL_RATE;
+      const inputCostUsd = (inputTokens / 1000000) * rate.input;
+      const outputCostUsd = (outputTokens / 1000000) * rate.output;
       estimatedCostInr = parseFloat(((inputCostUsd + outputCostUsd) * 85).toFixed(4));
     }
 
@@ -63,6 +73,8 @@ class AICostTracker {
 
   /**
    * Checks if tenant has exceeded their monthly token or request budget guardrails.
+   * Concurrency note: Operates as a non-blocking soft guardrail. Under high concurrency,
+   * in-flight completions may finish before new requests are halted.
    * @param {string} tenantId
    * @param {object} tenantConfig
    * @returns {{ exceeded: boolean, reason?: string, currentTokens: number, currentRequests: number }}

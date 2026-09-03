@@ -80,10 +80,11 @@ class OutboundRepository {
             locked_at = ?,
             attempts = attempts + 1,
             updated_at = ?
-        WHERE id = ?
+        WHERE id = ? AND ((status = 'pending' AND available_at <= ?) OR (status = 'sending' AND locked_at <= ?))
       `);
 
-      updateStmt.run(now, now, message.id);
+      const result = updateStmt.run(now, now, message.id, now, staleCutoff);
+      if (result.changes === 0) return null; // Another worker claimed this job
 
       return {
         ...message,

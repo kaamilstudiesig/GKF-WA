@@ -1,6 +1,6 @@
 # Goldkraft Fitness — WhatsApp AI Lead-Management & Multi-Tenant SaaS Backend
 
-A production-ready Node.js/Express backend connecting WhatsApp (via Meta Cloud API v23.0) to an AI sales & qualification agent (via OpenRouter) that handles inbound leads for fitness clubs and gyms, replies conversationally, and provides durable multi-tenant CRM lead management in SQLite with zero data loss.
+A production-ready Node.js/Express backend connecting WhatsApp (via Meta Cloud API v23.0) to an AI sales & qualification agent (via OpenRouter) that handles inbound leads for fitness clubs and gyms, replies conversationally, and provides durable multi-tenant CRM lead management in SQLite with resilient at-least-once delivery semantics.
 
 ---
 

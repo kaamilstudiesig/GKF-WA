@@ -75,17 +75,18 @@ class EventRepository {
       const event = findStmt.get(now, staleCutoff);
       if (!event) return null;
 
-      // Lock event for processing
+      // Lock event for processing atomically
       const updateStmt = txDb.prepare(`
         UPDATE webhook_events
         SET status = 'processing',
             locked_at = ?,
             attempts = attempts + 1,
             updated_at = ?
-        WHERE id = ?
+        WHERE id = ? AND ((status = 'pending' AND available_at <= ?) OR (status = 'processing' AND locked_at <= ?))
       `);
 
-      updateStmt.run(now, now, event.id);
+      const result = updateStmt.run(now, now, event.id, now, staleCutoff);
+      if (result.changes === 0) return null; // Another worker claimed this job
 
       return {
         ...event,

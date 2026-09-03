@@ -10,6 +10,13 @@ class OutboundWorker {
   }
 
   /**
+   * Note on Outbound Delivery Semantics:
+   * External messaging providers like Meta WhatsApp Cloud API do not guarantee end-to-end
+   * idempotency across arbitrary network timeouts. Therefore, the outbound worker provides
+   * at-least-once external delivery with internal dedup_key deduplication.
+   */
+
+  /**
    * Classifies whether an HTTP / network error from Meta Cloud API is retryable.
    */
   isRetryableError(error) {

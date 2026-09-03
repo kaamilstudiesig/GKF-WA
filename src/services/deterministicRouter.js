@@ -65,6 +65,21 @@ class DeterministicRouter {
       };
     }
 
+    // 4. Complaints & Grievances
+    const complaintKeywords = ['complaint', 'dirty', 'broken', 'not working', 'unacceptable', 'rude', 'hygiene'];
+    if (complaintKeywords.some(kw => cleanText.includes(kw))) {
+      logger.debug('Deterministic route matched: Complaint', { wa_id: lead.wa_id });
+      return {
+        matched: true,
+        replyText: "We sincerely apologize for this experience. We take facility standards very seriously at Goldkraft Fitness. Our management has been notified and will contact you directly.",
+        updates: {
+          needs_human: true,
+          handoff_reason: 'complaint',
+          summary: 'Customer reported facility or service complaint.'
+        }
+      };
+    }
+
     // 4. Trial Session Booking Request
     const trialKeywords = [
       'book a trial', 'book trial', 'trial session', 'free trial', 'try a workout',

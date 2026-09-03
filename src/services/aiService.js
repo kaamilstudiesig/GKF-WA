@@ -414,7 +414,14 @@ SECURITY AND FACTUAL ACCURACY DIRECTIVES:
     let replyText = "Welcome to Goldkraft Fitness! We're located in JP Nagar with 10,000 sq ft of elite functional training equipment. Are you looking for strength training, CrossFit, or personal coaching?";
     let updates = { status: 'contacted' };
 
-    if (textLower.includes('price') || textLower.includes('fee') || textLower.includes('cost') || textLower.includes('membership')) {
+    if (textLower.includes('beginner') || textLower.includes('starter') || textLower.includes('kuch idea nahi')) {
+      replyText = "Beginners are completely welcome at Goldkraft Fitness! Our certified coaches provide hands-on form coaching and structured progressive overload. What are your main fitness goals?";
+      updates = { interest: 'beginner_coaching', status: 'contacted', needs_human: false };
+    } else if (textLower.includes('complaint') || textLower.includes('dirty') || textLower.includes('broken')) {
+      replyText = "We sincerely apologize for this experience. I have flagged this to our management team to resolve immediately.";
+      updates.needs_human = true;
+      updates.handoff_reason = 'complaint';
+    } else if (textLower.includes('price') || textLower.includes('fee') || textLower.includes('cost') || textLower.includes('membership')) {
       replyText = "Our memberships start at ₹4,040/month for full gym access. We also offer Quarterly Elite (₹7,080/3mo) and Annual Pinnacle (₹14,000/yr) with personal assessment and nutrition guidance. Which plan fits your goals?";
       updates.interest = 'membership_pricing';
       updates.status = 'qualified';

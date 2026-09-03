@@ -1,267 +1,173 @@
-# Goldkraft Fitness — WhatsApp AI Lead-Management Backend
+# Goldkraft Fitness — WhatsApp AI Lead-Management & Multi-Tenant SaaS Backend
 
-A robust, production-ready Node.js backend connecting WhatsApp (via Meta's Cloud API v23.0) to an AI sales & qualification agent (via OpenRouter) that handles inbound gym leads for **Goldkraft Fitness** (JP Nagar, Bengaluru), replies conversationally in Goldkraft's confident brand voice, and stores structured CRM lead data in SQLite.
+A production-ready Node.js/Express backend connecting WhatsApp (via Meta Cloud API v23.0) to an AI sales & qualification agent (via OpenRouter) that handles inbound leads for fitness clubs and gyms, replies conversationally, and provides durable multi-tenant CRM lead management in SQLite with zero data loss.
 
 ---
 
-## System Architecture
+## Target Production Architecture
 
 ```
-                    +-----------------------------+
-                    |  WhatsApp User (Lead)       |
-                    +--------------+--------------+
-                                   |
-                             WhatsApp Message
-                                   v
-                    +-----------------------------+
-                    |  Meta WhatsApp Cloud API    |
-                    +--------------+--------------+
-                                   |
-                  POST /webhook    |   POST /v23.0/<PHONE_ID>/messages
-                  (HMAC Verified)  |   (Outbound Reply)
-                                   v
-+-----------------------------------------------------------------------+
-|  Goldkraft Backend (Node.js + Express)                                |
-|                                                                       |
-|  1. Webhook Verification & HMAC-SHA256 Security Signature Check      |
-|  2. Message Deduplication (by wamid)                                  |
-|  3. Lead Storage & 24-Hr Customer Service Window Tracking (DAL)       |
-|  4. OpenRouter AI Processing (Dual Tool Calling + JSON Delimiters)    |
-|  5. Lead Qualification & Human Staff Handoff Triggers                 |
-|                                                                       |
-|  +--------------------------------+   +----------------------------+  |
-|  | OpenRouter AI API              |   | SQLite Lead CRM (DAL)      |  |
-|  | (Gemini / Gemma / Free Router) |   | (leads & messages tables)  |  |
-|  +--------------------------------+   +----------------------------+  |
-+-----------------------------------------------------------------------+
-                                   |
-                    +--------------+--------------+
-                    | CRM / Dashboard API         |
-                    | GET /leads                  |
-                    | GET /leads/:wa_id           |
-                    +-----------------------------+
+Meta WhatsApp Cloud API
+        │
+        ▼
+   POST /webhook
+   (HMAC-SHA256 Verified, Rate-Limited, Fast Ack)
+        │
+        ├─► Atomically Enqueue Event in SQLite (webhook_events)
+        │   (ON CONFLICT DO NOTHING Idempotency)
+        │
+        └─► Return HTTP 200 Immediately
+        │
+        ▼
+ In-Process Durable Event Queue
+        │
+        ▼
+  Webhook Worker Loop
+        │
+        ├─► Resolve Tenant by Phone Number ID
+        ├─► Atomically Upsert Lead Record (leads)
+        ├─► Save Inbound Message (messages)
+        ├─► Message Router:
+        │     ├─► Medical / Injury Safety Filter (Escalate + Disclaimer)
+        │     ├─► Deterministic Router (Hours, Location, FAQ - 0 Token Spend)
+        │     └─► AI Service (Tool Calling Loop, Guardrails, Budget Check)
+        │
+        └─► Enqueue Outbound Message (outbound_messages)
+        │
+        ▼
+  Outbound Message Worker
+        │
+        ├─► Exponential Backoff + Jitter for Transient Errors (429, 5xx, Network)
+        ├─► Dead-Lettering for Permanent 4xx Validation / Auth Errors
+        ├─► Outbound Deduplication by Dedup Key
+        ▼
+Meta WhatsApp Cloud API (POST /v23.0/<PHONE_ID>/messages)
 ```
 
 ---
 
-## Features
+## Core System Capabilities
 
-- **Meta Cloud API v23.0 Integration**:
-  - `GET /webhook` verification handshake (`hub.mode`, `hub.verify_token`, `hub.challenge`).
-  - `POST /webhook` inbound message ingestion with cryptographic `X-Hub-Signature-256` HMAC-SHA256 signature verification.
-  - Message deduplication by `message_id` (`wamid`) to prevent duplicate replies on Meta webhooks retries.
-  - Graceful handling of delivery receipts (`statuses`) and non-text media messages (`image`, `audio`, `video`, etc.).
-- **24-Hour Customer Service Window Engine**:
-  - Automatically calculates and exposes `window_open` per lead based on `last_inbound_message_at`.
-- **OpenRouter AI Agent (Goldkraft Fitness Persona)**:
-  - System prompt containing gym specs (10,000 sq ft, JP Nagar), programs (CrossFit, Hypertrophy, PT, Yoga), hours, and verified membership pricing (Monthly ₹4,040, Quarterly ₹7,080, 6-Month ₹10,640, Annual ₹14,000).
-  - **Dual Extraction Pattern**: OpenAI function calling (`save_lead`, `notify_staff`) with fallback parsing for delimited JSON blocks (`<<<LEAD_UPDATE: {...}>>>`).
-  - **Graceful Error & 429 Handling**: Rate limit or API failure triggers a friendly fallback message and flags the lead for human staff attention (`needs_human: true`).
-- **Data Access Layer (DAL)**:
-  - SQLite database with WAL mode enabled.
-  - Isolated repository pattern so SQLite can be swapped for PostgreSQL with zero controller refactoring.
-- **Lead CRM & Dashboard Endpoints**:
-  - `GET /leads` — filterable by `status`, `needs_human`, sortable by `recency`, `oldest`, `needs_human_first`.
-  - `GET /leads/:wa_id` — full lead dossier with bounded conversation history.
+### 1. Fast Webhook Acknowledgment & Durable Inbound Queue
+- Webhook endpoint (`POST /webhook`) authenticates `X-Hub-Signature-256`, validates payload structure, atomically records the event into `webhook_events`, and acknowledges Meta with `HTTP 200` in milliseconds.
+- Inbound worker processes jobs asynchronously with state transitions (`pending` -> `processing` -> `completed` / `failed` / `dead_letter`).
+- Stale lock reclamation ensures that worker crashes during processing do not leave orphaned jobs.
+
+### 2. Atomic Idempotency
+- Race-safe message deduplication backed by `UNIQUE` database constraints and `INSERT ... ON CONFLICT DO NOTHING / UPDATE`.
+- Duplicate webhook deliveries from Meta retries will never create duplicate leads, duplicate conversation records, or duplicate outbound replies to customers.
+
+### 3. Outbound Message Queue with Resilient Delivery
+- Outbound replies are decoupled from AI inference and enqueued into `outbound_messages`.
+- Outbound worker delivers messages via Meta Graph API with exponential backoff and jitter.
+- Strictly separates retryable transient errors (HTTP 429 rate limit, 5xx server error, connection reset) from permanent client errors (HTTP 400 bad request, 401 unauthorized).
+
+### 4. Multi-Tenancy & Strict Data Isolation (Invariant 3)
+- First-class `tenants` model (`id`, `name`, `status`, `timezone`, `whatsapp_phone_number_id`, `configuration_json`).
+- Automatically resolves tenant based on WhatsApp Phone Number ID (`phone_number_id`), defaulting to `goldkraft` for backward compatibility.
+- All entities (`leads`, `messages`, `webhook_events`, `outbound_messages`, `ai_usage`, `handoffs`, `audit_logs`, `users`) are tenant-scoped.
+- Cross-tenant data access is strictly prevented at both the DAL and controller layers (returns 404/403).
+
+### 5. AI Business Policy Layer & Guardrails
+- **Conversion Protection (Invariant 5):** AI cannot independently mark leads as `converted`. Conversion requires authorized human staff action.
+- **Medical / Injury Safety (Phase 40):** High-risk questions (e.g., slipped disc, ACL tear, rehab, cardiac conditions) immediately trigger human staff handoff with a non-diagnostic medical disclaimer.
+- **Deterministic Routing (Phase 14):** Confident standard queries (operating hours, physical address, parking, human agent requests) are answered deterministically without calling the LLM, preserving margins for ₹1,500–₹2,000/month pricing.
+- **Clean Customer Replies (Invariant 8):** WhatsApp responses are sanitized so internal tool calls, debug JSON, or delimited tags never leak to the customer.
+
+### 6. AI Cost Tracking & Budget Controls (Phase 17 & 18)
+- Every LLM completion is recorded in `ai_usage` (`input_tokens`, `output_tokens`, `latency_ms`, `estimated_cost_inr`).
+- Tenant-level monthly token and request budget limits prevent runaway API bills. If limits are reached, the system smoothly routes to deterministic fallback and flags staff.
+
+### 7. Security Hardening & Observability
+- Security headers (`X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY`, `X-XSS-Protection: 0`, `Content-Security-Policy`).
+- End-to-end Request ID tracing (`x-request-id`).
+- Payload size bounding (`1mb`).
+- Sanitized production logging with automated PII phone number masking (`91*****3210`).
+- Health probes: `/health` (liveness) and `/health/ready` (readiness with SQLite connectivity verification).
+- Graceful shutdown with 5-second drain timer for workers, server, and SQLite database.
 
 ---
 
-## Prerequisites
+## Database & Schema Migrations
 
-- **Node.js**: v18.0.0 or higher (Tested on Node.js v24)
-- **Meta Developer Account**: With a registered WhatsApp Business App and a WhatsApp Phone Number ID.
-- **Meta Permanent System User Access Token**: Generated via *Business Settings > System Users > Assign Assets > Generate Token* with `whatsapp_business_messaging` and `whatsapp_business_management` permissions.
-- **OpenRouter Account**: API key from [openrouter.ai](https://openrouter.ai/).
+The system uses an ordered, tracked migration runner (`src/db/migrations.js`) storing applied versions in `schema_migrations`:
 
----
+| Migration | Name | Description |
+|---|---|---|
+| 1 | `001_initial_schema` | Baseline `leads` and `messages` tables |
+| 2 | `002_multi_tenancy` | `tenants` table, `tenant_id` columns, and default `goldkraft` tenant seeding |
+| 3 | `003_durable_queues` | `webhook_events` and `outbound_messages` queue tables with indexes |
+| 4 | `004_ai_handoffs_and_auth` | `ai_usage`, `handoffs`, `audit_logs`, and `users` tables |
 
-## Quickstart & Installation
-
-### 1. Clone & Install Dependencies
-
+To run migrations manually:
 ```bash
-git clone <repo-url>
-cd WA
+npm run migrate
+```
+Migrations run automatically on application startup.
+
+---
+
+## Environment Variables
+
+| Variable | Required in Production | Description | Default |
+|---|---|---|---|
+| `PORT` | No | HTTP server port | `3000` |
+| `NODE_ENV` | No | `development`, `production`, or `test` | `development` |
+| `LOG_LEVEL` | No | `debug`, `info`, `warn`, `error` | `info` (prod) / `debug` (dev) |
+| `DASHBOARD_API_KEY` | Yes | Master API key for platform administration | — |
+| `META_ACCESS_TOKEN` | Yes | Permanent System User Token from Meta Business Settings | — |
+| `META_PHONE_NUMBER_ID`| Yes | WhatsApp Business Account Phone Number ID | — |
+| `META_WEBHOOK_VERIFY_TOKEN` | Yes | Secret token for Meta webhook verification handshake | — |
+| `META_APP_SECRET` | Yes | Meta App Secret for HMAC-SHA256 signature verification | — |
+| `OPENROUTER_API_KEY` | Yes | API key from OpenRouter | — |
+| `OPENROUTER_MODEL` | No | Primary LLM model | `google/gemini-2.5-flash` |
+| `OPENROUTER_FALLBACK_MODEL` | No | Secondary LLM model for fallback | `google/gemini-2.5-flash-lite` |
+| `DATABASE_PATH` | No | Absolute or relative path to SQLite database file | `./data/goldkraft_leads.db` |
+
+---
+
+## API Endpoints
+
+### Public Endpoints
+- `GET /` — Service overview and gym facility metadata
+- `GET /health` — Liveness check (HTTP 200, uptime)
+- `GET /health/ready` — Readiness check (HTTP 200 if SQLite connected; HTTP 503 if disconnected)
+- `GET /webhook` — Meta Webhook verification handshake (`hub.mode`, `hub.verify_token`, `hub.challenge`)
+- `POST /webhook` — Inbound WhatsApp event ingestion (HMAC-SHA256 signature required)
+
+### Protected CRM & Dashboard Endpoints
+*Requires `Authorization: Bearer <API_KEY>` or `x-api-key: <API_KEY>`*
+- `GET /leads` — List leads with filtering (`status`, `needs_human`), sorting (`recency`, `oldest`, `needs_human_first`), and pagination (`limit`, `offset`)
+- `GET /leads/:wa_id` — Dossier for lead including 24-hr customer service window and conversation history
+- `GET /dashboard/summary` — Aggregated CRM metrics (leads breakdown, AI spend, pending queue items) scoped to authenticated tenant
+
+---
+
+## Operational & Deployment Guidelines
+
+### Running Locally
+```bash
 npm install
-```
-
-### 2. Configure Environment Variables
-
-Copy the sample environment file:
-
-```bash
 cp .env.example .env
-```
-
-Edit `.env` with your credentials:
-
-```env
-# Server Configuration
-PORT=3000
-NODE_ENV=development
-
-# Meta WhatsApp Cloud API
-META_ACCESS_TOKEN=your_permanent_system_user_token
-META_PHONE_NUMBER_ID=your_whatsapp_phone_number_id
-META_WEBHOOK_VERIFY_TOKEN=your_custom_secret_verify_token
-META_APP_SECRET=your_meta_app_secret
-
-# OpenRouter AI
-OPENROUTER_API_KEY=your_openrouter_api_key
-OPENROUTER_MODEL=google/gemini-2.5-flash
-
-# Database
-DATABASE_PATH=./data/goldkraft_leads.db
-```
-
-### 3. Run Locally
-
-```bash
-# Start server in production mode
-npm start
-
-# Or start with auto-reload in development
+# Edit .env with your credentials
 npm run dev
 ```
 
-The server will start at `http://localhost:3000`.
-
----
-
-## Exposing Webhook to Meta via Ngrok (Local Dev)
-
-To allow Meta's Cloud API servers to reach your local webhook during development:
-
-### 1. Launch Ngrok Tunnel
-
-```bash
-ngrok http 3000
-```
-
-Ngrok will provide a public HTTPS URL (e.g. `https://abc-123.ngrok-free.app`).
-
-### 2. Configure Meta Webhook in App Dashboard
-
-1. Navigate to [Meta App Dashboard](https://developers.facebook.com/apps/).
-2. Select your App and go to **WhatsApp > Configuration**.
-3. Under **Webhook**, click **Edit**:
-   - **Callback URL**: `https://abc-123.ngrok-free.app/webhook` *(replace with your ngrok URL)*
-   - **Verify Token**: Enter the exact string set in `META_WEBHOOK_VERIFY_TOKEN` in your `.env`.
-4. Click **Verify and Save**. Meta will send a `GET` handshake request to your endpoint.
-5. Under **Webhook fields**, click **Manage** and subscribe to **`messages`**.
-
----
-
-## Testing & Simulation Guide
-
-### 1. Automated Tests
-
-Run the full test suite (unit + integration):
-
+### Running Tests
 ```bash
 npm test
 ```
 
----
-
-### 2. Manual cURL Testing
-
-#### A. Test Webhook Verification Handshake (`GET /webhook`)
+### SQLite Backup Strategy
+Because SQLite operates in WAL (Write-Ahead Logging) mode, naive file copy while the server is writing can result in corrupted snapshot files.
+To safely back up the database in production:
 
 ```bash
-curl -X GET "http://localhost:3000/webhook?hub.mode=subscribe&hub.verify_token=your_custom_secret_verify_token&hub.challenge=test_challenge_12345"
+# Recommended: Online safe SQLite backup
+sqlite3 ./data/goldkraft_leads.db ".backup './backups/goldkraft_leads_$(date +%Y%m%d_%H%M%S).db'"
 ```
-*Expected Output:* `test_challenge_12345` with HTTP `200 OK`.
+Set up a daily cron job to run this command and store snapshots in secure offsite storage (e.g. AWS S3 or GCP Cloud Storage).
 
----
-
-#### B. Simulate Inbound WhatsApp Text Message (`POST /webhook`)
-
-```bash
-curl -X POST "http://localhost:3000/webhook" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "object": "whatsapp_business_account",
-    "entry": [
-      {
-        "id": "WABA_ID_12345",
-        "changes": [
-          {
-            "value": {
-              "messaging_product": "whatsapp",
-              "metadata": {
-                "display_phone_number": "918000000000",
-                "phone_number_id": "PHONE_ID_123"
-              },
-              "contacts": [
-                { "profile": { "name": "Rohan Mehra" }, "wa_id": "919876543210" }
-              ],
-              "messages": [
-                {
-                  "from": "919876543210",
-                  "id": "wamid.HBgLMTIzNDU2Nzg5MA==",
-                  "timestamp": "1725200000",
-                  "text": { "body": "Hi, what are your monthly membership rates?" },
-                  "type": "text"
-                }
-              ]
-            },
-            "field": "messages"
-          }
-        ]
-      }
-    ]
-  }'
-```
-
----
-
-#### C. Query All Leads from CRM (`GET /leads`)
-
-```bash
-# Get all leads
-curl -X GET "http://localhost:3000/leads"
-
-# Filter by status (e.g. qualified)
-curl -X GET "http://localhost:3000/leads?status=qualified"
-
-# Filter by needs_human
-curl -X GET "http://localhost:3000/leads?needs_human=true"
-
-# Sort by oldest first
-curl -X GET "http://localhost:3000/leads?sort=oldest"
-```
-
----
-
-#### D. Fetch Full Lead Record & Conversation History (`GET /leads/:wa_id`)
-
-```bash
-curl -X GET "http://localhost:3000/leads/919876543210"
-```
-
----
-
-## Lead Data Model Reference
-
-| Field | Type | Description |
-|---|---|---|
-| `wa_id` | `TEXT` (PK) | WhatsApp phone number without `+` (unique lookup key) |
-| `display_name` | `TEXT` | WhatsApp profile name |
-| `status` | `ENUM` | `["new", "contacted", "qualified", "hot", "cold", "converted", "lost"]` |
-| `interest` | `TEXT` | Extracted lead interest (e.g. `trial`, `monthly membership`, `PT`) |
-| `source` | `TEXT` | Lead origin (default: `whatsapp_inbound`) |
-| `first_contact_at` | `TEXT` (ISO) | Timestamp of first inbound contact |
-| `last_inbound_message_at` | `TEXT` (ISO) | Timestamp of latest inbound message |
-| `last_outbound_message_at` | `TEXT` (ISO) | Timestamp of latest outbound reply |
-| `window_open` | `BOOLEAN` | Dynamic check: `now - last_inbound_message_at <= 24h` |
-| `needs_human` | `BOOLEAN` | Flagged `true` when staff intervention is required |
-| `handoff_reason` | `TEXT` | e.g. `ready_to_book`, `price_negotiation`, `injury_question`, `complaint`, `human_requested` |
-| `notes` | `TEXT` | Appendable staff / AI qualification notes |
-| `conversation_history` | `ARRAY` | Ordered messages (`direction`, `text`, `timestamp`, `message_id`) |
-
----
-
-## Customizing Gym Persona & Business Rules
-
-All gym specifications, operating hours, pricing tiers, and brand voice guidelines live in [`src/config/gymConfig.js`](file:///home/kaamil/Desktop/IRL%20new/WA/src/config/gymConfig.js). To adapt this backend for other fitness clubs or branches, simply update `gymConfig.js`.
+### Known Scaling Constraints
+- **SQLite Concurrency:** SQLite supports unlimited concurrent readers but serialized single-writer access. With WAL mode and `PRAGMA busy_timeout = 5000;`, SQLite comfortably handles tens of thousands of WhatsApp messages per day for single-node deployments.
+- **Horizontal Scaling:** Do not run multiple independent servers against the same local SQLite file across different machines. If horizontal scaling across multiple container instances is required in the future, migrate the repository layer to PostgreSQL. The data access layer is cleanly isolated to make this migration seamless.

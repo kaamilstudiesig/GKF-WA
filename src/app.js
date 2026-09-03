@@ -10,6 +10,7 @@ const { getDatabase } = require('./db/database');
 const gymConfig = require('./config/gymConfig');
 const env = require('./config/env');
 const logger = require('./utils/logger');
+const { captureException } = require('./utils/sentry');
 
 function createApp() {
   const app = express();
@@ -162,6 +163,14 @@ function createApp() {
 
   // Central error handler (protects against stack trace / internal details leakage in production)
   app.use((err, req, res, next) => {
+    captureException(err, {
+      component: 'express_http',
+      requestId: req.id,
+      method: req.method,
+      path: req.originalUrl,
+      tenantId: req.tenantId
+    });
+
     logger.error('Unhandled Server Error:', {
       request_id: req.id,
       error: err.message,

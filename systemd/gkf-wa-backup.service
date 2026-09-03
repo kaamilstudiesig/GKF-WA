@@ -1,0 +1,15 @@
+[Unit]
+Description=Goldkraft WhatsApp AI SQLite Production Backup Task
+After=network.target
+
+[Service]
+Type=oneshot
+User=node
+WorkingDirectory=/opt/goldkraft-whatsapp-ai
+EnvironmentFile=/opt/goldkraft-whatsapp-ai/.env
+ExecStart=/usr/bin/npm run backup
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

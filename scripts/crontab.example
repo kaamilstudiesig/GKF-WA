@@ -1,0 +1,6 @@
+# Production Crontab Example for Goldkraft WhatsApp AI Backup
+# Runs every 6 hours: at 00:00, 06:00, 12:00, 18:00
+# Usage: crontab -e
+# Note: Ensure environment variables (AZURE_STORAGE_CONNECTION_STRING, etc.) are in .env or exported
+
+0 */6 * * * cd /opt/goldkraft-whatsapp-ai && /usr/bin/npm run backup >> /var/log/gkf-wa-backup.log 2>&1

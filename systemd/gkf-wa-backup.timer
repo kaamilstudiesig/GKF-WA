@@ -1,0 +1,11 @@
+[Unit]
+Description=Timer for Goldkraft WhatsApp AI SQLite Production Backup (Every 6 Hours)
+
+[Timer]
+# Runs at 00:00, 06:00, 12:00, 18:00 UTC every day
+OnCalendar=*-*-* 00,06,12,18:00:00
+Persistent=true
+RandomizedDelaySec=180
+
+[Install]
+WantedBy=timers.target

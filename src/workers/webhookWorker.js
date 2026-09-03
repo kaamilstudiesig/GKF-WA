@@ -8,6 +8,7 @@ const aiService = require('../services/aiService');
 const outboundWorker = require('./outboundWorker');
 const gymConfig = require('../config/gymConfig');
 const logger = require('../utils/logger');
+const { captureException } = require('../utils/sentry');
 
 class WebhookWorker {
   constructor() {
@@ -185,6 +186,12 @@ class WebhookWorker {
       });
       return true;
     } catch (error) {
+      captureException(error, {
+        component: 'webhook_worker',
+        eventId: event?.id,
+        eventType: event?.event_type,
+        tenantId: event?.tenant_id
+      });
       logger.error('Worker failed to process webhook event:', {
         event_id: event.id,
         error: error.message,

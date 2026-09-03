@@ -2,6 +2,7 @@ const axios = require('axios');
 const env = require('../config/env');
 const leadRepository = require('../db/leadRepository');
 const logger = require('../utils/logger');
+const { captureException } = require('../utils/sentry');
 
 class WhatsAppService {
   constructor() {
@@ -91,6 +92,12 @@ class WhatsAppService {
       return response.data;
     } catch (error) {
       const errorData = error.response?.data || error.message;
+      captureException(error, {
+        component: 'whatsapp_outbound',
+        recipient: cleanWaId,
+        tenantId: options.tenantId
+      });
+
       logger.error('Failed to send outbound WhatsApp message:', {
         to: cleanWaId,
         error: errorData

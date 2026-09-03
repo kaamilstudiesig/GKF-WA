@@ -1,14 +1,12 @@
 const createApp = require('./app');
 const env = require('./config/env');
 const { getDatabase, closeDatabase } = require('./db/database');
+const { initSentry, captureException } = require('./utils/sentry');
 const webhookWorker = require('./workers/webhookWorker');
 const outboundWorker = require('./workers/outboundWorker');
 const logger = require('./utils/logger');
 
-// Initialize database & run migrations
-getDatabase();
-
-// Validate production requirements (throws and halts if NODE_ENV === 'production' and missing config)
+// 1. Validate production requirements (throws and halts immediately if production config is missing)
 try {
   env.validateForProduction();
 } catch (err) {
@@ -16,7 +14,13 @@ try {
   process.exit(1);
 }
 
-// Start background workers in non-test mode
+// 2. Initialize Sentry error & performance monitoring
+initSentry();
+
+// 3. Initialize database & run tracked migrations
+getDatabase();
+
+// 4. Start background workers in non-test mode
 if (env.nodeEnv !== 'test') {
   webhookWorker.start(2000);
   outboundWorker.start(2000);
@@ -86,6 +90,18 @@ async function handleShutdown(signal) {
 
 process.on('SIGINT', () => handleShutdown('SIGINT'));
 process.on('SIGTERM', () => handleShutdown('SIGTERM'));
+
+process.on('uncaughtException', (err) => {
+  captureException(err, { component: 'process_uncaught_exception' });
+  logger.error('Fatal uncaught exception:', { error: err.message, stack: err.stack });
+  if (!isShuttingDown) process.exit(1);
+});
+
+process.on('unhandledRejection', (reason) => {
+  const err = reason instanceof Error ? reason : new Error(String(reason));
+  captureException(err, { component: 'process_unhandled_rejection' });
+  logger.error('Unhandled promise rejection:', { error: err.message, stack: err.stack });
+});
 
 module.exports = server;
 

@@ -6,6 +6,7 @@ const handoffRepository = require('../db/handoffRepository');
 const aiPolicy = require('./aiPolicy');
 const aiCostTracker = require('./aiCostTracker');
 const logger = require('../utils/logger');
+const { captureException } = require('../utils/sentry');
 
 // Tool definitions for OpenAI-compatible function calling
 const AI_TOOLS = [
@@ -401,6 +402,13 @@ SECURITY AND FACTUAL ACCURACY DIRECTIVES:
       const isNetworkError = !error.response;
       const status = error.response?.status;
       const errorData = error.response?.data || error.message;
+
+      captureException(error, {
+        component: 'openrouter_ai',
+        tenantId,
+        model: this.model,
+        status: status || 'network_error'
+      });
 
       logger.warn('Primary OpenRouter AI call failed, recording usage and checking fallback:', {
         primaryModel: this.model,

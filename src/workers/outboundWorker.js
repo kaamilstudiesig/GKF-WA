@@ -1,6 +1,7 @@
 const outboundRepository = require('../db/outboundRepository');
 const whatsappService = require('../services/whatsappService');
 const logger = require('../utils/logger');
+const { captureException } = require('../utils/sentry');
 
 class OutboundWorker {
   constructor() {
@@ -62,6 +63,14 @@ class OutboundWorker {
     } catch (error) {
       const retryable = this.isRetryableError(error);
       const errMsg = error.response?.data ? JSON.stringify(error.response.data) : error.message;
+
+      captureException(error, {
+        component: 'outbound_worker',
+        messageId: message.id,
+        wa_id: message.wa_id,
+        tenantId: message.tenant_id,
+        retryable
+      });
 
       logger.error('Outbound message send failed', {
         id: message.id,

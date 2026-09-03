@@ -110,8 +110,12 @@ function createApp() {
     res.sendFile(path.join(__dirname, '../public/index.html'));
   });
 
-  // Root endpoint with gym facility & service overview
+  // Root endpoint with gym facility & service overview (redirects browser navigation to /demo)
   app.get('/', (req, res) => {
+    const accept = req.headers.accept || '';
+    if (accept.includes('text/html') && !accept.includes('application/json')) {
+      return res.redirect('/demo');
+    }
     res.json({
       service: 'Goldkraft Fitness WhatsApp AI Lead Manager',
       status: 'operational',

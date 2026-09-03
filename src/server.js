@@ -45,6 +45,7 @@ const server = app.listen(env.port, () => {
   Server URL:   http://localhost:${env.port}
   Health Check: http://localhost:${env.port}/health (Liveness)
   Readiness:    http://localhost:${env.port}/health/ready (Readiness)
+  Demo Chat:    http://localhost:${env.port}/demo (Interactive AI Chat Demo)
   Dashboard:    http://localhost:${env.port}/dashboard/summary (Auth Required)
   Webhook GET:  http://localhost:${env.port}/webhook (Handshake)
   Webhook POST: http://localhost:${env.port}/webhook (Inbound Messages)

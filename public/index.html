@@ -1,0 +1,248 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>Goldkraft Fitness — WhatsApp AI Assistant Demo</title>
+  <meta name="description" content="Interactive mobile-first WhatsApp demonstration of the GKF-WA AI lead management and qualification assistant for gym customers.">
+  <link rel="stylesheet" href="/css/style.css">
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🏋️</text></svg>">
+</head>
+<body>
+
+  <!-- Desktop Presentation Outer Shell -->
+  <div class="desktop-wrapper">
+
+    <!-- Top Unobtrusive Demo Toolbar (Visible on desktop) -->
+    <header class="demo-top-bar">
+      <div class="brand-meta">
+        <span class="brand-badge">GKF-WA DEMO</span>
+        <div>
+          <h1 class="brand-title" style="font-size: 15px; font-weight: 600; margin: 0;">Goldkraft Fitness &bull; WhatsApp AI Assistant</h1>
+          <p class="brand-subtitle" style="margin: 0;">Interactive Lead Qualification &amp; Handoff Demonstration</p>
+        </div>
+      </div>
+
+      <nav class="demo-controls" aria-label="Demo Controls">
+        <button type="button" class="control-btn" id="autoPlayBtn" title="Auto-play the prepared customer conversation">
+          <svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor">
+            <path d="M8 5v14l11-7z"/>
+          </svg>
+          <span>Auto-play Demo</span>
+        </button>
+
+        <button type="button" class="control-btn" id="resetBtn" title="Reset conversation to default prepared state">
+          <svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor">
+            <path d="M17.65 6.35A7.958 7.958 0 0012 4c-4.42 0-7.99 3.58-7.99 8s3.57 8 7.99 8c3.73 0 6.84-2.55 7.73-6h-2.08A5.99 5.99 0 0112 18c-3.31 0-6-2.69-6-6s2.69-6 6-6c1.66 0 3.14.69 4.22 1.78L13 11h7V4l-2.35 2.35z"/>
+          </svg>
+          <span>Reset Demo</span>
+        </button>
+
+        <button type="button" class="control-btn gold" id="openLeadModalBtn" title="Inspect current qualified lead record">
+          <svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor">
+            <path d="M19 3H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm-7 3c1.93 0 3.5 1.57 3.5 3.5S13.93 13 12 13s-3.5-1.57-3.5-3.5S10.07 6 12 6zm7 13H5v-.23c0-.62.28-1.2.76-1.58C7.47 15.82 9.64 15 12 15s4.53.82 6.24 2.19c.48.38.76.97.76 1.58V19z"/>
+          </svg>
+          <span>View Lead Card</span>
+        </button>
+
+        <button type="button" class="control-btn" id="themeToggleBtn" title="Toggle Light/Dark Theme">
+          <svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor">
+            <path d="M12 3a9 9 0 109 9c0-.46-.04-.92-.1-1.36a5.389 5.389 0 01-4.4 2.26 5.403 5.403 0 01-3.14-9.8c-.44-.06-.9-.1-1.36-.1z"/>
+          </svg>
+          <span>Dark Theme</span>
+        </button>
+      </nav>
+    </header>
+
+    <!-- Mobile-First Realistic Phone Frame (390 x 844) -->
+    <main class="phone-frame" id="phoneContainer">
+
+      <!-- Dynamic Island / Top Speaker Bar -->
+      <div class="phone-speaker-notch" aria-hidden="true">
+        <div class="notch-camera-lens"></div>
+      </div>
+
+      <!-- Smartphone Top Status Bar -->
+      <div class="phone-status-bar" aria-hidden="true">
+        <span id="statusBarTime">9:41</span>
+        <div class="status-bar-icons">
+          <!-- Cellular Signal -->
+          <svg viewBox="0 0 24 24" width="15" height="15" fill="currentColor">
+            <path d="M2 22h20V2L2 22z"/>
+          </svg>
+          <!-- Wi-Fi -->
+          <svg viewBox="0 0 24 24" width="15" height="15" fill="currentColor">
+            <path d="M12 4C7.31 4 3.07 5.9 0 8.98L12 21 24 8.98A16.88 16.88 0 0012 4z"/>
+          </svg>
+          <!-- Battery -->
+          <svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor">
+            <path d="M16 4h-2V2h-4v2H8C6.9 4 6 4.9 6 6v14c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V6c0-1.1-.9-2-2-2zm-1 10h-2v4h-2v-4H9v-2h2V8h2v4h2v2z"/>
+          </svg>
+        </div>
+      </div>
+
+      <!-- WhatsApp Chat Header -->
+      <header class="wa-header">
+        <div class="header-left">
+          <button type="button" class="header-back-btn" aria-label="Back">
+            <svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor">
+              <path d="M20 11H7.83l5.59-5.59L12 4l-8 8 8 8 1.41-1.41L7.83 13H20v-2z"/>
+            </svg>
+          </button>
+          
+          <div class="header-avatar-container" title="Goldkraft Fitness">
+            <span class="header-avatar-logo">GK</span>
+          </div>
+
+          <div class="header-user-info">
+            <div class="header-business-name">
+              <span>Goldkraft Fitness</span>
+              <!-- Verified WhatsApp Business Badge -->
+              <svg class="verified-icon" viewBox="0 0 24 24" title="Verified WhatsApp Business Account">
+                <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z"/>
+              </svg>
+            </div>
+            <div class="header-status-text" id="headerStatus">
+              <span class="status-indicator-dot"></span>
+              <span>AI Assistant</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="header-actions">
+          <button type="button" class="header-icon-btn" aria-label="Video Call" title="Video call">
+            <svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor">
+              <path d="M17 10.5V7c0-.55-.45-1-1-1H4c-.55 0-1 .45-1 1v10c0 .55.45 1 1 1h12c.55 0 1-.45 1-1v-3.5l4 4v-11l-4 4z"/>
+            </svg>
+          </button>
+          <button type="button" class="header-icon-btn" aria-label="Voice Call" title="Voice call">
+            <svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor">
+              <path d="M20.01 15.38c-1.23 0-2.42-.2-3.53-.56a.977.977 0 00-1.01.24l-1.57 1.97c-2.83-1.44-5.15-3.75-6.59-6.59l1.97-1.57c.28-.28.36-.67.25-1.02A11.36 11.36 0 019 4.38c0-.55-.45-1-1-1H4.5c-.55 0-1 .45-1 1 0 9.39 7.61 17 17 17 .55 0 1-.45 1-1v-3.5c0-.55-.45-1-1-1z"/>
+            </svg>
+          </button>
+          <button type="button" class="header-icon-btn" aria-label="Menu" title="Menu options">
+            <svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor">
+              <path d="M12 8c1.1 0 2-.9 2-2s-.9-2-2-2-2 .9-2 2 .9 2 2 2zm0 2c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2zm0 6c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2z"/>
+            </svg>
+          </button>
+        </div>
+      </header>
+
+      <!-- Chat Stream Body -->
+      <div class="chat-body" id="chatBody">
+        <!-- Messages rendered dynamically by app.js -->
+      </div>
+
+      <!-- Quick Prompt Suggestion Bar (Clickable for fast presentation) -->
+      <div class="quick-chips-wrapper" aria-label="Quick Prompt Suggestions">
+        <button type="button" class="prompt-chip" data-prompt="Hi, how much is the monthly membership?">Pricing?</button>
+        <button type="button" class="prompt-chip" data-prompt="I want personal training.">Personal Training</button>
+        <button type="button" class="prompt-chip" data-prompt="I want to lose weight.">Lose Weight</button>
+        <button type="button" class="prompt-chip" data-prompt="Yes, please call me.">Please Call Me</button>
+        <button type="button" class="prompt-chip" data-prompt="What are your gym timings?">Timings</button>
+        <button type="button" class="prompt-chip" data-prompt="Where are you located?">Location</button>
+      </div>
+
+      <!-- WhatsApp Input Bar -->
+      <footer class="wa-input-bar">
+        <button type="button" class="input-icon-btn" aria-label="Emoji picker">
+          <svg viewBox="0 0 24 24" width="22" height="22" fill="currentColor">
+            <path d="M11.99 2C6.47 2 2 6.48 2 12s4.47 10 9.99 10C17.52 22 22 17.52 22 12S17.52 2 11.99 2zM12 20c-4.42 0-8-3.58-8-8s3.58-8 8-8 8 3.58 8 8-3.58 8-8 8zm3.5-9c.83 0 1.5-.67 1.5-1.5S16.33 8 15.5 8 14 8.67 14 9.5s.67 1.5 1.5 1.5zm-7 0c.83 0 1.5-.67 1.5-1.5S9.33 8 8.5 8 7 8.67 7 9.5 7.67 11 8.5 11zm3.5 6.5c2.33 0 4.31-1.46 5.11-3.5H6.89c.8 2.04 2.78 3.5 5.11 3.5z"/>
+          </svg>
+        </button>
+
+        <button type="button" class="input-icon-btn" aria-label="Attach file">
+          <svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor">
+            <path d="M16.5 6v11.5c0 2.21-1.79 4-4 4s-4-1.79-4-4V5a2.5 2.5 0 015 0v10.5c0 .83-.67 1.5-1.5 1.5s-1.5-.67-1.5-1.5V6H9v9.5a3 3 0 006 0V5c0-2.21-1.79-4-4-4S7 2.79 7 5v12.5c0 3.04 2.46 5.5 5.5 5.5s5.5-2.46 5.5-5.5V6h-1.5z"/>
+          </svg>
+        </button>
+
+        <input 
+          type="text" 
+          id="chatInput" 
+          class="chat-input-field" 
+          placeholder="Type a message..." 
+          autocomplete="off"
+          aria-label="Message input">
+
+        <button type="button" id="sendBtn" class="send-action-btn" aria-label="Send message" title="Voice note">
+          <svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor">
+            <path d="M12 14c1.66 0 3-1.34 3-3V5c0-1.66-1.34-3-3-3S9 3.34 9 5v6c0 1.66 1.34 3 3 3zm5.3-3c0 3-2.54 5.1-5.3 5.1S6.7 14 6.7 11H5c0 3.41 2.72 6.23 6 6.72V21h2v-3.28c3.28-.48 6-3.3 6-6.72h-1.7z"/>
+          </svg>
+        </button>
+      </footer>
+
+    </main>
+  </div>
+
+  <!-- Lead Summary Modal Drawer -->
+  <div class="lead-modal-backdrop" id="leadModal" role="dialog" aria-modal="true" aria-labelledby="leadModalTitle">
+    <div class="lead-modal-card">
+      <div class="lead-modal-header">
+        <div class="lead-title-wrapper">
+          <h2 class="lead-modal-title" id="leadModalTitle">CRM Lead Summary</h2>
+          <span class="lead-status-pill">🔥 HOT LEAD</span>
+        </div>
+        <button type="button" class="modal-close-btn" id="closeLeadModalBtn" aria-label="Close modal">&times;</button>
+      </div>
+
+      <div class="lead-info-grid">
+        <div class="lead-info-item">
+          <div class="lead-info-label">Customer Name</div>
+          <div class="lead-info-val">Rahul Sharma</div>
+        </div>
+
+        <div class="lead-info-item">
+          <div class="lead-info-label">WhatsApp ID</div>
+          <div class="lead-info-val">+91 98765 43210</div>
+        </div>
+
+        <div class="lead-info-item">
+          <div class="lead-info-label">Gym / Tenant</div>
+          <div class="lead-info-val">Goldkraft Fitness</div>
+        </div>
+
+        <div class="lead-info-item">
+          <div class="lead-info-label">Location</div>
+          <div class="lead-info-val">JP Nagar, Bengaluru</div>
+        </div>
+
+        <div class="lead-info-item">
+          <div class="lead-info-label">Intent</div>
+          <div class="lead-info-val highlight">Personal Training</div>
+        </div>
+
+        <div class="lead-info-item">
+          <div class="lead-info-label">Fitness Goal</div>
+          <div class="lead-info-val highlight">Weight Loss / Fat Loss</div>
+        </div>
+
+        <div class="lead-info-item full-width">
+          <div class="lead-info-label">Lead Qualification Status</div>
+          <div class="lead-info-val emerald">Qualified &bull; High Priority Callback</div>
+        </div>
+
+        <div class="lead-info-item full-width">
+          <div class="lead-info-label">Required Action</div>
+          <div class="lead-info-val highlight">Human Follow-up Required (Senior Coach to Call)</div>
+        </div>
+      </div>
+
+      <div class="modal-actions-row">
+        <button type="button" class="modal-action-btn primary" id="copyLeadBtn">
+          <svg viewBox="0 0 20 20" width="16" height="16" fill="currentColor">
+            <path d="M8 3a1 1 0 011-1h2a1 1 0 110 2H9a1 1 0 01-1-1z"/>
+            <path d="M6 3a2 2 0 00-2 2v11a2 2 0 002 2h8a2 2 0 002-2V5a2 2 0 00-2-2 3 3 0 01-3 2H9a3 3 0 01-3-2z"/>
+          </svg>
+          <span>Copy Details</span>
+        </button>
+        <button type="button" class="modal-action-btn secondary" onclick="document.getElementById('leadModal').classList.remove('open')">
+          <span>Close</span>
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <script src="/js/app.js"></script>
+</body>
+</html>

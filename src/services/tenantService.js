@@ -13,9 +13,10 @@ class TenantService {
 
   /**
    * Resolves a tenant by Meta WhatsApp phone_number_id.
-   * Falls back to default 'goldkraft' tenant if unmapped for backward compatibility.
+   * In production, returns null if the phone number is unmapped to prevent cross-tenant data pollution.
+   * In development and test environments, falls back to default 'goldkraft' for convenience.
    * @param {string} phoneNumberId
-   * @returns {object} Tenant record
+   * @returns {object|null} Tenant record
    */
   resolveTenantByPhoneNumberId(phoneNumberId) {
     if (phoneNumberId) {
@@ -24,9 +25,20 @@ class TenantService {
       if (tenant) {
         return this.formatTenant(tenant);
       }
+      if (process.env.NODE_ENV === 'production') {
+        logger.error('Unknown WhatsApp phone_number_id received in production. Silent fallback rejected.', {
+          phone_number_id: phoneNumberId
+        });
+        return null;
+      }
     }
 
-    // Default fallback to Goldkraft Fitness
+    if (process.env.NODE_ENV === 'production') {
+      logger.error('Missing or unmapped WhatsApp phone_number_id in production. Silent fallback rejected.');
+      return null;
+    }
+
+    // Default fallback to Goldkraft Fitness for local dev and tests
     return this.getTenantById('goldkraft') || {
       id: 'goldkraft',
       name: 'Goldkraft Fitness',

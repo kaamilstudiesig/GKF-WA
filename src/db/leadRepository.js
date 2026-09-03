@@ -48,17 +48,12 @@ class LeadRepository {
   }
 
   /**
-   * Finds a lead by WhatsApp ID, optionally filtered by tenant
+   * Finds a lead by WhatsApp ID, strictly scoped to tenant (defaults to 'goldkraft')
    */
-  findByWaId(waId, tenantId = null) {
-    let sql = 'SELECT * FROM leads WHERE wa_id = ?';
-    const params = [waId];
-    if (tenantId) {
-      sql += ' AND tenant_id = ?';
-      params.push(tenantId);
-    }
-    const stmt = this.db.prepare(sql);
-    const row = stmt.get(...params);
+  findByWaId(waId, tenantId = 'goldkraft') {
+    const targetTenant = tenantId || 'goldkraft';
+    const stmt = this.db.prepare('SELECT * FROM leads WHERE wa_id = ? AND tenant_id = ?');
+    const row = stmt.get(waId, targetTenant);
     return this.formatLead(row);
   }
 
@@ -66,6 +61,7 @@ class LeadRepository {
    * Atomically finds or initializes a lead record upon receiving an inbound message
    */
   getOrCreateLead(waId, displayName = null, inboundTimestamp = null, tenantId = 'goldkraft') {
+    const targetTenant = tenantId || 'goldkraft';
     const now = inboundTimestamp || new Date().toISOString();
 
     const stmt = this.db.prepare(`
@@ -74,8 +70,7 @@ class LeadRepository {
         first_contact_at, last_inbound_message_at, last_outbound_message_at,
         needs_human, handoff_reason, notes, metadata_json, created_at, updated_at
       ) VALUES (?, ?, ?, 'new', NULL, 'whatsapp_inbound', ?, ?, NULL, 0, NULL, NULL, NULL, ?, ?)
-      ON CONFLICT(wa_id) DO UPDATE SET
-        tenant_id = COALESCE(leads.tenant_id, excluded.tenant_id),
+      ON CONFLICT(tenant_id, wa_id) DO UPDATE SET
         display_name = COALESCE(excluded.display_name, leads.display_name),
         last_inbound_message_at = excluded.last_inbound_message_at,
         updated_at = excluded.updated_at
@@ -83,7 +78,7 @@ class LeadRepository {
 
     stmt.run(
       waId,
-      tenantId,
+      targetTenant,
       displayName || null,
       now,
       now,
@@ -91,13 +86,14 @@ class LeadRepository {
       now
     );
 
-    return this.findByWaId(waId);
+    return this.findByWaId(waId, targetTenant);
   }
 
   /**
-   * Updates fields of an existing lead
+   * Updates fields of an existing lead scoped to tenant
    */
-  updateLead(waId, updates = {}, tenantId = null) {
+  updateLead(waId, updates = {}, tenantId = 'goldkraft') {
+    const targetTenant = tenantId || 'goldkraft';
     const allowedFields = [
       'display_name',
       'status',
@@ -127,30 +123,27 @@ class LeadRepository {
       }
     }
 
-    if (fieldsToSet.length === 0) return this.findByWaId(waId, tenantId);
+    if (fieldsToSet.length === 0) return this.findByWaId(waId, targetTenant);
 
     fieldsToSet.push('updated_at = ?');
     values.push(new Date().toISOString());
     values.push(waId);
+    values.push(targetTenant);
 
-    let sql = `UPDATE leads SET ${fieldsToSet.join(', ')} WHERE wa_id = ?`;
-    if (tenantId) {
-      sql += ' AND tenant_id = ?';
-      values.push(tenantId);
-    }
-
+    const sql = `UPDATE leads SET ${fieldsToSet.join(', ')} WHERE wa_id = ? AND tenant_id = ?`;
     this.db.prepare(sql).run(...values);
-    return this.findByWaId(waId, tenantId);
+    return this.findByWaId(waId, targetTenant);
   }
 
   /**
    * Appends notes to a lead
    */
-  appendNotes(waId, newNote, tenantId = null) {
-    const lead = this.findByWaId(waId, tenantId);
+  appendNotes(waId, newNote, tenantId = 'goldkraft') {
+    const targetTenant = tenantId || 'goldkraft';
+    const lead = this.findByWaId(waId, targetTenant);
     if (!lead) return null;
     const updatedNotes = lead.notes ? `${lead.notes}\n[${new Date().toISOString()}] ${newNote}` : `[${new Date().toISOString()}] ${newNote}`;
-    return this.updateLead(waId, { notes: updatedNotes }, tenantId);
+    return this.updateLead(waId, { notes: updatedNotes }, targetTenant);
   }
 
   /**
@@ -167,6 +160,7 @@ class LeadRepository {
    * Saves a message record to conversation history atomically
    */
   saveMessage({ messageId, waId, direction, text, timestamp, rawPayload = null, tenantId = 'goldkraft' }) {
+    const targetTenant = tenantId || 'goldkraft';
     const stmt = this.db.prepare(`
       INSERT INTO messages (message_id, tenant_id, wa_id, direction, text, timestamp, raw_payload, created_at)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?)
@@ -175,7 +169,7 @@ class LeadRepository {
 
     stmt.run(
       messageId || null,
-      tenantId,
+      targetTenant,
       waId,
       direction,
       text,
@@ -185,27 +179,18 @@ class LeadRepository {
     );
 
     if (direction === 'out') {
-      this.updateLead(waId, { last_outbound_message_at: timestamp || new Date().toISOString() }, tenantId);
+      this.updateLead(waId, { last_outbound_message_at: timestamp || new Date().toISOString() }, targetTenant);
     }
   }
 
   /**
-   * Retrieves conversation history for a lead bounded by limit, optionally filtered by tenant
+   * Retrieves conversation history for a lead bounded by limit, strictly filtered by tenant
    */
-  getConversationHistory(waId, limit = 20, tenantId = null) {
-    let innerSql = 'SELECT * FROM messages WHERE wa_id = ?';
-    const params = [waId];
-
-    if (tenantId) {
-      innerSql += ' AND tenant_id = ?';
-      params.push(tenantId);
-    }
-
-    innerSql += ' ORDER BY id DESC LIMIT ?';
-    params.push(limit);
-
-    const sql = `SELECT * FROM (${innerSql}) ORDER BY id ASC`;
-    const rows = this.db.prepare(sql).all(...params);
+  getConversationHistory(waId, limit = 20, tenantId = 'goldkraft') {
+    const targetTenant = tenantId || 'goldkraft';
+    const innerSql = 'SELECT * FROM messages WHERE wa_id = ? AND tenant_id = ? ORDER BY timestamp DESC, id DESC LIMIT ?';
+    const sql = `SELECT * FROM (${innerSql}) ORDER BY timestamp ASC, id ASC`;
+    const rows = this.db.prepare(sql).all(waId, targetTenant, limit);
 
     return rows.map(r => ({
       id: r.id,

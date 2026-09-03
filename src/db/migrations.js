@@ -26,7 +26,19 @@ const migrations = [
           created_at TEXT NOT NULL,
           updated_at TEXT NOT NULL
         );
+      `);
 
+      // Ensure backward-compatibility if a pre-Phase-A table already existed
+      const existingCols = db.prepare('PRAGMA table_info(leads)').all().map(c => c.name);
+      if (!existingCols.includes('interest')) db.exec('ALTER TABLE leads ADD COLUMN interest TEXT;');
+      if (!existingCols.includes('source')) db.exec("ALTER TABLE leads ADD COLUMN source TEXT NOT NULL DEFAULT 'whatsapp_inbound';");
+      if (!existingCols.includes('last_outbound_message_at')) db.exec('ALTER TABLE leads ADD COLUMN last_outbound_message_at TEXT;');
+      if (!existingCols.includes('needs_human')) db.exec('ALTER TABLE leads ADD COLUMN needs_human INTEGER NOT NULL DEFAULT 0;');
+      if (!existingCols.includes('handoff_reason')) db.exec('ALTER TABLE leads ADD COLUMN handoff_reason TEXT;');
+      if (!existingCols.includes('notes')) db.exec('ALTER TABLE leads ADD COLUMN notes TEXT;');
+      if (!existingCols.includes('metadata_json')) db.exec('ALTER TABLE leads ADD COLUMN metadata_json TEXT;');
+
+      db.exec(`
         CREATE TABLE IF NOT EXISTS messages (
           id INTEGER PRIMARY KEY AUTOINCREMENT,
           message_id TEXT UNIQUE,
@@ -38,7 +50,12 @@ const migrations = [
           created_at TEXT NOT NULL,
           FOREIGN KEY (wa_id) REFERENCES leads(wa_id) ON DELETE CASCADE
         );
+      `);
 
+      const msgCols = db.prepare('PRAGMA table_info(messages)').all().map(c => c.name);
+      if (!msgCols.includes('raw_payload')) db.exec('ALTER TABLE messages ADD COLUMN raw_payload TEXT;');
+
+      db.exec(`
         CREATE INDEX IF NOT EXISTS idx_leads_status ON leads(status);
         CREATE INDEX IF NOT EXISTS idx_leads_needs_human ON leads(needs_human);
         CREATE INDEX IF NOT EXISTS idx_leads_last_inbound ON leads(last_inbound_message_at);
@@ -237,6 +254,125 @@ const migrations = [
         CREATE INDEX IF NOT EXISTS idx_users_api_key ON users(api_key_hash);
       `);
     }
+  },
+  {
+    id: 5,
+    name: '005_composite_tenant_leads_and_fk_safety',
+    up(db) {
+      db.exec('PRAGMA foreign_keys = OFF;');
+
+      // 1. Recreate leads with composite primary key (tenant_id, wa_id)
+      const leadCols = db.prepare('PRAGMA table_info(leads)').all().map(c => c.name);
+      if (!leadCols.includes('tenant_id')) db.exec("ALTER TABLE leads ADD COLUMN tenant_id TEXT NOT NULL DEFAULT 'goldkraft';");
+
+      db.exec(`
+        CREATE TABLE IF NOT EXISTS leads_v2 (
+          wa_id TEXT NOT NULL,
+          tenant_id TEXT NOT NULL DEFAULT 'goldkraft',
+          display_name TEXT,
+          status TEXT NOT NULL DEFAULT 'new' CHECK (status IN ('new', 'contacted', 'qualified', 'hot', 'cold', 'converted', 'lost')),
+          interest TEXT,
+          source TEXT NOT NULL DEFAULT 'whatsapp_inbound',
+          first_contact_at TEXT NOT NULL,
+          last_inbound_message_at TEXT NOT NULL,
+          last_outbound_message_at TEXT,
+          needs_human INTEGER NOT NULL DEFAULT 0,
+          handoff_reason TEXT,
+          notes TEXT,
+          metadata_json TEXT,
+          created_at TEXT NOT NULL,
+          updated_at TEXT NOT NULL,
+          PRIMARY KEY (tenant_id, wa_id),
+          FOREIGN KEY (tenant_id) REFERENCES tenants(id)
+        );
+
+        INSERT OR IGNORE INTO leads_v2 SELECT
+          wa_id,
+          COALESCE(tenant_id, 'goldkraft'),
+          display_name, status, interest, source,
+          first_contact_at, last_inbound_message_at, last_outbound_message_at,
+          needs_human, handoff_reason, notes, metadata_json, created_at, updated_at
+        FROM leads;
+
+        DROP TABLE leads;
+        ALTER TABLE leads_v2 RENAME TO leads;
+
+        CREATE INDEX IF NOT EXISTS idx_leads_tenant ON leads(tenant_id);
+        CREATE INDEX IF NOT EXISTS idx_leads_status ON leads(status);
+        CREATE INDEX IF NOT EXISTS idx_leads_needs_human ON leads(needs_human);
+        CREATE INDEX IF NOT EXISTS idx_leads_last_inbound ON leads(last_inbound_message_at);
+      `);
+
+      // 2. Recreate messages with composite foreign key (tenant_id, wa_id)
+      const msgCols = db.prepare('PRAGMA table_info(messages)').all().map(c => c.name);
+      if (!msgCols.includes('raw_payload')) db.exec('ALTER TABLE messages ADD COLUMN raw_payload TEXT;');
+      if (!msgCols.includes('tenant_id')) db.exec("ALTER TABLE messages ADD COLUMN tenant_id TEXT NOT NULL DEFAULT 'goldkraft';");
+
+      db.exec(`
+        CREATE TABLE IF NOT EXISTS messages_v2 (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          message_id TEXT UNIQUE,
+          tenant_id TEXT NOT NULL DEFAULT 'goldkraft',
+          wa_id TEXT NOT NULL,
+          direction TEXT NOT NULL CHECK (direction IN ('in', 'out')),
+          text TEXT NOT NULL,
+          timestamp TEXT NOT NULL,
+          raw_payload TEXT,
+          created_at TEXT NOT NULL,
+          FOREIGN KEY (tenant_id, wa_id) REFERENCES leads(tenant_id, wa_id) ON DELETE CASCADE,
+          FOREIGN KEY (tenant_id) REFERENCES tenants(id)
+        );
+
+        INSERT OR IGNORE INTO messages_v2 SELECT
+          id, message_id, COALESCE(tenant_id, 'goldkraft'), wa_id, direction, text, timestamp, raw_payload, created_at
+        FROM messages;
+
+        DROP TABLE messages;
+        ALTER TABLE messages_v2 RENAME TO messages;
+
+        CREATE INDEX IF NOT EXISTS idx_messages_tenant ON messages(tenant_id);
+        CREATE INDEX IF NOT EXISTS idx_messages_tenant_wa ON messages(tenant_id, wa_id);
+        CREATE INDEX IF NOT EXISTS idx_messages_message_id ON messages(message_id);
+      `);
+
+      // 3. Recreate handoffs with composite foreign key (tenant_id, wa_id)
+      const handoffCols = db.prepare('PRAGMA table_info(handoffs)').all().map(c => c.name);
+      if (!handoffCols.includes('tenant_id')) db.exec("ALTER TABLE handoffs ADD COLUMN tenant_id TEXT NOT NULL DEFAULT 'goldkraft';");
+
+      db.exec(`
+        CREATE TABLE IF NOT EXISTS handoffs_v2 (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          tenant_id TEXT NOT NULL DEFAULT 'goldkraft',
+          wa_id TEXT NOT NULL,
+          status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'assigned', 'resolved')),
+          reason TEXT NOT NULL CHECK (reason IN (
+            'ready_to_book', 'price_negotiation', 'custom_program',
+            'injury_question', 'human_requested', 'complaint',
+            'rate_limit_exceeded', 'ai_service_unavailable', 'ai_network_error',
+            'budget_exceeded', 'other'
+          )),
+          summary TEXT,
+          assigned_to TEXT,
+          resolved_at TEXT,
+          created_at TEXT NOT NULL,
+          updated_at TEXT NOT NULL,
+          FOREIGN KEY (tenant_id, wa_id) REFERENCES leads(tenant_id, wa_id) ON DELETE CASCADE,
+          FOREIGN KEY (tenant_id) REFERENCES tenants(id)
+        );
+
+        INSERT OR IGNORE INTO handoffs_v2 SELECT
+          id, COALESCE(tenant_id, 'goldkraft'), wa_id, status, reason, summary, assigned_to, resolved_at, created_at, updated_at
+        FROM handoffs;
+
+        DROP TABLE handoffs;
+        ALTER TABLE handoffs_v2 RENAME TO handoffs;
+
+        CREATE INDEX IF NOT EXISTS idx_handoffs_tenant_status ON handoffs(tenant_id, status);
+        CREATE INDEX IF NOT EXISTS idx_handoffs_tenant_wa ON handoffs(tenant_id, wa_id);
+
+        PRAGMA foreign_keys = ON;
+      `);
+    }
   }
 ];
 
@@ -262,7 +398,8 @@ function runMigrations(db) {
       logger.info(`Applying database migration: ${migration.name}`);
       const now = new Date().toISOString();
 
-      // Run migration inside transaction
+      // In SQLite, PRAGMA foreign_keys must be set outside of active transactions
+      db.exec('PRAGMA foreign_keys = OFF;');
       db.exec('BEGIN IMMEDIATE;');
       try {
         migration.up(db);
@@ -278,6 +415,10 @@ function runMigrations(db) {
         } catch (rbErr) {}
         logger.error(`Failed to apply migration ${migration.name}: ${err.message}`, { error: err.stack });
         throw err;
+      } finally {
+        try {
+          db.exec('PRAGMA foreign_keys = ON;');
+        } catch (fkErr) {}
       }
     }
   }

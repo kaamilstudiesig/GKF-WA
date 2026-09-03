@@ -259,8 +259,6 @@ const migrations = [
     id: 5,
     name: '005_composite_tenant_leads_and_fk_safety',
     up(db) {
-      db.exec('PRAGMA foreign_keys = OFF;');
-
       // 1. Recreate leads with composite primary key (tenant_id, wa_id)
       const leadCols = db.prepare('PRAGMA table_info(leads)').all().map(c => c.name);
       if (!leadCols.includes('tenant_id')) db.exec("ALTER TABLE leads ADD COLUMN tenant_id TEXT NOT NULL DEFAULT 'goldkraft';");
@@ -369,8 +367,6 @@ const migrations = [
 
         CREATE INDEX IF NOT EXISTS idx_handoffs_tenant_status ON handoffs(tenant_id, status);
         CREATE INDEX IF NOT EXISTS idx_handoffs_tenant_wa ON handoffs(tenant_id, wa_id);
-
-        PRAGMA foreign_keys = ON;
       `);
     }
   }
@@ -403,6 +399,13 @@ function runMigrations(db) {
       db.exec('BEGIN IMMEDIATE;');
       try {
         migration.up(db);
+
+        // Verify foreign key integrity before committing
+        const fkErrors = db.prepare('PRAGMA foreign_key_check;').all();
+        if (fkErrors && fkErrors.length > 0) {
+          throw new Error(`Migration ${migration.name} created foreign key violations: ${JSON.stringify(fkErrors)}`);
+        }
+
         db.prepare('INSERT INTO schema_migrations (name, applied_at) VALUES (?, ?)').run(
           migration.name,
           now

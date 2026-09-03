@@ -67,8 +67,9 @@ class WebhookWorker {
       const contacts = value.contacts || [];
       const messageId = msg.id || event.message_id;
       const fromNumber = msg.from;
-      const waId = (contacts[0]?.wa_id || fromNumber || '').replace(/[^0-9]/g, '');
-      const displayName = contacts[0]?.profile?.name || null;
+      const matchingContact = contacts.find(c => c.wa_id === fromNumber) || contacts[0];
+      const waId = (matchingContact?.wa_id || fromNumber || '').replace(/[^0-9]/g, '');
+      const displayName = matchingContact?.profile?.name || null;
       const timestamp = msg.timestamp
         ? new Date(parseInt(msg.timestamp, 10) * 1000).toISOString()
         : new Date().toISOString();
@@ -80,14 +81,25 @@ class WebhookWorker {
         return true;
       }
 
-      // Message Deduplication
+      // Message Deduplication & Crash Recovery
       if (leadRepository.hasMessageBeenProcessed(messageId)) {
-        logger.info('Duplicate message detected by worker. Skipping processing.', {
+        const hasOutboundReply = outboundRepository.db.prepare(
+          "SELECT 1 FROM outbound_messages WHERE dedup_key = ? LIMIT 1"
+        ).get(`reply:${messageId}`);
+
+        if (hasOutboundReply) {
+          logger.info('Duplicate message detected with reply already enqueued. Completing event.', {
+            message_id: messageId,
+            wa_id: waId
+          });
+          eventRepository.completeEvent(event.id);
+          return true;
+        }
+
+        logger.warn('Inbound message was previously recorded but outbound reply was missing (crash recovery). Resuming reply generation.', {
           message_id: messageId,
           wa_id: waId
         });
-        eventRepository.completeEvent(event.id);
-        return true;
       }
 
       // Atomic lead get or create

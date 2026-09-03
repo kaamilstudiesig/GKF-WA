@@ -93,7 +93,8 @@ class WebhookController {
           for (const msg of messages) {
             const messageId = msg.id;
             const fromNumber = msg.from;
-            const waId = (contacts[0]?.wa_id || fromNumber || '').replace(/[^0-9]/g, '');
+            const matchingContact = contacts.find(c => c.wa_id === fromNumber) || contacts[0];
+            const waId = (matchingContact?.wa_id || fromNumber || '').replace(/[^0-9]/g, '');
 
             if (!waId || !messageId) {
               logger.warn('Received message without valid wa_id or message_id', { msg });
@@ -115,7 +116,7 @@ class WebhookController {
               tenantId: tenant.id,
               messageId,
               eventType: 'message',
-              payload: { entry: [{ changes: [{ value: { ...value, messages: [msg] } }] }] }
+              payload: { entry: [{ changes: [{ value: { ...value, messages: [msg], contacts: matchingContact ? [matchingContact] : [] } }] }] }
             });
 
             if (!inserted) {

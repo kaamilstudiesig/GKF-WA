@@ -302,6 +302,12 @@ SECURITY AND FACTUAL ACCURACY DIRECTIVES:
 
           if (fnName === 'save_lead') {
             extractedUpdates = { ...extractedUpdates, ...args };
+            toolMessages.push({
+              role: 'tool',
+              tool_call_id: toolCall.id,
+              name: fnName,
+              content: JSON.stringify({ success: true, received: args })
+            });
           } else if (fnName === 'notify_staff') {
             extractedUpdates = {
               ...extractedUpdates,
@@ -309,14 +315,21 @@ SECURITY AND FACTUAL ACCURACY DIRECTIVES:
               handoff_reason: args.handoff_reason || 'human_requested',
               summary: args.summary
             };
+            toolMessages.push({
+              role: 'tool',
+              tool_call_id: toolCall.id,
+              name: fnName,
+              content: JSON.stringify({ success: true, handoff_scheduled: true })
+            });
+          } else {
+            logger.warn('Unknown AI tool call received:', { tool: fnName });
+            toolMessages.push({
+              role: 'tool',
+              tool_call_id: toolCall.id,
+              name: fnName || 'unknown',
+              content: JSON.stringify({ error: `Tool ${fnName} is not recognized or permitted.` })
+            });
           }
-
-          toolMessages.push({
-            role: 'tool',
-            tool_call_id: toolCall.id,
-            name: fnName,
-            content: JSON.stringify({ success: true })
-          });
         }
 
         // Second model call to obtain final customer reply after tool execution
@@ -369,26 +382,12 @@ SECURITY AND FACTUAL ACCURACY DIRECTIVES:
 
       // 3. Process Delimited JSON Fallback if present
       const { cleanText, leadUpdate } = this.parseDelimitedLeadUpdate(replyText);
-      replyText = cleanText;
-
       if (leadUpdate) {
         extractedUpdates = { ...extractedUpdates, ...leadUpdate };
       }
 
       const gymName = tenantConfig.gymName || gymConfig.gymName;
-
-      // Clean customer reply fallback
-      if (!replyText) {
-        if (extractedUpdates.needs_human) {
-          replyText = `Thanks for letting us know! One of our coaches from ${gymName} will get in touch with you right away to assist.`;
-        } else {
-          replyText = `Got it! How else can we help you crush your training goals at ${gymName}?`;
-        }
-      }
-
-      // Ensure customer never receives JSON or raw delimiter tags
-      replyText = replyText.replace(/<<<[\s\S]*?>>>/g, '').replace(/\{[\s\S]*?\}/g, '').trim() ||
-        `Thanks for connecting with ${gymName}! How can we help you with your training goals today?`;
+      replyText = this.cleanAndSanitizeReply(cleanText, gymName, extractedUpdates);
 
       // Apply extractions via AIPolicy
       this.applyLeadUpdates(lead, extractedUpdates, tenantId);
@@ -419,8 +418,11 @@ SECURITY AND FACTUAL ACCURACY DIRECTIVES:
         errorType: status ? `http_${status}` : error.code || 'network_error'
       });
 
-      // Attempt fallback model if configured and distinct from primary
-      if (this.fallbackModel && this.fallbackModel !== this.model) {
+      const gymName = tenantConfig.gymName || gymConfig.gymName;
+      const isTransientError = isNetworkError || status === 429 || (status >= 500 && status <= 599);
+
+      // Attempt fallback model ONLY if configured, distinct from primary, and error is transient
+      if (this.fallbackModel && this.fallbackModel !== this.model && isTransientError) {
         try {
           const fallbackStart = Date.now();
           const fallbackResponse = await axios.post(
@@ -464,8 +466,9 @@ SECURITY AND FACTUAL ACCURACY DIRECTIVES:
             const { cleanText, leadUpdate } = this.parseDelimitedLeadUpdate(fallbackReply);
             const extracted = leadUpdate || {};
             this.applyLeadUpdates(lead, extracted, tenantId);
+            const sanitized = this.cleanAndSanitizeReply(cleanText, gymName, extracted);
             return {
-              replyText: cleanText || gymConfig.fallbackMessages.systemError,
+              replyText: sanitized,
               extractedUpdates: extracted
             };
           }
@@ -495,14 +498,33 @@ SECURITY AND FACTUAL ACCURACY DIRECTIVES:
         handoff_reason: handoffReason
       }, tenantId);
 
+      const fallbackReply = tenantConfig.fallbackMessages?.systemError || gymConfig.fallbackMessages.systemError;
+
       return {
-        replyText: gymConfig.fallbackMessages.systemError,
+        replyText: fallbackReply,
         extractedUpdates: {
           needs_human: true,
           handoff_reason: handoffReason
         }
       };
     }
+  }
+
+  /**
+   * Centralized response sanitizer applied to all model outputs (primary and fallback)
+   */
+  cleanAndSanitizeReply(rawText, gymName, extractedUpdates = {}) {
+    let clean = (rawText || '').replace(/<<<[\s\S]*?>>>/g, '').replace(/\{[\s\S]*?\}/g, '').trim();
+
+    if (!clean) {
+      if (extractedUpdates.needs_human) {
+        clean = `Thanks for letting us know! One of our coaches from ${gymName} will get in touch with you right away to assist.`;
+      } else {
+        clean = `Thanks for connecting with ${gymName}! How can we help you with your training goals today?`;
+      }
+    }
+
+    return clean;
   }
 
   /**

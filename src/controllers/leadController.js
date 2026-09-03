@@ -1,6 +1,7 @@
 const leadRepository = require('../db/leadRepository');
 const handoffRepository = require('../db/handoffRepository');
 const auditService = require('../services/auditService');
+const { runTransaction } = require('../db/database');
 const logger = require('../utils/logger');
 
 const ALLOWED_STATUSES = ['new', 'contacted', 'qualified', 'hot', 'cold', 'converted', 'lost'];
@@ -167,37 +168,40 @@ class LeadController {
         safeUpdates.notes = updates.notes;
       }
 
-      if (updates.needs_human !== undefined) {
-        safeUpdates.needs_human = Boolean(updates.needs_human);
-        if (updates.needs_human && updates.handoff_reason) {
-          safeUpdates.handoff_reason = updates.handoff_reason;
-          handoffRepository.recordHandoff({
-            tenantId,
-            waId: cleanWaId,
-            reason: updates.handoff_reason,
-            summary: updates.summary || 'Staff manual handoff trigger'
-          });
-        } else if (!updates.needs_human) {
-          safeUpdates.handoff_reason = null;
-          handoffRepository.resolveHandoff(tenantId, cleanWaId);
+      let updatedLead;
+      runTransaction(() => {
+        if (updates.needs_human !== undefined) {
+          safeUpdates.needs_human = Boolean(updates.needs_human);
+          if (updates.needs_human && updates.handoff_reason) {
+            safeUpdates.handoff_reason = updates.handoff_reason;
+            handoffRepository.recordHandoff({
+              tenantId,
+              waId: cleanWaId,
+              reason: updates.handoff_reason,
+              summary: updates.summary || 'Staff manual handoff trigger'
+            });
+          } else if (!updates.needs_human) {
+            safeUpdates.handoff_reason = null;
+            handoffRepository.resolveHandoff(tenantId, cleanWaId);
+          }
         }
-      }
 
-      const updatedLead = leadRepository.updateLead(cleanWaId, safeUpdates, tenantId);
+        updatedLead = leadRepository.updateLead(cleanWaId, safeUpdates, tenantId);
 
-      // Record audit log for staff mutation
-      auditService.recordAudit({
-        tenantId,
-        actorId: req.user?.id || 'staff',
-        actorRole: req.userRole || 'staff',
-        action: 'lead_update',
-        targetType: 'lead',
-        targetId: cleanWaId,
-        changes: {
-          before: { status: existingLead.status, needs_human: existingLead.needs_human, notes: existingLead.notes },
-          after: safeUpdates
-        },
-        ipAddress: req.ip
+        // Record audit log for staff mutation atomically
+        auditService.recordAudit({
+          tenantId,
+          actorId: req.user?.id || 'staff',
+          actorRole: req.userRole || 'staff',
+          action: 'lead_update',
+          targetType: 'lead',
+          targetId: cleanWaId,
+          changes: {
+            before: { status: existingLead.status, needs_human: existingLead.needs_human, notes: existingLead.notes },
+            after: safeUpdates
+          },
+          ipAddress: req.ip
+        });
       });
 
       return res.status(200).json({

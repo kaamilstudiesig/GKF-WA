@@ -177,6 +177,22 @@ class EventRepository {
     const stmt = this.db.prepare('SELECT 1 FROM webhook_events WHERE event_key = ? LIMIT 1');
     return Boolean(stmt.get(eventKey));
   }
+
+  /**
+   * Resets stale processing events back to pending for worker recovery
+   */
+  recoverStaleLocks(staleSeconds = 60) {
+    const cutoff = new Date(Date.now() - staleSeconds * 1000).toISOString();
+    const stmt = this.db.prepare(`
+      UPDATE webhook_events
+      SET status = 'pending',
+          locked_at = NULL,
+          updated_at = datetime('now')
+      WHERE status = 'processing' AND locked_at <= ?
+    `);
+    const result = stmt.run(cutoff);
+    return result.changes;
+  }
 }
 
 module.exports = new EventRepository();

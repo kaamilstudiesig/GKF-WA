@@ -102,7 +102,8 @@ class AIPolicy {
   checkMedicalInjurySafety(text = '') {
     const textLower = text.toLowerCase();
     const medicalKeywords = [
-      'slipped disc', 'slip disc', 'herniated disc', 'sciatica',
+      'slipped disc', 'slip disc', 'herniated disc', 'disc herniation', 'sciatica',
+      'back pain', 'spinal', 'spine',
       'torn acl', 'acl tear', 'meniscus', 'ligament tear',
       'rotator cuff', 'fracture', 'broken bone',
       'heart condition', 'cardiac', 'blood pressure', 'hypertension',

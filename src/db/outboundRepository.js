@@ -160,6 +160,22 @@ class OutboundRepository {
     const stmt = this.db.prepare('SELECT * FROM outbound_messages WHERE dedup_key = ? LIMIT 1');
     return stmt.get(dedupKey);
   }
+
+  /**
+   * Resets stale sending messages back to pending for worker recovery
+   */
+  recoverStaleLocks(staleSeconds = 60) {
+    const cutoff = new Date(Date.now() - staleSeconds * 1000).toISOString();
+    const stmt = this.db.prepare(`
+      UPDATE outbound_messages
+      SET status = 'pending',
+          locked_at = NULL,
+          updated_at = datetime('now')
+      WHERE status = 'sending' AND locked_at <= ?
+    `);
+    const result = stmt.run(cutoff);
+    return result.changes;
+  }
 }
 
 module.exports = new OutboundRepository();

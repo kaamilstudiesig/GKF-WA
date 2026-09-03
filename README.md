@@ -98,12 +98,13 @@ The system uses an ordered, tracked migration runner (`src/db/migrations.js`) st
 | 2 | `002_multi_tenancy` | `tenants` table, `tenant_id` columns, and default `goldkraft` tenant seeding |
 | 3 | `003_durable_queues` | `webhook_events` and `outbound_messages` queue tables with indexes |
 | 4 | `004_ai_handoffs_and_auth` | `ai_usage`, `handoffs`, `audit_logs`, and `users` tables |
+| 5 | `005_composite_tenant_leads_and_fk_safety` | Upgrades `leads` to composite `(tenant_id, wa_id)` primary key and adds composite foreign keys on `messages` and `handoffs` |
 
 To run migrations manually:
 ```bash
 npm run migrate
 ```
-Migrations run automatically on application startup.
+Migrations run automatically on application startup with atomic foreign-key safety verification.
 
 ---
 
@@ -123,6 +124,7 @@ Migrations run automatically on application startup.
 | `OPENROUTER_MODEL` | No | Primary LLM model | `google/gemini-2.5-flash` |
 | `OPENROUTER_FALLBACK_MODEL` | No | Secondary LLM model for fallback | `google/gemini-2.5-flash-lite` |
 | `DATABASE_PATH` | No | Absolute or relative path to SQLite database file | `./data/goldkraft_leads.db` |
+| `SENTRY_DSN` | No | Sentry Data Source Name for error and performance monitoring | — |
 
 ---
 
@@ -131,7 +133,7 @@ Migrations run automatically on application startup.
 ### Public Endpoints
 - `GET /` — Service overview and gym facility metadata
 - `GET /health` — Liveness check (HTTP 200, uptime)
-- `GET /health/ready` — Readiness check (HTTP 200 if SQLite connected; HTTP 503 if disconnected)
+- `GET /health/ready` — Readiness check (HTTP 200 if SQLite connected; HTTP 503 if disconnected or shutting down)
 - `GET /webhook` — Meta Webhook verification handshake (`hub.mode`, `hub.verify_token`, `hub.challenge`)
 - `POST /webhook` — Inbound WhatsApp event ingestion (HMAC-SHA256 signature required)
 
@@ -139,11 +141,12 @@ Migrations run automatically on application startup.
 *Requires `Authorization: Bearer <API_KEY>` or `x-api-key: <API_KEY>`*
 - `GET /leads` — List leads with filtering (`status`, `needs_human`), sorting (`recency`, `oldest`, `needs_human_first`), and pagination (`limit`, `offset`)
 - `GET /leads/:wa_id` — Dossier for lead including 24-hr customer service window and conversation history
-- `GET /dashboard/summary` — Aggregated CRM metrics (leads breakdown, AI spend, pending queue items) scoped to authenticated tenant
+- `PATCH /leads/:wa_id` — Update lead properties (`status`, `interest`, `display_name`, `notes`, `needs_human`). Allows staff to set `converted` status. Atomically logged to `audit_logs`.
+- `GET /dashboard/summary` — Complete observability breakdown (leads by stage, handoff status, AI usage/costs/latency, inbound/outbound queue lifecycle)
 
 ---
 
-## Operational & Deployment Guidelines
+## Operational & Disaster Recovery Runbook
 
 ### Running Locally
 ```bash
@@ -153,21 +156,66 @@ cp .env.example .env
 npm run dev
 ```
 
-### Running Tests
+### Running Tests & Coverage
 ```bash
 npm test
+# Run with coverage:
+node --test --experimental-test-coverage test/**/*.test.js
 ```
 
-### SQLite Backup Strategy
-Because SQLite operates in WAL (Write-Ahead Logging) mode, naive file copy while the server is writing can result in corrupted snapshot files.
-To safely back up the database in production:
+### SQLite Production Backup Procedure
+Because SQLite runs in WAL (Write-Ahead Logging) mode, file copying while the engine is writing can result in corrupt snapshots.
+The backend includes a production-grade atomic backup command:
 
 ```bash
-# Recommended: Online safe SQLite backup
-sqlite3 ./data/goldkraft_leads.db ".backup './backups/goldkraft_leads_$(date +%Y%m%d_%H%M%S).db'"
+npm run backup
 ```
-Set up a daily cron job to run this command and store snapshots in secure offsite storage (e.g. AWS S3 or GCP Cloud Storage).
+**Mechanism:**
+1. Uses SQLite's atomic `VACUUM INTO '<backup-file>'` to create a clean, consistent snapshot without locking live writers.
+2. Immediately executes `PRAGMA integrity_check;` on the backup file to guarantee zero corruption.
+3. Automatically prunes snapshots older than 14 retention cycles.
+4. Outputs execution stats (duration, file size in MB, integrity status).
 
-### Known Scaling Constraints
-- **SQLite Concurrency:** SQLite supports unlimited concurrent readers but serialized single-writer access. With WAL mode and `PRAGMA busy_timeout = 5000;`, SQLite comfortably handles tens of thousands of WhatsApp messages per day for single-node deployments.
-- **Horizontal Scaling:** Do not run multiple independent servers against the same local SQLite file across different machines. If horizontal scaling across multiple container instances is required in the future, migrate the repository layer to PostgreSQL. The data access layer is cleanly isolated to make this migration seamless.
+**Restore Procedure:**
+In the event of hardware or data corruption:
+```bash
+# 1. Stop the application service
+systemctl stop gkf-wa
+
+# 2. Verify backup integrity
+node -e "const { DatabaseSync } = require('node:sqlite'); const db = new DatabaseSync('data/backups/<backup-file>.db'); console.log(db.prepare('PRAGMA integrity_check;').get());"
+
+# 3. Replace live database with verified backup
+cp data/backups/<backup-file>.db data/goldkraft_leads.db
+rm -f data/goldkraft_leads.db-wal data/goldkraft_leads.db-shm
+
+# 4. Restart application
+systemctl start gkf-wa
+```
+
+### Recovering Dead-Lettered Queue Jobs
+If external APIs (Meta, OpenRouter) suffer extended outages or permanent authentication errors, failed jobs enter `dead_letter` status.
+To inspect and re-enqueue dead-lettered events:
+```sql
+-- Inspect failed webhook events
+SELECT id, event_key, last_error, attempts, updated_at FROM webhook_events WHERE status = 'dead_letter';
+
+-- Reset dead-lettered webhook events back to pending
+UPDATE webhook_events SET status = 'pending', attempts = 0, available_at = datetime('now') WHERE status = 'dead_letter';
+
+-- Reset dead-lettered outbound messages back to pending
+UPDATE outbound_messages SET status = 'pending', attempts = 0, available_at = datetime('now') WHERE status = 'dead_letter';
+```
+
+---
+
+## System Architecture Guarantees & Boundaries
+
+1. **Delivery Guarantee:** Resilient **at-least-once** external delivery. Meta WhatsApp Cloud API does not support idempotency keys on outbound `/messages`. In the event of a network timeout after Meta receives a message but before the backend receives an HTTP response, retries could generate duplicate delivery. Deduplication is maintained internally via `dedup_key` in `outbound_messages`.
+2. **AI Budget Enforcement:** AI monthly token and request limits are enforced as a non-blocking soft guardrail. Under rapid concurrent requests, slight over-budget allowances can occur before the guardrail clamps further LLM invocations and routes to deterministic fallbacks.
+3. **Single-Process Worker Model:** Inbound and outbound worker loops run in-process using Node.js event-driven polling and atomic SQLite conditional updates. Do not attach multiple container nodes to the same SQLite database file over networked storage (NFS/SMB). Scale vertically or migrate to PostgreSQL when horizontal multi-node scaling is required.
+4. **Student Developer Pack Tooling:**
+   - **GitHub Actions & Codecov:** Automated CI runs test suite across Node 22 & 24 on every PR and main commit with coverage tracking.
+   - **Sentry:** Centralized error/crash tracking with deep redaction of secrets, tokens, and phone numbers.
+   - **1Password:** Secret management runbook for developers; production secrets injected via environment variables.
+   - **Datadog / Azure / Heroku:** Intentionally evaluated and kept optional to avoid premature architecture bloat and runtime cost.

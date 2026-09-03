@@ -1,0 +1,233 @@
+const eventRepository = require('../db/eventRepository');
+const outboundRepository = require('../db/outboundRepository');
+const leadRepository = require('../db/leadRepository');
+const tenantService = require('../services/tenantService');
+const aiPolicy = require('../services/aiPolicy');
+const deterministicRouter = require('../services/deterministicRouter');
+const aiService = require('../services/aiService');
+const outboundWorker = require('./outboundWorker');
+const gymConfig = require('../config/gymConfig');
+const logger = require('../utils/logger');
+
+class WebhookWorker {
+  constructor() {
+    this.timer = null;
+    this.isRunning = false;
+    this.isProcessing = false;
+  }
+
+  /**
+   * Processes a single pending inbound webhook event.
+   * @param {object} options - Options (e.g. syncOutbound for tests)
+   * @returns {Promise<boolean>} True if an event was processed, false if queue was empty
+   */
+  async processNext(options = {}) {
+    const event = eventRepository.getNextPendingEvent(60);
+    if (!event) return false;
+
+    logger.debug('Processing inbound webhook event job', {
+      id: event.id,
+      event_key: event.event_key,
+      event_type: event.event_type,
+      attempts: event.attempts
+    });
+
+    try {
+      const payload = event.payload;
+      const entry = payload?.entry?.[0] || {};
+      const change = entry.changes?.[0] || {};
+      const value = change.value || {};
+      const phoneNumberId = value.metadata?.phone_number_id || null;
+      const tenant = tenantService.resolveTenantByPhoneNumberId(phoneNumberId);
+
+      // 1. Handle Status Receipts
+      if (event.event_type === 'status' || (value.statuses && value.statuses.length > 0)) {
+        const statuses = value.statuses || [event.payload];
+        for (const statusObj of statuses) {
+          logger.debug('Acknowledged message status receipt', {
+            message_id: statusObj.id,
+            status: statusObj.status,
+            recipient_id: statusObj.recipient_id,
+            tenant_id: tenant.id
+          });
+        }
+        eventRepository.completeEvent(event.id);
+        return true;
+      }
+
+      // 2. Handle Inbound Messages
+      const msg = value.messages?.[0] || payload;
+      const contacts = value.contacts || [];
+      const messageId = msg.id || event.message_id;
+      const fromNumber = msg.from;
+      const waId = (contacts[0]?.wa_id || fromNumber || '').replace(/[^0-9]/g, '');
+      const displayName = contacts[0]?.profile?.name || null;
+      const timestamp = msg.timestamp
+        ? new Date(parseInt(msg.timestamp, 10) * 1000).toISOString()
+        : new Date().toISOString();
+      const msgType = msg.type || 'text';
+
+      if (!waId || !messageId) {
+        logger.warn('Event missing valid wa_id or message_id, marking permanently failed', { event_id: event.id });
+        eventRepository.failPermanent(event.id, 'Missing wa_id or message_id');
+        return true;
+      }
+
+      // Message Deduplication
+      if (leadRepository.hasMessageBeenProcessed(messageId)) {
+        logger.info('Duplicate message detected by worker. Skipping processing.', {
+          message_id: messageId,
+          wa_id: waId
+        });
+        eventRepository.completeEvent(event.id);
+        return true;
+      }
+
+      // Atomic lead get or create
+      let lead = leadRepository.getOrCreateLead(waId, displayName, timestamp, tenant.id);
+
+      let replyText = null;
+
+      if (msgType === 'text') {
+        const incomingText = msg.text?.body || '';
+
+        // Persist inbound message atomically
+        leadRepository.saveMessage({
+          messageId,
+          waId,
+          direction: 'in',
+          text: incomingText,
+          timestamp,
+          rawPayload: msg,
+          tenantId: tenant.id
+        });
+
+        // Step 1: Medical / Injury Safety Filter
+        const medicalCheck = aiPolicy.checkMedicalInjurySafety(incomingText);
+        if (medicalCheck.isMedicalQuery) {
+          replyText = medicalCheck.disclaimerText;
+          aiService.applyLeadUpdates(lead, {
+            needs_human: true,
+            handoff_reason: medicalCheck.handoffReason,
+            summary: 'Lead asked injury/medical question.'
+          }, tenant.id);
+        } else {
+          // Step 2: Deterministic Router Check (Cost Savings)
+          const routeResult = deterministicRouter.routeMessage(incomingText, tenant.configuration, lead);
+          if (routeResult.matched) {
+            replyText = routeResult.replyText;
+            if (routeResult.updates) {
+              aiService.applyLeadUpdates(lead, routeResult.updates, tenant.id);
+            }
+          } else {
+            // Step 3: AI Service with Tool Loop & Policy
+            const aiResult = await aiService.processInboundMessage(lead, incomingText, tenant.configuration, tenant.id);
+            replyText = aiResult.replyText;
+          }
+        }
+      } else {
+        // Non-text media message handling
+        logger.info('Worker processing non-text media message', { type: msgType, wa_id: waId });
+
+        leadRepository.saveMessage({
+          messageId,
+          waId,
+          direction: 'in',
+          text: `[Received ${msgType.toUpperCase()} message]`,
+          timestamp,
+          rawPayload: msg,
+          tenantId: tenant.id
+        });
+
+        replyText = tenant.configuration?.fallbackMessages?.nonTextMessage || gymConfig.fallbackMessages.nonTextMessage;
+      }
+
+      // Enqueue outbound reply in durable queue
+      if (replyText) {
+        outboundRepository.enqueueOutbound({
+          dedupKey: `reply:${messageId}`,
+          tenantId: tenant.id,
+          waId,
+          text: replyText,
+          metadata: { in_reply_to: messageId }
+        });
+
+        // In test mode or when requested synchronously, immediately send the outbound message
+        if (options.syncOutbound || process.env.NODE_ENV === 'test') {
+          await outboundWorker.processNext();
+        }
+      }
+
+      eventRepository.completeEvent(event.id);
+      logger.info('Inbound webhook event completed successfully', {
+        event_id: event.id,
+        message_id: messageId,
+        wa_id: waId
+      });
+      return true;
+    } catch (error) {
+      logger.error('Worker failed to process webhook event:', {
+        event_id: event.id,
+        error: error.message,
+        stack: error.stack
+      });
+      eventRepository.failEvent(event.id, error.message);
+      return true;
+    }
+  }
+
+  /**
+   * Drains all pending webhook events sequentially
+   */
+  async drain(maxCycles = 50, options = {}) {
+    let count = 0;
+    while (count < maxCycles) {
+      const processed = await this.processNext(options);
+      if (!processed) break;
+      count++;
+    }
+    return count;
+  }
+
+  /**
+   * Starts worker background polling loop
+   */
+  start(intervalMs = 1000) {
+    if (this.isRunning) return;
+    this.isRunning = true;
+
+    this.timer = setInterval(async () => {
+      if (this.isProcessing || !this.isRunning) return;
+      this.isProcessing = true;
+      try {
+        await this.processNext();
+      } catch (err) {
+        logger.error('Webhook worker polling error:', { error: err.message });
+      } finally {
+        this.isProcessing = false;
+      }
+    }, intervalMs);
+
+    logger.info('Inbound Webhook worker started', { intervalMs });
+  }
+
+  /**
+   * Gracefully stops the worker
+   */
+  async stop() {
+    this.isRunning = false;
+    if (this.timer) {
+      clearInterval(this.timer);
+      this.timer = null;
+    }
+    let waits = 0;
+    while (this.isProcessing && waits < 10) {
+      await new Promise(res => setTimeout(res, 100));
+      waits++;
+    }
+    logger.info('Inbound Webhook worker stopped.');
+  }
+}
+
+module.exports = new WebhookWorker();
+module.exports.WebhookWorker = WebhookWorker;

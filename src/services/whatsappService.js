@@ -49,6 +49,7 @@ class WhatsAppService {
       
       leadRepository.saveMessage({
         messageId: simulatedMsgId,
+        tenantId: options.tenantId || 'goldkraft',
         waId: cleanWaId,
         direction: 'out',
         text: textBody,

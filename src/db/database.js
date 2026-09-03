@@ -35,11 +35,15 @@ function createDatabaseConnection(dbPath) {
 }
 
 function getDatabase(customPath = null) {
-  if (dbInstance && !customPath) {
-    return dbInstance;
+  const dbPath = customPath || env.databasePath;
+
+  if (dbInstance) {
+    if (!customPath || dbInstance._dbPath === dbPath) {
+      return dbInstance;
+    }
+    closeDatabase();
   }
 
-  const dbPath = customPath || env.databasePath;
   const dbDir = path.dirname(dbPath);
 
   if (!fs.existsSync(dbDir)) {
@@ -47,13 +51,12 @@ function getDatabase(customPath = null) {
   }
 
   const db = createDatabaseConnection(dbPath);
+  db._dbPath = dbPath;
 
   // Initialize and run migrations
   initSchema(db);
 
-  if (!customPath) {
-    dbInstance = db;
-  }
+  dbInstance = db;
   return db;
 }
 

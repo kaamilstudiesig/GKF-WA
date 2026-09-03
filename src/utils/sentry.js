@@ -5,10 +5,21 @@ const logger = require('./logger');
 let isInitialized = false;
 
 /**
- * Sanitizes an operational message string or exception message before sending to Sentry:
+ * Sanitizes an operational message string or exception message before sending to Sentry.
+ * 
+ * IMPORTANT ARCHITECTURAL NOTE ON PRIVACY & REDACTION:
+ * The free-text matching and keyword-based customer content detection in this function is
+ * strictly a best-effort defense-in-depth fallback. It is intentionally NOT designed or
+ * relied upon as a complete or perfect customer conversational content classifier.
+ * 
+ * The primary privacy and PII protection mechanism in this backend is structured context
+ * sanitization implemented via sanitizeSentryValue(). All customer-supplied text and
+ * sensitive metadata must be passed via structured context objects rather than interpolated
+ * into unstructured exception messages or top-level message strings.
+ *
  * - Redacts secrets, tokens, API keys, passwords, bearer tokens
  * - Masks customer telephone numbers (e.g. 91*****1234)
- * - Detects and redacts raw conversational customer messages
+ * - Detects common conversational patterns as a best-effort safety net
  * - Preserves genuine operational / system event messages
  */
 function sanitizeSentryMessage(rawMsg) {

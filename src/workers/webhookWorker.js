@@ -203,7 +203,7 @@ class WebhookWorker {
   }
 
   /**
-   * Drains all pending webhook events sequentially
+   * Drains all pending webhook events sequentially up to maxCycles
    */
   async drain(maxCycles = 50, options = {}) {
     let count = 0;
@@ -216,9 +216,12 @@ class WebhookWorker {
   }
 
   /**
-   * Starts worker background polling loop
+   * Starts worker background polling loop.
+   * Drains up to maxDrainCycles items per tick to handle bursts and backlog efficiently.
+   * @param {number} intervalMs - Polling interval in milliseconds (default: 1000ms)
+   * @param {number} maxDrainCycles - Maximum queued items to process per tick (default: 25)
    */
-  start(intervalMs = 1000) {
+  start(intervalMs = 1000, maxDrainCycles = 25) {
     if (this.isRunning) return;
     this.isRunning = true;
 
@@ -226,7 +229,7 @@ class WebhookWorker {
       if (this.isProcessing || !this.isRunning) return;
       this.isProcessing = true;
       try {
-        await this.processNext();
+        await this.drain(maxDrainCycles);
       } catch (err) {
         logger.error('Webhook worker polling error:', { error: err.message });
       } finally {
@@ -234,7 +237,7 @@ class WebhookWorker {
       }
     }, intervalMs);
 
-    logger.info('Inbound Webhook worker started', { intervalMs });
+    logger.info('Inbound Webhook worker started', { intervalMs, maxDrainCycles });
   }
 
   /**

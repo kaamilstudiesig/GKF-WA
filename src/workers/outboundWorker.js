@@ -33,9 +33,10 @@ class OutboundWorker {
 
   /**
    * Processes a single pending outbound message.
+   * @param {object} options - Optional parameters
    * @returns {Promise<boolean>} True if a message was processed, false if queue was empty
    */
-  async processNext() {
+  async processNext(options = {}) {
     const message = outboundRepository.getNextPendingMessage(60);
     if (!message) return false;
 
@@ -48,7 +49,8 @@ class OutboundWorker {
     try {
       const result = await whatsappService.sendTextMessage(message.wa_id, message.text, {
         tenantId: message.tenant_id,
-        skipQueue: true // prevents re-enqueueing if whatsappService is called
+        skipQueue: true, // prevents re-enqueueing if whatsappService is called
+        forceLiveNetwork: options.forceLiveNetwork
       });
 
       const providerMsgId = result?.messages?.[0]?.id || null;
@@ -85,12 +87,12 @@ class OutboundWorker {
   }
 
   /**
-   * Drains all currently available pending outbound messages (useful for tests and shutdown)
+   * Drains all currently available pending outbound messages up to maxCycles.
    */
-  async drain(maxCycles = 50) {
+  async drain(maxCycles = 50, options = {}) {
     let count = 0;
     while (count < maxCycles) {
-      const processed = await this.processNext();
+      const processed = await this.processNext(options);
       if (!processed) break;
       count++;
     }
@@ -98,9 +100,12 @@ class OutboundWorker {
   }
 
   /**
-   * Starts worker background polling loop
+   * Starts worker background polling loop.
+   * Drains up to maxDrainCycles items per tick to handle bursts and backlog efficiently.
+   * @param {number} intervalMs - Polling interval in milliseconds (default: 1000ms)
+   * @param {number} maxDrainCycles - Maximum queued items to process per tick (default: 25)
    */
-  start(intervalMs = 1000) {
+  start(intervalMs = 1000, maxDrainCycles = 25) {
     if (this.isRunning) return;
     this.isRunning = true;
 
@@ -108,7 +113,7 @@ class OutboundWorker {
       if (this.isProcessing || !this.isRunning) return;
       this.isProcessing = true;
       try {
-        await this.processNext();
+        await this.drain(maxDrainCycles);
       } catch (err) {
         logger.error('Outbound worker polling loop error:', { error: err.message });
       } finally {
@@ -116,7 +121,7 @@ class OutboundWorker {
       }
     }, intervalMs);
 
-    logger.info('Outbound WhatsApp worker started', { intervalMs });
+    logger.info('Outbound WhatsApp worker started', { intervalMs, maxDrainCycles });
   }
 
   /**

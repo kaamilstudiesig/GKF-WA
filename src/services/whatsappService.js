@@ -1,19 +1,25 @@
 const axios = require('axios');
 const env = require('../config/env');
 const leadRepository = require('../db/leadRepository');
+const tenantService = require('./tenantService');
 const logger = require('../utils/logger');
 const { captureException } = require('../utils/sentry');
 
 class WhatsAppService {
   constructor() {
     this.version = env.metaGraphApiVersion;
+    this._forceLiveNetwork = false;
   }
 
   /**
-   * Sends a plain text message to a WhatsApp user via Meta Cloud API
+   * Sends a plain text message to a WhatsApp user via Meta Cloud API.
+   * Multi-tenant aware: resolves tenant by options.tenantId and uses tenant's
+   * whatsapp_phone_number_id when available, falling back to global env.metaPhoneNumberId.
+   * Fails closed if an explicit tenantId cannot be resolved.
+   * 
    * @param {string} toWaId - Recipient phone number without '+'
    * @param {string} textBody - Message text content
-   * @param {object} options - Optional parameters
+   * @param {object} options - Optional parameters (tenantId, previewUrl, forceLiveNetwork)
    * @returns {Promise<object>} API response or simulated payload
    */
   async sendTextMessage(toWaId, textBody, options = {}) {
@@ -22,7 +28,25 @@ class WhatsAppService {
     }
 
     const cleanWaId = toWaId.replace(/[^0-9]/g, '');
-    const url = `https://graph.facebook.com/${this.version}/${env.metaPhoneNumberId}/messages`;
+    const tenantId = options.tenantId || 'goldkraft';
+    let phoneNumberId = env.metaPhoneNumberId;
+
+    // Resolve tenant-specific WhatsApp Phone Number ID
+    if (options.tenantId) {
+      const tenant = tenantService.getTenantById(options.tenantId);
+      if (!tenant) {
+        throw new Error(`Cannot send outbound WhatsApp message: Unknown tenant ID '${options.tenantId}'.`);
+      }
+      if (tenant.whatsapp_phone_number_id) {
+        phoneNumberId = tenant.whatsapp_phone_number_id;
+      } else if (!phoneNumberId) {
+        throw new Error(`Cannot send outbound WhatsApp message: Tenant '${options.tenantId}' has no WhatsApp phone number configured and no default fallback exists.`);
+      }
+    } else if (!phoneNumberId) {
+      throw new Error('Cannot send outbound WhatsApp message: No WhatsApp phone number ID configured.');
+    }
+
+    const url = `https://graph.facebook.com/${this.version}/${phoneNumberId}/messages`;
 
     const payload = {
       messaging_product: 'whatsapp',
@@ -37,20 +61,26 @@ class WhatsAppService {
 
     logger.info('Dispatching outbound WhatsApp text message', {
       to: cleanWaId,
-      body: textBody
+      body: textBody,
+      tenant_id: tenantId,
+      phone_number_id: phoneNumberId
     });
 
-    // In local development or if token is not configured, log and record locally
-    if (!env.metaAccessToken || !env.metaPhoneNumberId || process.env.NODE_ENV === 'test') {
+    // Determine simulation vs live Meta network send
+    const forceLive = Boolean(options.forceLiveNetwork || this._forceLiveNetwork);
+    const shouldSimulate = !forceLive && (!env.metaAccessToken || !phoneNumberId || process.env.NODE_ENV === 'test');
+
+    if (shouldSimulate) {
       const simulatedMsgId = `wamid.simulated_${Date.now()}_${Math.random().toString(36).substring(2, 8)}`;
       logger.debug('Simulated outbound send (development/test mode)', {
         message_id: simulatedMsgId,
-        to: cleanWaId
+        to: cleanWaId,
+        tenant_id: tenantId
       });
       
       leadRepository.saveMessage({
         messageId: simulatedMsgId,
-        tenantId: options.tenantId || 'goldkraft',
+        tenantId,
         waId: cleanWaId,
         direction: 'out',
         text: textBody,
@@ -68,7 +98,7 @@ class WhatsAppService {
     try {
       const response = await axios.post(url, payload, {
         headers: {
-          'Authorization': `Bearer ${env.metaAccessToken}`,
+          'Authorization': `Bearer ${env.metaAccessToken || 'test_token'}`,
           'Content-Type': 'application/json'
         },
         timeout: 10000
@@ -77,11 +107,14 @@ class WhatsAppService {
       const messageId = response.data?.messages?.[0]?.id || null;
       logger.info('Delivered message to Meta Cloud API', {
         message_id: messageId,
-        to: cleanWaId
+        to: cleanWaId,
+        tenant_id: tenantId,
+        phone_number_id: phoneNumberId
       });
 
       leadRepository.saveMessage({
         messageId,
+        tenantId,
         waId: cleanWaId,
         direction: 'out',
         text: textBody,
@@ -95,17 +128,19 @@ class WhatsAppService {
       captureException(error, {
         component: 'whatsapp_outbound',
         recipient: cleanWaId,
-        tenantId: options.tenantId
+        tenantId
       });
 
       logger.error('Failed to send outbound WhatsApp message:', {
         to: cleanWaId,
+        tenant_id: tenantId,
         error: errorData
       });
       
-      // Still log the attempted outbound message to record system action
+      // Explicitly preserve tenant identity when logging attempted outbound failure
       leadRepository.saveMessage({
         messageId: `failed_${Date.now()}`,
+        tenantId,
         waId: cleanWaId,
         direction: 'out',
         text: `[FAILED SEND] ${textBody}`,

@@ -159,4 +159,89 @@ describe('Durable Queues & Resilient Workers', () => {
       assert.ok(row.provider_message_id.startsWith('wamid.simulated_'));
     });
   });
+
+  describe('High-Throughput Batch Draining & Worker Lifecycle', () => {
+    test('outbound worker drains a burst of 20 queued messages within roughly one polling tick', async () => {
+      const db = getDatabase(testDbPath);
+      const waId = '919800000001';
+
+      // Enqueue 20 outbound messages
+      const count = 20;
+      for (let i = 0; i < count; i++) {
+        outboundRepository.enqueueOutbound({
+          dedupKey: `burst_msg_${i}`,
+          tenantId: 'goldkraft',
+          waId,
+          text: `Batch message test payload #${i}`
+        });
+      }
+
+      // Verify 20 items are currently pending
+      const pendingBefore = db.prepare("SELECT COUNT(*) as count FROM outbound_messages WHERE status = 'pending'").get().count;
+      assert.strictEqual(pendingBefore, count);
+
+      // Start worker with a 400ms polling interval and batch limit of 25
+      outboundWorker.start(400, 25);
+
+      // Wait ~550ms — enough for exactly one tick to fire and complete
+      await new Promise(resolve => setTimeout(resolve, 550));
+      await outboundWorker.stop();
+
+      // All 20 items must now be sent (instead of only 1 item under the old 1-per-tick behavior)
+      const pendingAfter = db.prepare("SELECT COUNT(*) as count FROM outbound_messages WHERE status = 'pending'").get().count;
+      const sentCount = db.prepare("SELECT COUNT(*) as count FROM outbound_messages WHERE status = 'sent' AND dedup_key LIKE 'burst_msg_%'").get().count;
+
+      assert.strictEqual(pendingAfter, 0, 'No pending messages should remain after batch drain');
+      assert.strictEqual(sentCount, count, 'All 20 queued messages should be sent in one polling tick');
+    });
+
+    test('webhook worker drains a burst of 20 queued webhook events within roughly one polling tick', async () => {
+      const db = getDatabase(testDbPath);
+      const count = 20;
+
+      // Enqueue 20 delivery status events
+      for (let i = 0; i < count; i++) {
+        eventRepository.recordEvent({
+          eventKey: `status:burst_evt_${i}:delivered`,
+          tenantId: 'goldkraft',
+          eventType: 'status',
+          payload: {
+            statuses: [{
+              id: `wamid.burst_evt_${i}`,
+              status: 'delivered',
+              timestamp: `${Date.now()}`,
+              recipient_id: '919800000001'
+            }]
+          }
+        });
+      }
+
+      const pendingBefore = db.prepare("SELECT COUNT(*) as count FROM webhook_events WHERE status = 'pending'").get().count;
+      assert.strictEqual(pendingBefore, count);
+
+      // Start worker with a 400ms polling interval and batch limit of 25
+      webhookWorker.start(400, 25);
+
+      // Wait ~550ms — enough for roughly one tick
+      await new Promise(resolve => setTimeout(resolve, 550));
+      await webhookWorker.stop();
+
+      const pendingAfter = db.prepare("SELECT COUNT(*) as count FROM webhook_events WHERE status = 'pending'").get().count;
+      const completedCount = db.prepare("SELECT COUNT(*) as count FROM webhook_events WHERE status = 'completed' AND event_key LIKE 'status:burst_evt_%'").get().count;
+
+      assert.strictEqual(pendingAfter, 0, 'No pending webhook events should remain after batch drain');
+      assert.strictEqual(completedCount, count, 'All 20 events should be completed in one polling tick');
+    });
+
+    test('stop() safely waits for in-flight work and halts background interval', async () => {
+      outboundWorker.start(200, 10);
+      assert.strictEqual(outboundWorker.isRunning, true);
+      assert.ok(outboundWorker.timer !== null);
+
+      await outboundWorker.stop();
+      assert.strictEqual(outboundWorker.isRunning, false);
+      assert.strictEqual(outboundWorker.timer, null);
+      assert.strictEqual(outboundWorker.isProcessing, false);
+    });
+  });
 });

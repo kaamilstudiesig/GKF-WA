@@ -49,7 +49,8 @@ class DeterministicRouter {
     // 3. Explicit Human / Staff Request
     const humanKeywords = [
       'talk to human', 'speak to a person', 'speak to someone', 'call me',
-      'customer support', 'human agent', 'connect to coach', 'speak to manager'
+      'customer support', 'human agent', 'human staff', 'connect to coach',
+      'speak to manager', 'connect me to', 'real person', 'speak to staff'
     ];
     if (humanKeywords.some(kw => cleanText === kw || cleanText.includes(kw))) {
       logger.debug('Deterministic route matched: Human Request', { wa_id: lead.wa_id });

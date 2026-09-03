@@ -1,6 +1,7 @@
 const fs = require('fs');
 const path = require('path');
 const env = require('../config/env');
+const { runMigrations } = require('./migrations');
 
 let dbInstance = null;
 
@@ -13,6 +14,7 @@ function createDatabaseConnection(dbPath) {
       try {
         db.exec('PRAGMA journal_mode = WAL;');
         db.exec('PRAGMA foreign_keys = ON;');
+        db.exec('PRAGMA busy_timeout = 5000;');
       } catch (e) {}
       return db;
     }
@@ -25,6 +27,7 @@ function createDatabaseConnection(dbPath) {
     const db = new BetterSqlite3(dbPath);
     db.pragma('journal_mode = WAL');
     db.pragma('foreign_keys = ON');
+    db.pragma('busy_timeout = 5000');
     return db;
   } catch (err) {
     throw new Error(`Failed to initialize SQLite database: ${err.message}`);
@@ -45,7 +48,7 @@ function getDatabase(customPath = null) {
 
   const db = createDatabaseConnection(dbPath);
 
-  // Initialize Schema
+  // Initialize and run migrations
   initSchema(db);
 
   if (!customPath) {
@@ -55,42 +58,33 @@ function getDatabase(customPath = null) {
 }
 
 function initSchema(db) {
-  db.exec(`
-    CREATE TABLE IF NOT EXISTS leads (
-      wa_id TEXT PRIMARY KEY,
-      display_name TEXT,
-      status TEXT NOT NULL DEFAULT 'new' CHECK (status IN ('new', 'contacted', 'qualified', 'hot', 'cold', 'converted', 'lost')),
-      interest TEXT,
-      source TEXT NOT NULL DEFAULT 'whatsapp_inbound',
-      first_contact_at TEXT NOT NULL,
-      last_inbound_message_at TEXT NOT NULL,
-      last_outbound_message_at TEXT,
-      needs_human INTEGER NOT NULL DEFAULT 0,
-      handoff_reason TEXT,
-      notes TEXT,
-      metadata_json TEXT,
-      created_at TEXT NOT NULL,
-      updated_at TEXT NOT NULL
-    );
+  runMigrations(db);
+}
 
-    CREATE TABLE IF NOT EXISTS messages (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      message_id TEXT UNIQUE,
-      wa_id TEXT NOT NULL,
-      direction TEXT NOT NULL CHECK (direction IN ('in', 'out')),
-      text TEXT NOT NULL,
-      timestamp TEXT NOT NULL,
-      raw_payload TEXT,
-      created_at TEXT NOT NULL,
-      FOREIGN KEY (wa_id) REFERENCES leads(wa_id) ON DELETE CASCADE
-    );
+/**
+ * Runs a callback function inside an atomic SQLite transaction.
+ * Compatible with both node:sqlite DatabaseSync and better-sqlite3.
+ * @param {Function} fn - Synchronous callback containing DB operations
+ * @param {object|null} db - Optional database instance (defaults to dbInstance)
+ * @returns {*} Result of fn()
+ */
+function runTransaction(fn, db = null) {
+  const targetDb = db || getDatabase();
+  if (typeof targetDb.transaction === 'function') {
+    return targetDb.transaction(fn)();
+  }
 
-    CREATE INDEX IF NOT EXISTS idx_leads_status ON leads(status);
-    CREATE INDEX IF NOT EXISTS idx_leads_needs_human ON leads(needs_human);
-    CREATE INDEX IF NOT EXISTS idx_leads_last_inbound ON leads(last_inbound_message_at);
-    CREATE INDEX IF NOT EXISTS idx_messages_wa_id ON messages(wa_id);
-    CREATE INDEX IF NOT EXISTS idx_messages_message_id ON messages(message_id);
-  `);
+  targetDb.exec('BEGIN IMMEDIATE;');
+  try {
+    const result = fn(targetDb);
+    targetDb.exec('COMMIT;');
+    return result;
+  } catch (err) {
+    try {
+      targetDb.exec('ROLLBACK;');
+    } catch (rbErr) {}
+    throw err;
+  }
 }
 
 function closeDatabase() {
@@ -105,5 +99,7 @@ function closeDatabase() {
 module.exports = {
   getDatabase,
   closeDatabase,
-  initSchema
+  initSchema,
+  runTransaction
 };
+

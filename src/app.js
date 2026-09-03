@@ -14,6 +14,9 @@ const logger = require('./utils/logger');
 function createApp() {
   const app = express();
 
+  // Trust reverse proxy (load balancers / reverse proxies like ALB, Cloudflare, Nginx)
+  app.set('trust proxy', 1);
+
   // Security Headers Middleware
   app.use((req, res, next) => {
     res.setHeader('X-Content-Type-Options', 'nosniff');
@@ -68,8 +71,16 @@ function createApp() {
     });
   });
 
-  // Readiness check endpoint (verifies critical SQLite dependency)
+  // Readiness check endpoint (verifies critical SQLite dependency and shutdown state)
   app.get('/health/ready', (req, res) => {
+    if (app.locals.isShuttingDown) {
+      return res.status(503).json({
+        status: 'not_ready',
+        database: 'shutting_down',
+        error: 'Server is terminating'
+      });
+    }
+
     try {
       const db = getDatabase();
       db.prepare('SELECT 1').get();
@@ -127,6 +138,13 @@ function createApp() {
     dashboardRateLimiter,
     requireDashboardAuth,
     (req, res) => leadController.getLeadByWaId(req, res)
+  );
+
+  app.patch(
+    '/leads/:wa_id',
+    dashboardRateLimiter,
+    requireDashboardAuth,
+    (req, res) => leadController.updateLead(req, res)
   );
 
   // Dashboard Aggregated Summary Endpoint (Phase 57)

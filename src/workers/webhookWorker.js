@@ -40,7 +40,14 @@ class WebhookWorker {
       const phoneNumberId = value.metadata?.phone_number_id || null;
       const tenant = tenantService.resolveTenantByPhoneNumberId(phoneNumberId);
 
-      // 1. Handle Status Receipts
+      if (!tenant) {
+        logger.error('Worker rejecting webhook event: unmapped tenant in production', {
+          event_id: event.id,
+          phone_number_id: phoneNumberId
+        });
+        eventRepository.failPermanent(event.id, `Unmapped WhatsApp phone_number_id: ${phoneNumberId}`);
+        return true;
+      }
       if (event.event_type === 'status' || (value.statuses && value.statuses.length > 0)) {
         const statuses = value.statuses || [event.payload];
         for (const statusObj of statuses) {

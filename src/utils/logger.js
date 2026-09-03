@@ -26,17 +26,28 @@ class Logger {
   }
 
   /**
-   * Sanitizes metadata for production logging (redacts full text bodies at info level)
+   * Sanitizes metadata for logging (redacts secrets, API keys, tokens, and masks phone numbers)
    */
   sanitizeMeta(meta = {}, level = 'info') {
     if (!meta || typeof meta !== 'object') return meta;
-    const sanitized = { ...meta };
+    const sanitized = Array.isArray(meta) ? [...meta] : { ...meta };
 
     // Redact phone numbers if present
     if (sanitized.wa_id) sanitized.wa_id = this.maskPhone(sanitized.wa_id);
     if (sanitized.from) sanitized.from = this.maskPhone(sanitized.from);
     if (sanitized.to) sanitized.to = this.maskPhone(sanitized.to);
     if (sanitized.phone) sanitized.phone = this.maskPhone(sanitized.phone);
+    if (sanitized.recipient_id) sanitized.recipient_id = this.maskPhone(sanitized.recipient_id);
+
+    // Deep redact secrets, API keys, and auth headers
+    const secretPattern = /token|secret|api_key|apikey|password|auth|bearer|credential/i;
+    for (const key of Object.keys(sanitized)) {
+      if (secretPattern.test(key)) {
+        sanitized[key] = '[REDACTED SECRET]';
+      } else if (typeof sanitized[key] === 'object' && sanitized[key] !== null) {
+        sanitized[key] = this.sanitizeMeta(sanitized[key], level);
+      }
+    }
 
     // In production at info/warn level, redact or summarize message text to protect customer privacy
     if (this.isProduction && (level === 'info' || level === 'warn')) {

@@ -57,6 +57,13 @@ class WebhookController {
           const phoneNumberId = value.metadata?.phone_number_id || null;
           const tenant = tenantService.resolveTenantByPhoneNumberId(phoneNumberId);
 
+          if (!tenant) {
+            logger.warn('Inbound webhook ignored: unmapped tenant in production', {
+              phone_number_id: phoneNumberId
+            });
+            continue;
+          }
+
           // 1. Handle Status Receipts (sent, delivered, read)
           if (value.statuses && value.statuses.length > 0) {
             for (const statusObj of value.statuses) {
@@ -72,7 +79,7 @@ class WebhookController {
                 tenantId: tenant.id,
                 messageId: statusObj.id,
                 eventType: 'status',
-                payload: { entry: [{ changes: [{ value }] }] }
+                payload: { entry: [{ changes: [{ value: { ...value, statuses: [statusObj] } }] }] }
               });
               if (inserted && id) enqueuedEventIds.push(id);
             }
@@ -108,7 +115,7 @@ class WebhookController {
               tenantId: tenant.id,
               messageId,
               eventType: 'message',
-              payload: { entry: [{ changes: [{ value }] }] }
+              payload: { entry: [{ changes: [{ value: { ...value, messages: [msg] } }] }] }
             });
 
             if (!inserted) {

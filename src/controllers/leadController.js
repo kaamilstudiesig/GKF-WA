@@ -1,4 +1,6 @@
 const leadRepository = require('../db/leadRepository');
+const handoffRepository = require('../db/handoffRepository');
+const auditService = require('../services/auditService');
 const logger = require('../utils/logger');
 
 const ALLOWED_STATUSES = ['new', 'contacted', 'qualified', 'hot', 'cold', 'converted', 'lost'];
@@ -114,6 +116,96 @@ class LeadController {
       });
     } catch (error) {
       logger.error('Failed to fetch lead:', { error: error.message, stack: error.stack });
+      return res.status(500).json({ success: false, error: 'Internal Server Error' });
+    }
+  }
+
+  /**
+   * PATCH /leads/:wa_id
+   * Allows authorized human staff to update lead properties (including converting leads)
+   * Records an audit log entry for compliance and tracking.
+   */
+  updateLead(req, res) {
+    try {
+      const rawWaId = req.params.wa_id || '';
+      const cleanWaId = rawWaId.replace(/[^0-9]/g, '');
+
+      if (!cleanWaId || cleanWaId.length < 7 || cleanWaId.length > 15) {
+        return res.status(400).json({
+          success: false,
+          error: 'Invalid WhatsApp ID format. Must contain 7 to 15 digits without symbols.'
+        });
+      }
+
+      const tenantId = req.tenantId || 'goldkraft';
+      const existingLead = leadRepository.findByWaId(cleanWaId, tenantId);
+
+      if (!existingLead) {
+        return res.status(404).json({
+          success: false,
+          error: `Lead with WhatsApp ID +${cleanWaId} not found.`
+        });
+      }
+
+      const updates = req.body || {};
+      const safeUpdates = {};
+
+      if (updates.status !== undefined) {
+        if (!ALLOWED_STATUSES.includes(updates.status)) {
+          return res.status(400).json({
+            success: false,
+            error: `Invalid status parameter. Allowed values: ${ALLOWED_STATUSES.join(', ')}`
+          });
+        }
+        safeUpdates.status = updates.status;
+      }
+
+      if (updates.interest !== undefined) safeUpdates.interest = String(updates.interest).trim();
+      if (updates.display_name !== undefined) safeUpdates.display_name = String(updates.display_name).trim();
+
+      if (updates.notes !== undefined) {
+        safeUpdates.notes = updates.notes;
+      }
+
+      if (updates.needs_human !== undefined) {
+        safeUpdates.needs_human = Boolean(updates.needs_human);
+        if (updates.needs_human && updates.handoff_reason) {
+          safeUpdates.handoff_reason = updates.handoff_reason;
+          handoffRepository.recordHandoff({
+            tenantId,
+            waId: cleanWaId,
+            reason: updates.handoff_reason,
+            summary: updates.summary || 'Staff manual handoff trigger'
+          });
+        } else if (!updates.needs_human) {
+          safeUpdates.handoff_reason = null;
+          handoffRepository.resolveHandoff(tenantId, cleanWaId);
+        }
+      }
+
+      const updatedLead = leadRepository.updateLead(cleanWaId, safeUpdates, tenantId);
+
+      // Record audit log for staff mutation
+      auditService.recordAudit({
+        tenantId,
+        actorId: req.user?.id || 'staff',
+        actorRole: req.userRole || 'staff',
+        action: 'lead_update',
+        targetType: 'lead',
+        targetId: cleanWaId,
+        changes: {
+          before: { status: existingLead.status, needs_human: existingLead.needs_human, notes: existingLead.notes },
+          after: safeUpdates
+        },
+        ipAddress: req.ip
+      });
+
+      return res.status(200).json({
+        success: true,
+        data: updatedLead
+      });
+    } catch (error) {
+      logger.error('Failed to update lead:', { error: error.message, stack: error.stack });
       return res.status(500).json({ success: false, error: 'Internal Server Error' });
     }
   }

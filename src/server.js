@@ -57,6 +57,7 @@ let isShuttingDown = false;
 async function handleShutdown(signal) {
   if (isShuttingDown) return;
   isShuttingDown = true;
+  app.locals.isShuttingDown = true;
 
   logger.info(`Received ${signal}. Draining workers and closing server gracefully...`);
 

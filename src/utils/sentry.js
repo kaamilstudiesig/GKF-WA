@@ -5,7 +5,7 @@ const logger = require('./logger');
 let isInitialized = false;
 
 /**
- * Sanitizes an operational message string before sending to Sentry:
+ * Sanitizes an operational message string or exception message before sending to Sentry:
  * - Redacts secrets, tokens, API keys, passwords, bearer tokens
  * - Masks customer telephone numbers (e.g. 91*****1234)
  * - Detects and redacts raw conversational customer messages
@@ -19,7 +19,7 @@ function sanitizeSentryMessage(rawMsg) {
   let sanitized = rawMsg;
 
   // 1. Redact Bearer and Auth tokens
-  sanitized = sanitized.replace(/Bearer\s+[A-Za-z0-9._~+/-]+=*/gi, 'Bearer [REDACTED]');
+  sanitized = sanitized.replace(/Bearer\s+[^\s,'"}]+/gi, 'Bearer [REDACTED]');
   sanitized = sanitized.replace(/eyJ[A-Za-z0-9_-]+\.eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+/g, '[REDACTED JWT]');
   sanitized = sanitized.replace(/(?:api_?key|token|secret|password|signature)\s*[:=]\s*['"]?[^\s,'"}]+['"]?/gi, (match) => {
     const prefix = match.split(/[:=]/)[0];
@@ -100,12 +100,29 @@ function sanitizeSentryValue(key, value) {
 function sanitizeSentryEvent(event) {
   if (!event) return event;
 
-  // Sanitize top-level message if present
+  // 1. Sanitize top-level message if present
   if (event.message) {
     event.message = sanitizeSentryMessage(event.message);
   }
 
-  // Sanitize request headers
+  // 2. Sanitize exception payloads (event.exception.values[].value or event.exception.value)
+  if (event.exception) {
+    if (Array.isArray(event.exception.values)) {
+      event.exception.values = event.exception.values.map(exc => {
+        if (exc && typeof exc.value === 'string') {
+          return {
+            ...exc,
+            value: sanitizeSentryMessage(exc.value)
+          };
+        }
+        return exc;
+      });
+    } else if (typeof event.exception.value === 'string') {
+      event.exception.value = sanitizeSentryMessage(event.exception.value);
+    }
+  }
+
+  // 3. Sanitize request headers
   if (event.request?.headers) {
     for (const header of Object.keys(event.request.headers)) {
       if (/authorization|x-api-key|x-hub-signature-256|cookie/i.test(header)) {
@@ -114,17 +131,17 @@ function sanitizeSentryEvent(event) {
     }
   }
 
-  // Sanitize request body / data
+  // 4. Sanitize request body / data
   if (event.request?.data && typeof event.request.data === 'object') {
     event.request.data = sanitizeSentryValue('data', event.request.data);
   }
 
-  // Sanitize extra context
+  // 5. Sanitize extra context
   if (event.extra && typeof event.extra === 'object') {
     event.extra = sanitizeSentryValue('extra', event.extra);
   }
 
-  // Sanitize breadcrumbs
+  // 6. Sanitize breadcrumbs
   if (Array.isArray(event.breadcrumbs)) {
     event.breadcrumbs = event.breadcrumbs.map(b => {
       if (b.message) {
@@ -177,11 +194,15 @@ function initSentry() {
 }
 
 /**
- * Captures an exception with optional metadata context
+ * Captures an exception with optional metadata context.
+ * Sanitizes the error message for internal logging and ensures
+ * beforeSend sanitizes the exception event before transmission.
  */
 function captureException(error, context = {}) {
   const sanitizedContext = logger.sanitizeMeta(context);
-  logger.error('Exception captured:', { error: error.message, ...sanitizedContext });
+  const rawMsg = error instanceof Error ? error.message : String(error || '');
+  const sanitizedErrorMsg = sanitizeSentryMessage(rawMsg);
+  logger.error('Exception captured:', { error: sanitizedErrorMsg, ...sanitizedContext });
 
   if (isInitialized && SentryLib) {
     try {

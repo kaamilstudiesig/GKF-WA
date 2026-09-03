@@ -164,4 +164,157 @@ describe('Sentry Integration & Sanitization Hardening', () => {
     const customerMsgWithPrefix = 'Inbound text: Can I join the gym tomorrow morning?';
     assert.strictEqual(sanitizeSentryMessage(customerMsgWithPrefix), 'Inbound text: [REDACTED CUSTOMER MESSAGE]');
   });
+
+  test('sanitizeSentryEvent sanitizes exception payload containing Bearer token', () => {
+    const rawEvent = {
+      exception: {
+        values: [
+          {
+            type: 'Error',
+            value: 'Meta request failed: Bearer super_secret_token_123'
+          }
+        ]
+      }
+    };
+
+    const sanitized = sanitizeSentryEvent(rawEvent);
+    assert.strictEqual(sanitized.exception.values[0].type, 'Error');
+    assert.strictEqual(sanitized.exception.values[0].value, 'Meta request failed: Bearer [REDACTED]');
+    assert.ok(!JSON.stringify(sanitized).includes('super_secret_token_123'));
+  });
+
+  test('sanitizeSentryEvent sanitizes exception payload containing API key', () => {
+    const rawEvent = {
+      exception: {
+        values: [
+          {
+            type: 'AxiosError',
+            value: 'OpenRouter failed with api_key="sk-or-v1-secret"'
+          }
+        ]
+      }
+    };
+
+    const sanitized = sanitizeSentryEvent(rawEvent);
+    assert.strictEqual(sanitized.exception.values[0].type, 'AxiosError');
+    assert.strictEqual(sanitized.exception.values[0].value, 'OpenRouter failed with api_key: [REDACTED SECRET]');
+    assert.ok(!JSON.stringify(sanitized).includes('sk-or-v1-secret'));
+  });
+
+  test('sanitizeSentryEvent masks phone numbers in exception payload', () => {
+    const rawEvent = {
+      exception: {
+        values: [
+          {
+            type: 'DeliveryError',
+            value: 'Outbound message failed for 919876543210'
+          }
+        ]
+      }
+    };
+
+    const sanitized = sanitizeSentryEvent(rawEvent);
+    assert.strictEqual(sanitized.exception.values[0].value, 'Outbound message failed for 91*****3210');
+    assert.ok(!JSON.stringify(sanitized).includes('919876543210'));
+  });
+
+  test('sanitizeSentryEvent redacts raw customer conversational text in exception payload', () => {
+    const rawEvent = {
+      exception: {
+        values: [
+          {
+            type: 'ValidationError',
+            value: 'Inbound customer text: Can I join the gym tomorrow?'
+          }
+        ]
+      }
+    };
+
+    const sanitized = sanitizeSentryEvent(rawEvent);
+    assert.strictEqual(sanitized.exception.values[0].value, 'Inbound customer text: [REDACTED CUSTOMER MESSAGE]');
+    assert.ok(!JSON.stringify(sanitized).includes('Can I join the gym tomorrow?'));
+  });
+
+  test('sanitizeSentryEvent preserves genuine operational exception messages', () => {
+    const rawEvent = {
+      exception: {
+        values: [
+          {
+            type: 'OperationalError',
+            value: 'Azure backup upload failed: connection timeout'
+          }
+        ]
+      }
+    };
+
+    const sanitized = sanitizeSentryEvent(rawEvent);
+    assert.strictEqual(sanitized.exception.values[0].type, 'OperationalError');
+    assert.strictEqual(sanitized.exception.values[0].value, 'Azure backup upload failed: connection timeout');
+  });
+
+  test('sanitizeSentryEvent handles multiple nested exception values and defensive structures', () => {
+    const rawEvent = {
+      exception: {
+        values: [
+          {
+            type: 'Error',
+            value: 'Failed call: Bearer secret_token_aaa'
+          },
+          {
+            type: 'DatabaseError',
+            value: 'Query failed for user 919123456789'
+          },
+          {
+            type: 'OperationalError',
+            value: 'Worker failed to process event: event_555'
+          }
+        ]
+      }
+    };
+
+    const sanitized = sanitizeSentryEvent(rawEvent);
+    assert.strictEqual(sanitized.exception.values.length, 3);
+    assert.strictEqual(sanitized.exception.values[0].value, 'Failed call: Bearer [REDACTED]');
+    assert.strictEqual(sanitized.exception.values[1].value, 'Query failed for user 91*****6789');
+    assert.strictEqual(sanitized.exception.values[2].value, 'Worker failed to process event: event_555');
+
+    // Defensive checks
+    assert.strictEqual(sanitizeSentryEvent({ exception: null }).exception, null);
+    assert.strictEqual(sanitizeSentryEvent({ exception: { values: null } }).exception.values, null);
+  });
+
+  test('captureException pipeline executes safely and scrubs error before Sentry transmission', () => {
+    const errorWithSecret = new Error('Meta API error: Bearer raw_access_token_xyz for +919876543210');
+
+    // Does not throw when Sentry is not active
+    assert.doesNotThrow(() => {
+      captureException(errorWithSecret, {
+        tenantId: 'tenant_alpha',
+        component: 'test_pipeline',
+        wa_id: '919876543210'
+      });
+    });
+
+    // Simulating how Sentry beforeSend(event) processes captured exceptions
+    const simulatedSentryEvent = {
+      exception: {
+        values: [
+          {
+            type: errorWithSecret.name,
+            value: errorWithSecret.message
+          }
+        ]
+      },
+      extra: {
+        wa_id: '919876543210',
+        component: 'test_pipeline'
+      }
+    };
+
+    const finalEvent = sanitizeSentryEvent(simulatedSentryEvent);
+    assert.strictEqual(finalEvent.exception.values[0].value, 'Meta API error: Bearer [REDACTED] for 91*****3210');
+    assert.strictEqual(finalEvent.extra.wa_id, '91*****3210');
+    assert.ok(!JSON.stringify(finalEvent).includes('raw_access_token_xyz'));
+    assert.ok(!JSON.stringify(finalEvent).includes('919876543210'));
+  });
 });

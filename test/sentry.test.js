@@ -317,4 +317,28 @@ describe('Sentry Integration & Sanitization Hardening', () => {
     assert.ok(!JSON.stringify(finalEvent).includes('raw_access_token_xyz'));
     assert.ok(!JSON.stringify(finalEvent).includes('919876543210'));
   });
+
+  test('structured context reliably redacts customer message text without relying on keyword heuristics', () => {
+    // Arbitrary non-keyword conversational sentence that does NOT start with 'hey', 'hello', 'can i', etc.
+    const arbitraryCustomerText = 'I will visit the gym on Friday at 5pm to see coach Rahul about personal training.';
+
+    const rawEvent = {
+      extra: {
+        text: arbitraryCustomerText,
+        rawPayload: {
+          entry: [{ changes: [{ value: { messages: [{ text: { body: arbitraryCustomerText } }] } }] }]
+        },
+        tenantId: 'goldkraft',
+        component: 'webhook_worker'
+      }
+    };
+
+    const sanitized = sanitizeSentryEvent(rawEvent);
+
+    // Primary protection: sanitizeSentryValue unconditionally redacts 'text' and 'rawPayload' fields
+    assert.strictEqual(sanitized.extra.text, '[REDACTED MESSAGE CONTENT]');
+    assert.strictEqual(sanitized.extra.rawPayload, '[REDACTED MESSAGE CONTENT]');
+    assert.strictEqual(sanitized.extra.tenantId, 'goldkraft');
+    assert.ok(!JSON.stringify(sanitized).includes(arbitraryCustomerText), 'Customer conversational text must not appear in the sanitized payload');
+  });
 });

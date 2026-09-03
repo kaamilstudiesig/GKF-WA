@@ -1,4 +1,5 @@
 const express = require('express');
+const path = require('path');
 const crypto = require('crypto');
 const { verifyWebhookSignature } = require('./middleware/webhookSecurity');
 const { requireDashboardAuth } = require('./middleware/authMiddleware');
@@ -101,6 +102,14 @@ function createApp() {
     }
   });
 
+  // Static assets for WhatsApp Demo UI (without hijacking GET /)
+  app.use(express.static(path.join(__dirname, '../public'), { index: false }));
+
+  // Dedicated WhatsApp Demo UI Route
+  app.get('/demo', (req, res) => {
+    res.sendFile(path.join(__dirname, '../public/index.html'));
+  });
+
   // Root endpoint with gym facility & service overview
   app.get('/', (req, res) => {
     res.json({
@@ -112,6 +121,7 @@ function createApp() {
         location: gymConfig.facility.location,
         hours: gymConfig.hours
       },
+      demo_url: '/demo',
       version: '1.0.0',
       timestamp: new Date().toISOString()
     });

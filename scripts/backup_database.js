@@ -14,10 +14,17 @@ try {
   // @azure/storage-blob optional in non-cloud dev environments
 }
 
+// Test hook for simulating Azure upload behavior
+let azureUploadOverride = null;
+
 /**
  * Uploads a verified local backup file to Azure Blob Storage
  */
 async function uploadToAzureStorage(backupFilePath, backupFileName) {
+  if (azureUploadOverride) {
+    return azureUploadOverride(backupFilePath, backupFileName);
+  }
+
   const connectionString = process.env.AZURE_STORAGE_CONNECTION_STRING;
   const containerName = process.env.AZURE_BACKUP_CONTAINER || 'gkf-wa-backups';
 
@@ -31,10 +38,8 @@ async function uploadToAzureStorage(backupFilePath, backupFileName) {
   if (!BlobServiceClient) {
     const msg = '@azure/storage-blob is not installed. Cannot perform offsite Azure backup upload.';
     logger.error(msg);
-    if (process.env.NODE_ENV === 'production') {
-      throw new Error(msg);
-    }
-    return { uploaded: false, reason: 'missing_sdk' };
+    captureException(new Error(msg), { component: 'azure_backup_upload' });
+    return { uploaded: false, error: msg };
   }
 
   try {
@@ -82,10 +87,6 @@ async function uploadToAzureStorage(backupFilePath, backupFileName) {
       blob: backupFileName
     });
 
-    if (process.env.NODE_ENV === 'production') {
-      throw new Error(`Production offsite backup failed: ${err.message}`);
-    }
-
     return { uploaded: false, error: err.message };
   }
 }
@@ -120,10 +121,13 @@ async function pruneOldAzureBackups(containerClient, keepCount = 14) {
 
 /**
  * Production SQLite Backup Procedure:
- * Uses SQLite's native atomic VACUUM INTO to create an exact, uncorrupted
- * snapshot of the live database even while active transactions run in WAL mode.
- * Performs immediate PRAGMA integrity_check on the resulting backup file.
- * Copies the verified snapshot to offsite object storage if configured.
+ * 1. Uses SQLite's native atomic VACUUM INTO to create an exact snapshot.
+ * 2. Performs immediate PRAGMA integrity_check on the resulting backup file.
+ *    If local backup or integrity fails: incomplete file is deleted and error is thrown.
+ * 3. Once local backup succeeds, the verified local file is KEPT permanently.
+ * 4. Attempts offsite Azure upload.
+ *    If Azure fails: local backup is NEVER deleted. The failure is logged,
+ *    captured in Sentry, and an error is thrown indicating partial failure.
  */
 async function createProductionBackup(customBackupDir = null) {
   const startTime = Date.now();
@@ -140,7 +144,10 @@ async function createProductionBackup(customBackupDir = null) {
   logger.info('Initiating live SQLite atomic backup...', { target: backupFilePath });
 
   const liveDb = getDatabase();
+  let stats = null;
+  let localDurationMs = 0;
 
+  // Phase 1: Local Backup Creation & Integrity Verification
   try {
     // 1. Run atomic snapshot
     liveDb.exec(`VACUUM INTO '${backupFilePath}';`);
@@ -155,8 +162,8 @@ async function createProductionBackup(customBackupDir = null) {
       throw new Error(`Backup failed integrity check: ${JSON.stringify(integrityRow)}`);
     }
 
-    const stats = fs.statSync(backupFilePath);
-    const localDurationMs = Date.now() - startTime;
+    stats = fs.statSync(backupFilePath);
+    localDurationMs = Date.now() - startTime;
 
     logger.info('Local database backup completed and verified successfully!', {
       file: backupFileName,
@@ -168,24 +175,72 @@ async function createProductionBackup(customBackupDir = null) {
 
     // 3. Prune old local backups (keep last 14 backups by default)
     pruneOldBackups(backupDir, 14);
-
-    // 4. Offsite Azure upload (if configured)
-    const azureResult = await uploadToAzureStorage(backupFilePath, backupFileName);
-
-    return {
-      success: true,
-      path: backupFilePath,
-      sizeBytes: stats.size,
-      durationMs: Date.now() - startTime,
-      azure: azureResult
-    };
-  } catch (err) {
-    logger.error('SQLite backup failed:', { error: err.message });
+  } catch (localErr) {
+    logger.error('SQLite local backup creation failed:', { error: localErr.message });
     if (fs.existsSync(backupFilePath)) {
       try { fs.unlinkSync(backupFilePath); } catch (e) {}
     }
-    throw err;
+    throw localErr;
   }
+
+  // Phase 2: Offsite Azure Upload (Local backup is now verified and MUST BE PRESERVED)
+  let azureResult = null;
+  let azureError = null;
+
+  try {
+    azureResult = await uploadToAzureStorage(backupFilePath, backupFileName);
+    if (azureResult && azureResult.uploaded === false && azureResult.reason !== 'unconfigured') {
+      azureError = new Error(azureResult.error || 'Azure offsite upload failed');
+    }
+  } catch (err) {
+    azureError = err;
+    azureResult = { uploaded: false, error: err.message };
+  }
+
+  // If Azure upload failed when configured
+  if (azureError) {
+    logger.error('Database backup partial failure: Local backup succeeded, but offsite Azure upload failed!', {
+      file: backupFileName,
+      local_path: backupFilePath,
+      local_status: 'SUCCESS',
+      offsite_status: 'FAILED',
+      error: azureError.message
+    });
+
+    captureException(azureError, {
+      component: 'azure_backup_upload',
+      localBackupPath: backupFilePath
+    });
+
+    const partialFailureResult = {
+      success: false,
+      overallStatus: 'FAILED',
+      localStatus: 'SUCCESS',
+      offsiteStatus: 'FAILED',
+      path: backupFilePath,
+      sizeBytes: stats.size,
+      durationMs: Date.now() - startTime,
+      azure: azureResult,
+      error: azureError.message
+    };
+
+    // NOTE: We deliberately DO NOT delete backupFilePath! Local recovery point is preserved.
+    const failureErr = new Error(`Production backup partial failure: Offsite Azure upload failed (${azureError.message}). Local backup was preserved at ${backupFilePath}`);
+    failureErr.backupResult = partialFailureResult;
+    throw failureErr;
+  }
+
+  // Overall Success
+  return {
+    success: true,
+    overallStatus: 'SUCCESS',
+    localStatus: 'SUCCESS',
+    offsiteStatus: azureResult?.uploaded ? 'SUCCESS' : 'SKIPPED',
+    path: backupFilePath,
+    sizeBytes: stats.size,
+    durationMs: Date.now() - startTime,
+    azure: azureResult
+  };
 }
 
 /**
@@ -217,13 +272,17 @@ function pruneOldBackups(backupDir, keepCount = 14) {
 // Execute directly if run via node CLI
 if (require.main === module) {
   createProductionBackup()
-    .then(() => {
+    .then((result) => {
       closeDatabase();
+      console.log('Database backup completed:', JSON.stringify(result, null, 2));
       process.exit(0);
     })
     .catch((err) => {
-      logger.error('Production backup execution halted with error:', { error: err.message });
       closeDatabase();
+      logger.error('Production backup execution halted with error:', { error: err.message });
+      if (err.backupResult) {
+        console.error('Backup summary (LOCAL PRESERVED / OFFSITE FAILED):', JSON.stringify(err.backupResult, null, 2));
+      }
       process.exit(1);
     });
 }
@@ -231,5 +290,7 @@ if (require.main === module) {
 module.exports = {
   createProductionBackup,
   uploadToAzureStorage,
-  pruneOldBackups
+  pruneOldBackups,
+  _setAzureUploaderForTesting: (fn) => { azureUploadOverride = fn; },
+  _resetAzureUploaderForTesting: () => { azureUploadOverride = null; }
 };

@@ -4,6 +4,7 @@ const {
   initSentry,
   captureException,
   captureMessage,
+  sanitizeSentryMessage,
   sanitizeSentryEvent,
   sanitizeSentryValue,
   isSentryActive,
@@ -123,5 +124,44 @@ describe('Sentry Integration & Sanitization Hardening', () => {
         tenantId: 'tenant_omega'
       });
     });
+  });
+
+  test('sanitizeSentryMessage redacts secrets, tokens, and authorization headers from message strings', () => {
+    const msgWithBearer = 'Failed call: Bearer ya29.a0AfH6SMDh_fake_token_12345';
+    assert.strictEqual(sanitizeSentryMessage(msgWithBearer), 'Failed call: Bearer [REDACTED]');
+
+    const msgWithJwt = 'User session eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NTY3ODkwIn0.doNotLeakThisSignature expired';
+    assert.strictEqual(sanitizeSentryMessage(msgWithJwt), 'User session [REDACTED JWT] expired');
+
+    const msgWithApiKey = 'OpenRouter call failed with api_key="sk-or-v1-secretkey12345"';
+    assert.strictEqual(sanitizeSentryMessage(msgWithApiKey), 'OpenRouter call failed with api_key: [REDACTED SECRET]');
+  });
+
+  test('sanitizeSentryMessage masks customer telephone numbers within message strings', () => {
+    const msgWithPhone = 'Outbound delivery failed for recipient 919876543210 on tenant goldkraft';
+    const sanitized = sanitizeSentryMessage(msgWithPhone);
+    assert.strictEqual(sanitized, 'Outbound delivery failed for recipient 91*****3210 on tenant goldkraft');
+  });
+
+  test('sanitizeSentryMessage redacts raw conversational customer messages while preserving operational events', () => {
+    // 1. Genuine operational events must be preserved
+    const op1 = 'Worker failed to process event: event_987';
+    assert.strictEqual(sanitizeSentryMessage(op1), 'Worker failed to process event: event_987');
+
+    const op2 = 'Azure backup failed: connection timeout';
+    assert.strictEqual(sanitizeSentryMessage(op2), 'Azure backup failed: connection timeout');
+
+    const op3 = 'Database migration 005 applied';
+    assert.strictEqual(sanitizeSentryMessage(op3), 'Database migration 005 applied');
+
+    // 2. Accidental customer message passed directly to captureMessage must be redacted
+    const customerMsg1 = 'Hey, I want to discuss membership pricing for Goldkraft';
+    assert.strictEqual(sanitizeSentryMessage(customerMsg1), '[REDACTED CUSTOMER MESSAGE]');
+
+    const customerMsg2 = 'Hi, what is the monthly rate for personal training?';
+    assert.strictEqual(sanitizeSentryMessage(customerMsg2), '[REDACTED CUSTOMER MESSAGE]');
+
+    const customerMsgWithPrefix = 'Inbound text: Can I join the gym tomorrow morning?';
+    assert.strictEqual(sanitizeSentryMessage(customerMsgWithPrefix), 'Inbound text: [REDACTED CUSTOMER MESSAGE]');
   });
 });

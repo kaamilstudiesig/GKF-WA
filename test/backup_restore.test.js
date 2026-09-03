@@ -5,7 +5,11 @@ const path = require('path');
 const { DatabaseSync } = require('node:sqlite');
 const { getDatabase, closeDatabase } = require('../src/db/database');
 const { runMigrations } = require('../src/db/migrations');
-const { createProductionBackup } = require('../scripts/backup_database');
+const {
+  createProductionBackup,
+  _setAzureUploaderForTesting,
+  _resetAzureUploaderForTesting
+} = require('../scripts/backup_database');
 
 const testDir = path.join(__dirname, '../data/test_backup_restore');
 const liveDbPath = path.join(testDir, 'live_test.db');
@@ -171,6 +175,48 @@ describe('Database Production Backup & Full Disaster Recovery Restore Test', () 
     assert.strictEqual(integrityFailed, true, 'Corrupted database file must fail integrity verification');
     if (fs.existsSync(corruptBackupPath)) {
       try { fs.unlinkSync(corruptBackupPath); } catch (e) {}
+    }
+  });
+
+  test('Azure upload failure preserves verified local backup on disk and reports offsite failure', async () => {
+    getDatabase(liveDbPath);
+
+    // Mock Azure upload failure
+    _setAzureUploaderForTesting(async (filePath, fileName) => {
+      return { uploaded: false, error: 'Simulated Azure Blob Storage network outage 503' };
+    });
+
+    try {
+      let threw = false;
+      let errorResult = null;
+
+      try {
+        await createProductionBackup(backupDir);
+      } catch (err) {
+        threw = true;
+        errorResult = err.backupResult;
+      }
+
+      // 1. Must report failure status
+      assert.strictEqual(threw, true, 'createProductionBackup must reject/throw when offsite upload fails');
+      assert.ok(errorResult, 'Error must contain backupResult details');
+      assert.strictEqual(errorResult.overallStatus, 'FAILED');
+      assert.strictEqual(errorResult.localStatus, 'SUCCESS');
+      assert.strictEqual(errorResult.offsiteStatus, 'FAILED');
+
+      // 2. Crucial: The verified local backup file MUST exist on disk!
+      const localBackupPath = errorResult.path;
+      assert.ok(localBackupPath, 'Local backup path must be returned in failure result');
+      assert.strictEqual(fs.existsSync(localBackupPath), true, 'Local backup file MUST be preserved on disk despite offsite failure');
+
+      // 3. Crucial: PRAGMA integrity_check on the retained local backup must return 'ok'
+      const preservedDb = new DatabaseSync(localBackupPath);
+      const integrityRow = preservedDb.prepare('PRAGMA integrity_check;').get();
+      preservedDb.close();
+      assert.strictEqual(Object.values(integrityRow)[0], 'ok', 'Preserved local backup must have valid SQLite integrity');
+    } finally {
+      _resetAzureUploaderForTesting();
+      closeDatabase();
     }
   });
 });

@@ -49,6 +49,7 @@ class LeadController {
       const parsedOffset = Math.max(parseInt(offset || '0', 10) || 0, 0);
 
       const result = leadRepository.listLeads({
+        tenantId: req.tenantId || 'goldkraft',
         status: status || undefined,
         needsHuman: needsHumanBool,
         sortBy: sort || 'recency',
@@ -56,7 +57,7 @@ class LeadController {
         offset: parsedOffset
       });
 
-      logger.debug('Retrieved leads list', { count: result.leads.length, total: result.total });
+      logger.debug('Retrieved leads list', { count: result.leads.length, total: result.total, tenant_id: req.tenantId });
 
       return res.status(200).json({
         success: true,
@@ -75,7 +76,7 @@ class LeadController {
 
   /**
    * GET /leads/:wa_id
-   * Get complete details and conversation history for a specific lead
+   * Get complete details and conversation history for a specific lead scoped to tenant
    */
   getLeadByWaId(req, res) {
     try {
@@ -90,7 +91,8 @@ class LeadController {
         });
       }
 
-      const lead = leadRepository.findByWaId(cleanWaId);
+      const tenantId = req.tenantId || 'goldkraft';
+      const lead = leadRepository.findByWaId(cleanWaId, tenantId);
 
       if (!lead) {
         return res.status(404).json({
@@ -99,9 +101,9 @@ class LeadController {
         });
       }
 
-      const conversationHistory = leadRepository.getConversationHistory(cleanWaId, 50);
+      const conversationHistory = leadRepository.getConversationHistory(cleanWaId, 50, tenantId);
 
-      logger.debug('Retrieved lead profile', { wa_id: cleanWaId, messages: conversationHistory.length });
+      logger.debug('Retrieved lead profile', { wa_id: cleanWaId, tenant_id: tenantId, messages: conversationHistory.length });
 
       return res.status(200).json({
         success: true,

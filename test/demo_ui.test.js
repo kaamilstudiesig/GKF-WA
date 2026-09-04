@@ -1,9 +1,14 @@
 const { test, describe, before, after } = require('node:test');
 const assert = require('node:assert');
 const request = require('supertest');
+const fs = require('fs');
+const path = require('path');
+
+const uiTestDbPath = path.join(__dirname, '../data/test_demo_ui.db');
+process.env.DATABASE_PATH = uiTestDbPath;
+
 const createApp = require('../src/app');
 const { getDatabase, closeDatabase } = require('../src/db/database');
-
 const demoService = require('../src/services/demoService');
 
 describe('WhatsApp Demo UI & Static Assets', () => {
@@ -12,22 +17,21 @@ describe('WhatsApp Demo UI & Static Assets', () => {
   let origDemoWaId;
 
   before(() => {
+    if (fs.existsSync(uiTestDbPath)) {
+      try { fs.unlinkSync(uiTestDbPath); } catch (e) {}
+    }
     origDemoWaId = demoService.demoWaId;
     demoService.demoWaId = UI_TEST_WA_ID;
-    getDatabase();
+    getDatabase(uiTestDbPath);
     app = createApp();
   });
 
   after(() => {
-    try {
-      const db = getDatabase();
-      db.prepare('DELETE FROM messages WHERE wa_id = ?').run(UI_TEST_WA_ID);
-      db.prepare('DELETE FROM outbound_messages WHERE wa_id = ?').run(UI_TEST_WA_ID);
-      db.prepare('DELETE FROM handoffs WHERE wa_id = ?').run(UI_TEST_WA_ID);
-      db.prepare('DELETE FROM leads WHERE wa_id = ?').run(UI_TEST_WA_ID);
-    } catch (e) {}
     demoService.demoWaId = origDemoWaId;
     closeDatabase();
+    if (fs.existsSync(uiTestDbPath)) {
+      try { fs.unlinkSync(uiTestDbPath); } catch (e) {}
+    }
   });
 
   test('GET /demo returns 200 and serves WhatsApp Demo HTML page', async () => {

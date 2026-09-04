@@ -6,7 +6,7 @@
   "scripts": {
     "start": "node src/server.js",
     "dev": "node --watch src/server.js",
-    "test": "node --test test/**/*.test.js",
+    "test": "NODE_ENV=test node --test test/**/*.test.js",
     "backup": "node scripts/backup_database.js",
     "migrate": "node -e \"require('./src/db/database').getDatabase(); console.log('Migrations complete.');\""
   },

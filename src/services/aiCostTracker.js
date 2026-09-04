@@ -39,7 +39,7 @@ class AICostTracker {
 
     // Model-aware cost calculation in INR (@ ~₹85/USD)
     if (typeof inputTokens === 'number' && typeof outputTokens === 'number') {
-      const rate = MODEL_PRICING_USD_PER_M[model] || DEFAULT_MODEL_RATE;
+      const rate = MODEL_PRICING_USD_PER_M[model] || (model && model.endsWith(':free') ? { input: 0.0, output: 0.0 } : DEFAULT_MODEL_RATE);
       const inputCostUsd = (inputTokens / 1000000) * rate.input;
       const outputCostUsd = (outputTokens / 1000000) * rate.output;
       estimatedCostInr = parseFloat(((inputCostUsd + outputCostUsd) * 85).toFixed(4));

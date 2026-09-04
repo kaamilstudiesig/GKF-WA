@@ -81,6 +81,7 @@ class AIService {
     this.model = env.openRouterModel;
     this.fallbackModel = process.env.OPENROUTER_FALLBACK_MODEL || 'google/gemini-2.5-flash-lite';
     this.maxHistoryTurns = 10;
+    this.forceNetworkInTest = false;
   }
 
   /**
@@ -233,8 +234,8 @@ SECURITY AND FACTUAL ACCURACY DIRECTIVES:
       message_turns: messages.length
     });
 
-    // In tests or if API key is not set, simulate response deterministically
-    if (!env.openRouterApiKey || process.env.NODE_ENV === 'test') {
+    // In tests or if API key is not set, simulate response deterministically unless forced in tests
+    if (!env.openRouterApiKey || (process.env.NODE_ENV === 'test' && !this.forceNetworkInTest)) {
       return this.handleMockAIResponse(lead, incomingText, tenantId);
     }
 

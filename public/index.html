@@ -181,7 +181,7 @@
       <div class="lead-modal-header">
         <div class="lead-title-wrapper">
           <h2 class="lead-modal-title" id="leadModalTitle">CRM Lead Summary</h2>
-          <span class="lead-status-pill">🔥 HOT LEAD</span>
+          <span class="lead-status-pill" id="leadModalStatusPill">NEW LEAD</span>
         </div>
         <button type="button" class="modal-close-btn" id="closeLeadModalBtn" aria-label="Close modal">&times;</button>
       </div>
@@ -189,42 +189,42 @@
       <div class="lead-info-grid">
         <div class="lead-info-item">
           <div class="lead-info-label">Customer Name</div>
-          <div class="lead-info-val">Rahul Sharma</div>
+          <div class="lead-info-val" id="leadCardName">Rahul Sharma</div>
         </div>
 
         <div class="lead-info-item">
           <div class="lead-info-label">WhatsApp ID</div>
-          <div class="lead-info-val">+91 98765 43210</div>
+          <div class="lead-info-val" id="leadCardPhone">+91 98765 43210</div>
         </div>
 
         <div class="lead-info-item">
           <div class="lead-info-label">Gym / Tenant</div>
-          <div class="lead-info-val">Goldkraft Fitness</div>
+          <div class="lead-info-val" id="leadCardTenant">Goldkraft Fitness</div>
         </div>
 
         <div class="lead-info-item">
           <div class="lead-info-label">Location</div>
-          <div class="lead-info-val">JP Nagar, Bengaluru</div>
+          <div class="lead-info-val" id="leadCardLocation">JP Nagar, Bengaluru</div>
         </div>
 
         <div class="lead-info-item">
-          <div class="lead-info-label">Intent</div>
-          <div class="lead-info-val highlight">Personal Training</div>
+          <div class="lead-info-label">Intent / Interest</div>
+          <div class="lead-info-val highlight" id="leadCardIntent">Personal Training</div>
         </div>
 
         <div class="lead-info-item">
-          <div class="lead-info-label">Fitness Goal</div>
-          <div class="lead-info-val highlight">Weight Loss / Fat Loss</div>
-        </div>
-
-        <div class="lead-info-item full-width">
           <div class="lead-info-label">Lead Qualification Status</div>
-          <div class="lead-info-val emerald">Qualified &bull; High Priority Callback</div>
+          <div class="lead-info-val emerald" id="leadCardStatus">new</div>
         </div>
 
         <div class="lead-info-item full-width">
-          <div class="lead-info-label">Required Action</div>
-          <div class="lead-info-val highlight">Human Follow-up Required (Senior Coach to Call)</div>
+          <div class="lead-info-label">Human Follow-up</div>
+          <div class="lead-info-val highlight" id="leadCardAction">Not Required</div>
+        </div>
+
+        <div class="lead-info-item full-width">
+          <div class="lead-info-label">CRM Notes</div>
+          <div class="lead-info-val" id="leadCardNotes" style="font-size: 13px; line-height: 1.4; color: var(--text-secondary);">None</div>
         </div>
       </div>
 

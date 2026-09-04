@@ -3,10 +3,12 @@ const path = require('path');
 const crypto = require('crypto');
 const { verifyWebhookSignature } = require('./middleware/webhookSecurity');
 const { requireDashboardAuth } = require('./middleware/authMiddleware');
-const { webhookRateLimiter, dashboardRateLimiter } = require('./middleware/rateLimiter');
+const { webhookRateLimiter, dashboardRateLimiter, demoRateLimiter } = require('./middleware/rateLimiter');
+const { checkDemoAccess } = require('./middleware/demoSecurity');
 const webhookController = require('./controllers/webhookController');
 const leadController = require('./controllers/leadController');
 const dashboardController = require('./controllers/dashboardController');
+const demoController = require('./controllers/demoController');
 const { getDatabase } = require('./db/database');
 const gymConfig = require('./config/gymConfig');
 const env = require('./config/env');
@@ -109,6 +111,35 @@ function createApp() {
   app.get('/demo', (req, res) => {
     res.sendFile(path.join(__dirname, '../public/index.html'));
   });
+
+  // Dedicated WhatsApp Demo API Endpoints
+  app.post(
+    '/demo/chat',
+    demoRateLimiter,
+    checkDemoAccess,
+    (req, res) => demoController.chat(req, res)
+  );
+
+  app.get(
+    '/demo/conversation',
+    demoRateLimiter,
+    checkDemoAccess,
+    (req, res) => demoController.getConversation(req, res)
+  );
+
+  app.get(
+    '/demo/lead',
+    demoRateLimiter,
+    checkDemoAccess,
+    (req, res) => demoController.getLead(req, res)
+  );
+
+  app.post(
+    '/demo/reset',
+    demoRateLimiter,
+    checkDemoAccess,
+    (req, res) => demoController.reset(req, res)
+  );
 
   // Root endpoint with gym facility & service overview (redirects browser navigation to /demo)
   app.get('/', (req, res) => {

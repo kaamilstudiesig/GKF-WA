@@ -34,7 +34,24 @@ const dashboardRateLimiter = rateLimit({
   skip: () => isTest
 });
 
+/**
+ * Rate limiter for WhatsApp interactive demo endpoints
+ * Standard: 30 requests per minute per IP
+ */
+const demoRateLimiter = rateLimit({
+  windowMs: 60 * 1000, // 1 minute
+  max: isTest ? 10000 : 30,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: {
+    success: false,
+    error: 'Too many demo requests. Please slow down.'
+  },
+  skip: () => isTest
+});
+
 module.exports = {
   webhookRateLimiter,
-  dashboardRateLimiter
+  dashboardRateLimiter,
+  demoRateLimiter
 };

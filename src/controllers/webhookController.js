@@ -149,7 +149,9 @@ class WebhookController {
       return res.status(200).json({ status: 'success' });
     } catch (error) {
       logger.error('Error processing incoming webhook:', { error: error.message, stack: error.stack });
-      return res.status(200).json({ status: 'error_handled', message: error.message });
+      // 500 so Meta retries delivery. Safe: event recording is idempotent
+      // on eventKey and processed messages are deduplicated.
+      return res.status(500).json({ status: 'error', message: 'Webhook ingestion failed; will retry' });
     }
   }
 }

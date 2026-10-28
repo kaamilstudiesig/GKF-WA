@@ -16,12 +16,30 @@ const { createCrmApp } = require('../crm/src');
  * else (wa.goldkraftfitness.com, the herokuapp.com address, localhost) is the
  * bot. Both share the db module and its single connection pool.
  *
- * options.crmHosts / options.secureCookies override the env defaults (tests).
+ * options.crmHosts / options.secureCookies / options.forceHttps override the env defaults (tests).
  */
-function createApp({ crmHosts = env.crmHosts, secureCookies = env.nodeEnv === 'production' } = {}) {
+function createApp({
+  crmHosts = env.crmHosts,
+  secureCookies = env.nodeEnv === 'production',
+  forceHttps = env.nodeEnv === 'production'
+} = {}) {
   const app = express();
   app.set('trust proxy', 1); // Heroku router
   app.disable('x-powered-by');
+
+  // Heroku serves custom domains over plain http too. Send browsers to https
+  // (the CRM's login cookie is https-only, so http logins would silently fail)
+  // and tell them to stay on https from then on.
+  if (forceHttps) {
+    app.use((req, res, next) => {
+      if (req.secure) {
+        res.setHeader('Strict-Transport-Security', 'max-age=31536000; includeSubDomains');
+        return next();
+      }
+      if (req.method === 'GET' || req.method === 'HEAD') return res.redirect(301, `https://${req.headers.host}${req.originalUrl}`);
+      return res.status(403).json({ error: 'HTTPS required' });
+    });
+  }
 
   // CRM first, so its pages never get the bot's headers, CSP, JSON parser or JSON 404.
   // Secure cookies: Heroku terminates TLS, and every request to the app is HTTPS.
@@ -41,7 +59,6 @@ function createApp({ crmHosts = env.crmHosts, secureCookies = env.nodeEnv === 'p
     res.setHeader('X-Content-Type-Options', 'nosniff');
     res.setHeader('X-Frame-Options', 'DENY');
     res.setHeader('Content-Security-Policy', "default-src 'none'");
-    if (env.nodeEnv === 'production') res.setHeader('Strict-Transport-Security', 'max-age=31536000; includeSubDomains');
     req.id = req.headers['x-request-id'] || crypto.randomUUID();
     res.setHeader('x-request-id', req.id);
     next();

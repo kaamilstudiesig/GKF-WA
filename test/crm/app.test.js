@@ -55,6 +55,24 @@ test('CRM host gets the CRM login page, without the bot CSP or JSON 404', async 
   assert.strictEqual((await request(custom).get('/login').set('Host', CRM)).status, 404);
 });
 
+test('in production, http is redirected to https and https gets HSTS', async t => {
+  const { cleanup } = await setup();
+  t.after(cleanup);
+  const app = createApp({ forceHttps: true });
+  const crmHttp = await request(app).get('/login?next=1').set('Host', CRM).set('X-Forwarded-Proto', 'http');
+  assert.strictEqual(crmHttp.status, 301);
+  assert.strictEqual(crmHttp.headers.location, `https://${CRM}/login?next=1`);
+  const botHttp = await request(app).get('/health').set('Host', BOT).set('X-Forwarded-Proto', 'http');
+  assert.strictEqual(botHttp.status, 301);
+  const postHttp = await request(app).post('/login').set('Host', CRM).set('X-Forwarded-Proto', 'http').type('form').send({ email: 'x', password: 'y' });
+  assert.strictEqual(postHttp.status, 403);
+  const crmHttps = await request(app).get('/login').set('Host', CRM).set('X-Forwarded-Proto', 'https');
+  assert.strictEqual(crmHttps.status, 200);
+  assert.match(crmHttps.headers['strict-transport-security'], /max-age=31536000/);
+  const botHttps = await request(app).get('/health').set('Host', BOT).set('X-Forwarded-Proto', 'https');
+  assert.strictEqual(botHttps.status, 200);
+});
+
 test('a staff reply sent on the CRM host goes through the shared db', async t => {
   const { cleanup } = await setup();
   t.after(cleanup);

@@ -1,7 +1,0 @@
-node_modules/
-.env
-data/
-seed/users.json
-*.db
-*.db-wal
-*.db-shm

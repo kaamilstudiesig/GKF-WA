@@ -1,8 +1,8 @@
+const { setup, login, creds } = require('./helpers');
 const test = require('node:test');
 const assert = require('node:assert');
 const request = require('supertest');
-const { hashPassword, verifyPassword, validateNewPassword } = require('../src/auth');
-const { setup, login, creds } = require('./helpers');
+const { hashPassword, verifyPassword, validateNewPassword } = require('../../crm/src/auth');
 
 test('passwords are hashed with scrypt and verify correctly', async () => {
   const h = hashPassword('Secret12345');

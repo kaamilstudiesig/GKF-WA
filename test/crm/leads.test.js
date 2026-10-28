@@ -1,6 +1,6 @@
+const { setup, login } = require('./helpers');
 const test = require('node:test');
 const assert = require('node:assert');
-const { setup, login } = require('./helpers');
 
 const LEAD = '918050443322'; // Arjun, status new, messaged 30 min ago
 const STALE = '919611223344'; // Kavya, last message 72h ago

@@ -32,6 +32,10 @@ const env = {
   // How many earlier chat messages the AI sees with each reply.
   aiHistoryMessages: num(process.env.AI_HISTORY_MESSAGES, 10),
 
+  // Hostnames that get the staff CRM instead of the bot (comma list, matched without the port).
+  crmHosts: (process.env.CRM_HOSTS || 'crm.goldkraftfitness.com,crm.localhost')
+    .split(',').map(h => h.trim().toLowerCase()).filter(Boolean),
+
   validateForProduction() {
     const required = {
       DATABASE_URL: this.databaseUrl,

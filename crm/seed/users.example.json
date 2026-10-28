@@ -1,5 +1,5 @@
 {
-  "_comment": "Starting staff accounts for GKF CRM. `npm run seed` hashes these passwords (scrypt) into the crm_users table; plain text is never stored there. Every account must change its password at first login. To use your own list, copy this file to seed/users.json (git-ignored) and set SEED_USERS_FILE=./seed/users.json.",
+  "_comment": "Starting staff accounts for GKF CRM. `npm run crm:seed` hashes these passwords (scrypt) into the crm_users table; plain text is never stored there. Every account must change its password at first login. To use your own list, copy this file to crm/seed/users.json (git-ignored) and set SEED_USERS_FILE=./crm/seed/users.json.",
   "users": [
     { "name": "GKF Owner",   "email": "owner@goldkraftfitness.com",   "role": "owner",   "password": "GkfOwner#202667" },
     { "name": "GKF Manager", "email": "manager@goldkraftfitness.com", "role": "manager", "password": "GkfManager#2026" },

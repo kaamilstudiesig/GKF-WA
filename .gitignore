@@ -4,3 +4,4 @@ data/
 coverage/
 logs/
 .DS_Store
+crm/seed/users.json

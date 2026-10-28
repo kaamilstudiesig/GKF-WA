@@ -1,12 +1,13 @@
 /**
+ * `npm run crm:seed` (on Heroku: `heroku run npm run crm:seed`).
+ *
  * Creates the starting staff accounts from SEED_USERS_FILE (default
- * seed/users.example.json). Existing emails are left untouched, so this is
- * safe to run more than once.
+ * crm/seed/users.example.json). Existing emails are left untouched, so this is
+ * safe to run more than once. Uses the app's DATABASE_URL and runs any pending
+ * migrations first.
  */
 const fs = require('fs');
 const config = require('../src/config');
-const { createDb } = require('../src/db');
-const { migrateCrm } = require('../src/migrations');
 const { Users } = require('../src/users');
 
 async function seedUsers(db, file) {
@@ -25,10 +26,11 @@ async function seedUsers(db, file) {
 }
 
 if (require.main === module) {
+  const db = require('../../src/db');
+  const { migrateAll } = require('../../src/migrate');
   (async () => {
-    const db = createDb(config.databaseUrl());
     try {
-      await migrateCrm(db);
+      await migrateAll();
       const created = await seedUsers(db, config.seedUsersFile);
       console.log(created.length ? `Created users:\n  ${created.join('\n  ')}` : 'All seed users already exist.');
       console.log(`Passwords are in ${config.seedUsersFile}. Each user must change theirs at first login.`);

@@ -12,8 +12,8 @@ const util = require('./util');
 const h = fn => (req, res, next) => Promise.resolve(fn(req, res, next)).catch(next);
 
 /**
- * Builds the CRM Express app on the given db object (src/db.js createDb(), or
- * the bot's own db module: anything with query/many/one/tx). It opens no
+ * Builds the CRM Express app on the given db object (the bot's src/db module,
+ * or anything with query/many/one/tx). It opens no
  * connection of its own. Run migrateCrm(db) before serving requests.
  */
 function createCrmApp({

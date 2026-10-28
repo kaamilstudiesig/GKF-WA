@@ -1,5 +1,5 @@
 /**
- * Exports every table to one gzipped JSON file.
+ * Exports every bot and CRM table (except CRM login sessions) to one gzipped JSON file.
  *
  *   node scripts/backup.js                 -> sends it to the Telegram staff group
  *   node scripts/backup.js --out file.gz   -> writes it to a local file instead
@@ -11,11 +11,18 @@ const fs = require('fs');
 const zlib = require('zlib');
 const db = require('../src/db');
 
-const TABLES = ['leads', 'messages', 'handoffs', 'outbound_messages', 'ai_usage', 'webhook_events'];
+// In restore order: parents before the rows that reference them.
+const BOT_TABLES = ['leads', 'messages', 'handoffs', 'outbound_messages', 'ai_usage', 'webhook_events'];
+const CRM_TABLES = ['crm_users', 'crm_lead_assignments', 'crm_lead_notes', 'crm_follow_ups', 'crm_activity_log'];
+const TABLES = [...BOT_TABLES, ...CRM_TABLES];
 
 async function createBackup() {
   const tables = {};
-  for (const t of TABLES) tables[t] = await db.many(`SELECT * FROM ${t} ORDER BY 1`);
+  for (const t of TABLES) {
+    // CRM tables exist once the CRM migrations ran (always, on Heroku).
+    if (CRM_TABLES.includes(t) && !(await db.one('SELECT to_regclass($1) AS t', [t])).t) continue;
+    tables[t] = await db.many(`SELECT * FROM ${t} ORDER BY 1`);
+  }
   const doc = { format: 'gkf-wa-backup', version: 1, created_at: new Date().toISOString(), tables };
   return zlib.gzipSync(Buffer.from(JSON.stringify(doc)));
 }
@@ -53,4 +60,4 @@ if (require.main === module) {
     .catch(err => { console.error(`Backup failed: ${err.message}`); process.exit(1); });
 }
 
-module.exports = { createBackup, TABLES };
+module.exports = { createBackup, TABLES, BOT_TABLES, CRM_TABLES };

@@ -1,6 +1,6 @@
+const { setup, login } = require('./helpers');
 const test = require('node:test');
 const assert = require('node:assert');
-const { setup, login } = require('./helpers');
 
 const HOT_LEAD = '919845012345';   // Rahul, needs human
 const OTHER_LEAD = '919900112233'; // Priya

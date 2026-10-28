@@ -1,7 +1,7 @@
 {
   "name": "goldkraft-whatsapp-ai-backend",
   "version": "1.0.0",
-  "description": "Goldkraft Fitness WhatsApp lead bot: Meta Cloud API + OpenRouter, on Postgres",
+  "description": "Goldkraft Fitness WhatsApp lead bot (Meta Cloud API + OpenRouter) and staff CRM, one app on Postgres",
   "main": "src/server.js",
   "scripts": {
     "start": "node src/server.js",
@@ -9,7 +9,9 @@
     "migrate": "node scripts/migrate.js",
     "backup": "node scripts/backup.js",
     "restore": "node scripts/restore.js",
-    "test": "NODE_ENV=test node --test --test-concurrency=4 \"test/*.test.js\""
+    "test": "NODE_ENV=test node --test --test-concurrency=4 \"test/**/*.test.js\"",
+    "crm:seed": "node crm/scripts/seed.js",
+    "dev:demo-data": "node scripts/demo-data.js"
   },
   "keywords": [
     "whatsapp",
@@ -23,7 +25,8 @@
     "@sentry/node": "^10.73.0",
     "axios": "^1.7.9",
     "dotenv": "^16.4.7",
-    "express": "^4.21.2",
+    "ejs": "^7.0.2",
+    "express": "^4.22.3",
     "express-rate-limit": "^8.7.0",
     "pg": "8.23.1"
   },

@@ -37,7 +37,9 @@ async function createPgliteDriver(url) {
     throw new Error('DATABASE_URL uses pglite:// but @electric-sql/pglite is not installed (it is a dev dependency).');
   }
   const location = url.replace(/^pglite:\/\//, '');
-  const pg = location === 'memory' || location === '' ? new PGlite() : new PGlite(location);
+  const inMemory = location === 'memory' || location === '';
+  if (!inMemory) require('fs').mkdirSync(require('path').dirname(require('path').resolve(location)), { recursive: true });
+  const pg = inMemory ? new PGlite() : new PGlite(location);
   await pg.waitReady;
   return {
     kind: 'pglite',

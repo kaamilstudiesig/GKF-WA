@@ -1,5 +1,5 @@
 const crypto = require('crypto');
-const { Params } = require('./db');
+const { Params } = require('./util');
 const { leadScope, staffScope, canAssignTo } = require('./permissions');
 const { LEAD_STATUSES, WINDOW_MS } = require('./constants');
 const { localDay } = require('./util');

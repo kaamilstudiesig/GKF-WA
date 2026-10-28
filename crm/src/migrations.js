@@ -79,7 +79,7 @@ const CRM_MIGRATIONS = [
   }
 ];
 
-// Bot tables and columns the CRM reads or writes (GKF-WA src/db/schema.js).
+// Bot tables and columns the CRM reads or writes (src/db/schema.js).
 const BOT_REQUIRED = {
   leads: ['wa_id', 'display_name', 'status', 'interest', 'source', 'first_contact_at', 'last_inbound_message_at',
     'last_outbound_message_at', 'needs_human', 'handoff_reason', 'notes', 'metadata', 'updated_at'],
@@ -110,8 +110,7 @@ async function assertBotSchema(db) {
   if (problems.length) {
     throw new Error(
       `The WhatsApp bot's tables are not in this database (${problems.join(', ')}). ` +
-      'Point DATABASE_URL at the bot\'s Postgres database and run the bot\'s migrations first. ' +
-      'For local development without the bot, use DATABASE_URL=pglite://./data/pglite, which loads a demo copy of the bot tables.'
+      'Run the bot\'s migrations first (db.init(), or `npm run migrate`, which runs both).'
     );
   }
 }

@@ -46,4 +46,13 @@ function timeAgo(iso) {
 const cleanWaId = v => String(v || '').replace(/[^0-9]/g, '');
 const humanize = v => (v ? String(v).replace(/_/g, ' ') : '');
 
-module.exports = { localInputToIso, localDay, fmtDate, timeAgo, cleanWaId, humanize, tzOffsetMs };
+/**
+ * Builds a parameter list while writing SQL: `q.p(value)` adds the value and
+ * returns its placeholder ($1, $2, ...).
+ */
+class Params {
+  constructor() { this.values = []; }
+  p(value) { this.values.push(value); return `$${this.values.length}`; }
+}
+
+module.exports = { Params, localInputToIso, localDay, fmtDate, timeAgo, cleanWaId, humanize, tzOffsetMs };

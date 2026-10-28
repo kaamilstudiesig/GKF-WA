@@ -8,11 +8,34 @@ const { webhookRateLimiter } = require('./middleware/rateLimiter');
 const webhookController = require('./controllers/webhookController');
 const logger = require('./utils/logger');
 const { captureException } = require('./utils/sentry');
+const { createCrmApp } = require('../crm/src');
 
-function createApp() {
+/**
+ * One Express app for the whole process. Requests whose Host is in CRM_HOSTS
+ * (crm.goldkraftfitness.com, crm.localhost) go to the staff CRM; everything
+ * else (wa.goldkraftfitness.com, the herokuapp.com address, localhost) is the
+ * bot. Both share the db module and its single connection pool.
+ *
+ * options.crmHosts / options.secureCookies override the env defaults (tests).
+ */
+function createApp({ crmHosts = env.crmHosts, secureCookies = env.nodeEnv === 'production' } = {}) {
   const app = express();
   app.set('trust proxy', 1); // Heroku router
   app.disable('x-powered-by');
+
+  // CRM first, so its pages never get the bot's headers, CSP, JSON parser or JSON 404.
+  // Secure cookies: Heroku terminates TLS, and every request to the app is HTTPS.
+  const crmApp = createCrmApp({ db, secureCookies });
+  const crmHostSet = new Set(crmHosts.map(h => h.toLowerCase()));
+  app.locals.crmApp = crmApp;
+  app.use((req, res, next) => {
+    if (!crmHostSet.has(String(req.hostname || '').toLowerCase())) return next();
+    // The CRM ends every request itself (its own 404 and error pages).
+    crmApp(req, res, err => {
+      captureException(err || new Error('CRM fell through'), { component: 'crm', path: req.path });
+      if (!res.headersSent) res.status(500).send('Internal Server Error');
+    });
+  });
 
   app.use((req, res, next) => {
     res.setHeader('X-Content-Type-Options', 'nosniff');

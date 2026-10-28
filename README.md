@@ -219,3 +219,7 @@ UPDATE outbound_messages SET status = 'pending', attempts = 0, available_at = da
    - **Sentry:** Centralized error/crash tracking with deep redaction of secrets, tokens, and phone numbers.
    - **1Password:** Secret management runbook for developers; production secrets injected via environment variables.
    - **Datadog / Azure / Heroku:** Intentionally evaluated and kept optional to avoid premature architecture bloat and runtime cost.
+
+## Deploying (Oracle Cloud free server)
+
+See [deploy/README.md](deploy/README.md) for running the bot and the GKF CRM together on one free server with HTTPS, Telegram staff alerts and daily backups.

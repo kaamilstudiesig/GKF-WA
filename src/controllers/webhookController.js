@@ -1,161 +1,78 @@
 const env = require('../config/env');
 const eventRepository = require('../db/eventRepository');
 const leadRepository = require('../db/leadRepository');
-const tenantService = require('../services/tenantService');
 const webhookWorker = require('../workers/webhookWorker');
 const logger = require('../utils/logger');
 
-class WebhookController {
-  /**
-   * GET /webhook
-   * Meta Webhook Verification Handshake
-   */
-  verifyWebhook(req, res) {
-    const mode = req.query['hub.mode'];
-    const token = req.query['hub.verify_token'];
-    const challenge = req.query['hub.challenge'];
+/** GET /webhook: Meta's one-time verification handshake. */
+function verifyWebhook(req, res) {
+  const mode = req.query['hub.mode'];
+  const token = req.query['hub.verify_token'];
+  const challenge = req.query['hub.challenge'];
+  if (!mode || !token) return res.status(400).json({ error: 'Missing required hub parameters' });
+  if (mode === 'subscribe' && env.metaWebhookVerifyToken && token === env.metaWebhookVerifyToken) {
+    logger.info('Webhook verification handshake successful');
+    return res.status(200).send(challenge);
+  }
+  logger.warn('Webhook verification failed: token mismatch');
+  return res.status(403).json({ error: 'Verification token mismatch' });
+}
 
-    logger.debug('Received webhook verification handshake request', { mode, token_set: Boolean(token) });
-
-    if (mode && token) {
-      if (mode === 'subscribe' && token === env.metaWebhookVerifyToken) {
-        logger.info('Webhook verification handshake successful');
-        return res.status(200).send(challenge);
-      } else {
-        logger.warn('Webhook verification handshake failed: Token mismatch or invalid mode.');
-        return res.status(403).json({ error: 'Verification token mismatch' });
-      }
-    }
-
-    return res.status(400).json({ error: 'Missing required hub parameters' });
+/**
+ * POST /webhook: stores each inbound message in the queue and answers Meta
+ * right away (Meta retries if it doesn't get a 200 quickly). Workers reply.
+ */
+async function handleIncoming(req, res) {
+  const body = req.body || {};
+  if (body.object !== 'whatsapp_business_account') {
+    return res.status(404).json({ error: 'Not a whatsapp_business_account event' });
   }
 
-  /**
-   * POST /webhook
-   * Inbound WhatsApp Message Ingestion Handler.
-   * Atomically records inbound events to durable queue and acknowledges Meta fast.
-   */
-  async handleIncoming(req, res) {
-    const body = req.body;
+  try {
+    let queued = 0;
+    for (const entry of body.entry || []) {
+      for (const change of entry.changes || []) {
+        const value = change.value || {};
+        const phoneNumberId = value.metadata?.phone_number_id;
 
-    logger.debug('Received inbound webhook payload', { object: body?.object, entries_count: body?.entry?.length });
+        // Only handle traffic for our own WhatsApp number.
+        if (env.metaPhoneNumberId && phoneNumberId && phoneNumberId !== env.metaPhoneNumberId) {
+          logger.warn('Ignoring webhook for a different WhatsApp number', { phone_number_id: phoneNumberId });
+          continue;
+        }
 
-    // Confirm it is a WhatsApp Business Account webhook
-    if (body.object !== 'whatsapp_business_account') {
-      return res.status(404).json({ error: 'Not a whatsapp_business_account event' });
-    }
-
-    try {
-      const entries = body.entry || [];
-      const enqueuedEventIds = [];
-
-      for (const entry of entries) {
-        const changes = entry.changes || [];
-
-        for (const change of changes) {
-          const value = change.value || {};
-          const phoneNumberId = value.metadata?.phone_number_id || null;
-          const tenant = tenantService.resolveTenantByPhoneNumberId(phoneNumberId);
-
-          if (!tenant) {
-            logger.warn('Inbound webhook ignored: unmapped tenant in production', {
-              phone_number_id: phoneNumberId
+        // Delivery receipts: only failures are worth attention.
+        for (const s of value.statuses || []) {
+          if (s.status === 'failed') {
+            logger.warn('WhatsApp reported a failed delivery', {
+              message_id: s.id, code: s.errors?.[0]?.code, title: s.errors?.[0]?.title
             });
-            continue;
-          }
-
-          // 1. Handle Status Receipts (sent, delivered, read)
-          if (value.statuses && value.statuses.length > 0) {
-            for (const statusObj of value.statuses) {
-              logger.debug('Received message delivery status update', {
-                message_id: statusObj.id,
-                status: statusObj.status,
-                recipient_id: statusObj.recipient_id
-              });
-
-              const eventKey = `status:${statusObj.id}:${statusObj.status}`;
-              const { inserted, id } = eventRepository.recordEvent({
-                eventKey,
-                tenantId: tenant.id,
-                messageId: statusObj.id,
-                eventType: 'status',
-                payload: { entry: [{ changes: [{ value: { ...value, statuses: [statusObj] } }] }] }
-              });
-              if (inserted && id) enqueuedEventIds.push(id);
-            }
-            continue;
-          }
-
-          // 2. Handle Inbound Messages
-          const messages = value.messages || [];
-          const contacts = value.contacts || [];
-
-          for (const msg of messages) {
-            const messageId = msg.id;
-            const fromNumber = msg.from;
-            const matchingContact = contacts.find(c => c.wa_id === fromNumber) || contacts[0];
-            const waId = (matchingContact?.wa_id || fromNumber || '').replace(/[^0-9]/g, '');
-
-            if (!waId || !messageId) {
-              logger.warn('Received message without valid wa_id or message_id', { msg });
-              continue;
-            }
-
-            // Message Deduplication check against existing messages
-            if (leadRepository.hasMessageBeenProcessed(messageId)) {
-              logger.info('Duplicate message detected. Skipping re-processing.', {
-                message_id: messageId,
-                wa_id: waId
-              });
-              continue;
-            }
-
-            const eventKey = `msg:${messageId}`;
-            const { inserted, id } = eventRepository.recordEvent({
-              eventKey,
-              tenantId: tenant.id,
-              messageId,
-              eventType: 'message',
-              payload: { entry: [{ changes: [{ value: { ...value, messages: [msg], contacts: matchingContact ? [matchingContact] : [] } }] }] }
-            });
-
-            if (!inserted) {
-              logger.info('Duplicate message detected. Skipping re-processing.', {
-                message_id: messageId,
-                wa_id: waId
-              });
-            } else if (id) {
-              enqueuedEventIds.push(id);
-            }
           }
         }
-      }
 
-      // Synchronous drainage in test environment (for existing test suite compatibility)
-      const isAsyncRequested = Boolean(req.headers['x-async-processing']);
-      if (process.env.NODE_ENV === 'test' && !isAsyncRequested) {
-        await webhookWorker.drain(enqueuedEventIds.length || 1, { syncOutbound: true });
-      } else {
-        // Asynchronous non-blocking processing in production/development
-        setImmediate(async () => {
-          try {
-            await webhookWorker.processNext();
-          } catch (err) {
-            logger.error('Background worker execution error:', { error: err.message });
+        const contacts = value.contacts || [];
+        for (const msg of value.messages || []) {
+          const contact = contacts.find(c => c.wa_id === msg.from) || contacts[0] || null;
+          const waId = String(contact?.wa_id || msg.from || '').replace(/[^0-9]/g, '');
+          if (!waId || !msg.id) {
+            logger.warn('Skipping message without sender or id');
+            continue;
           }
-        });
+          if (await leadRepository.hasMessage(msg.id)) continue; // Meta re-delivery
+          const id = await eventRepository.record({
+            eventKey: `msg:${msg.id}`, waId, messageId: msg.id, payload: { msg, contact }
+          });
+          if (id) queued++;
+        }
       }
-
-      return res.status(200).json({ status: 'success' });
-    } catch (error) {
-      logger.error('Error processing incoming webhook:', { error: error.message, stack: error.stack });
-      // 500 so Meta retries delivery. Safe: event recording is idempotent
-      // on eventKey and processed messages are deduplicated.
-      return res.status(500).json({ status: 'error', message: 'Webhook ingestion failed; will retry' });
     }
+    if (queued && webhookWorker.running) webhookWorker.kick();
+    return res.status(200).json({ status: 'success' });
+  } catch (err) {
+    logger.error('Failed to store incoming webhook', { error: err.message });
+    // 500 makes Meta retry; storing is idempotent so retries are safe.
+    return res.status(500).json({ status: 'error' });
   }
 }
 
-module.exports = new WebhookController();
-module.exports.WebhookController = WebhookController;
-
+module.exports = { verifyWebhook, handleIncoming };

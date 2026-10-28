@@ -1,108 +1,67 @@
-const createApp = require('./app');
 const env = require('./config/env');
-const { getDatabase, closeDatabase } = require('./db/database');
-const { initSentry, captureException } = require('./utils/sentry');
+const db = require('./db');
+const createApp = require('./app');
 const webhookWorker = require('./workers/webhookWorker');
 const outboundWorker = require('./workers/outboundWorker');
+const eventRepository = require('./db/eventRepository');
+const outboundRepository = require('./db/outboundRepository');
 const logger = require('./utils/logger');
+const { initSentry, captureException } = require('./utils/sentry');
 
-// 1. Validate production requirements (throws and halts immediately if production config is missing)
-try {
-  env.validateForProduction();
-} catch (err) {
-  logger.error(err.message);
-  process.exit(1);
-}
+async function main() {
+  env.validateForProduction(); // throws in production when settings are missing
+  initSentry();
+  await db.init(); // connects and applies any pending migrations
 
-// 2. Initialize Sentry error & performance monitoring
-initSentry();
-
-// 3. Initialize database & run tracked migrations
-getDatabase();
-
-// 4. Start background workers in non-test mode
-if (env.nodeEnv !== 'test') {
-  webhookWorker.start(2000);
-  outboundWorker.start(2000);
-}
-
-const app = createApp();
-
-const server = app.listen(env.port, () => {
-  logger.info(`Server started successfully on port ${env.port}`, {
-    environment: env.nodeEnv,
-    port: env.port,
-    model: env.openRouterModel,
-    database: env.databasePath
+  const app = createApp();
+  const server = app.listen(env.port, () => {
+    logger.info(`WhatsApp bot listening on port ${env.port}`, { env: env.nodeEnv, model: env.openRouterModel, db: db.driverKind() });
   });
 
-  if (env.nodeEnv !== 'production') {
-    console.log(`
-=========================================================
-  🏋️  GOLDKRAFT FITNESS - WHATSAPP AI BACKEND
-=========================================================
-  Environment:  ${env.nodeEnv}
-  Server URL:   http://localhost:${env.port}
-  Health Check: http://localhost:${env.port}/health (Liveness)
-  Readiness:    http://localhost:${env.port}/health/ready (Readiness)
-  Demo Chat:    http://localhost:${env.port}/demo (Interactive AI Chat Demo)
-  Dashboard:    http://localhost:${env.port}/dashboard/summary (Auth Required)
-  Webhook GET:  http://localhost:${env.port}/webhook (Handshake)
-  Webhook POST: http://localhost:${env.port}/webhook (Inbound Messages)
-  CRM Leads:    http://localhost:${env.port}/leads (Auth Required)
-  Database:     ${env.databasePath}
-  AI Model:     ${env.openRouterModel}
-=========================================================
-    `);
+  webhookWorker.start();
+  outboundWorker.start();
+
+  // Housekeeping: keep the small Postgres plan small.
+  const housekeeping = setInterval(async () => {
+    try {
+      const events = await eventRepository.cleanup(14);
+      const sent = await outboundRepository.cleanup(30);
+      if (events || sent) logger.info('Housekeeping removed old queue rows', { events, sent });
+    } catch (err) {
+      logger.error('Housekeeping failed', { error: err.message });
+    }
+  }, 6 * 60 * 60 * 1000);
+  housekeeping.unref();
+
+  let stopping = false;
+  async function shutdown(signal) {
+    if (stopping) return;
+    stopping = true;
+    app.locals.isShuttingDown = true;
+    logger.info(`${signal} received; finishing in-flight work`);
+    setTimeout(() => process.exit(1), 25000).unref(); // Heroku allows 30s
+    server.close();
+    await Promise.all([webhookWorker.stop(), outboundWorker.stop()]);
+    await db.close();
+    process.exit(0);
   }
-});
-
-// Graceful shutdown handling
-let isShuttingDown = false;
-async function handleShutdown(signal) {
-  if (isShuttingDown) return;
-  isShuttingDown = true;
-  app.locals.isShuttingDown = true;
-
-  logger.info(`Received ${signal}. Draining workers and closing server gracefully...`);
-
-  // Force exit safety timer (5s)
-  const forceTimer = setTimeout(() => {
-    logger.error('Shutdown grace period exceeded. Forcing termination.');
-    process.exit(1);
-  }, 5000);
-  forceTimer.unref();
-
-  try {
-    await webhookWorker.stop();
-    await outboundWorker.stop();
-
-    server.close(() => {
-      logger.info('HTTP server closed.');
-      closeDatabase();
-      logger.info('SQLite connection closed.');
-      process.exit(0);
-    });
-  } catch (err) {
-    logger.error('Error during graceful shutdown:', { error: err.message });
-    process.exit(1);
-  }
+  process.on('SIGTERM', () => shutdown('SIGTERM'));
+  process.on('SIGINT', () => shutdown('SIGINT'));
 }
 
-process.on('SIGINT', () => handleShutdown('SIGINT'));
-process.on('SIGTERM', () => handleShutdown('SIGTERM'));
-
-process.on('uncaughtException', (err) => {
-  captureException(err, { component: 'process_uncaught_exception' });
-  logger.error('Fatal uncaught exception:', { error: err.message, stack: err.stack });
-  if (!isShuttingDown) process.exit(1);
-});
-
-process.on('unhandledRejection', (reason) => {
+process.on('unhandledRejection', reason => {
   const err = reason instanceof Error ? reason : new Error(String(reason));
-  captureException(err, { component: 'process_unhandled_rejection' });
-  logger.error('Unhandled promise rejection:', { error: err.message, stack: err.stack });
+  captureException(err, { component: 'unhandled_rejection' });
+  logger.error('Unhandled promise rejection', { error: err.message });
 });
 
-module.exports = server;
+process.on('uncaughtException', err => {
+  captureException(err, { component: 'uncaught_exception' });
+  logger.error('Fatal uncaught exception', { error: err.message, stack: err.stack });
+  process.exit(1);
+});
 
+main().catch(err => {
+  logger.error(`Startup failed: ${err.message}`);
+  process.exit(1);
+});

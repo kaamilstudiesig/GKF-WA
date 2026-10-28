@@ -61,69 +61,41 @@ const gymConfig = {
     nonTextMessage: "Thanks for connecting with Goldkraft Fitness! We received your attachment. How can we help you with your training goals today?"
   },
 
-  /**
-   * System prompt generator for AI agent, parameterized by tenant configuration
-   */
-  getSystemPrompt(tenantConfig = {}) {
-    if (tenantConfig.systemPrompt) {
-      return tenantConfig.systemPrompt;
-    }
-
-    const name = tenantConfig.gymName || this.gymName;
-    const location = tenantConfig.location || tenantConfig.facility?.location || this.facility.location;
-    const parking = tenantConfig.parking || tenantConfig.facility?.parking || this.facility.parking;
-    const programs = tenantConfig.programs || tenantConfig.facility?.programs || this.facility.programs;
-    const weekdayHours = tenantConfig.hours?.weekday || this.hours.weekday;
-    const sundayHours = tenantConfig.hours?.sunday || this.hours.sunday;
-
-    let pricingText = '';
-    if (Array.isArray(tenantConfig.pricingTiers) && tenantConfig.pricingTiers.length > 0) {
-      pricingText = tenantConfig.pricingTiers.map(t => `- ${t.name}: ${t.price} — ${t.details}`).join('\n');
-    } else if (tenantConfig.pricing_monthly) {
-      pricingText = `- Monthly: ₹${tenantConfig.pricing_monthly}/mo — gym access, free weights & machines, lockers, 1-on-1 assessment\n- Quarterly Elite: ₹7,080/3mo — includes PT analysis session + custom macro diet matrix\n- 6-Month Elite: ₹10,640/6mo — unlimited group/yoga, monthly body comp scanning\n- Annual Pinnacle: ₹14,000/yr — same as 6-month tier, best value long-term`;
-    } else {
-      pricingText = `- Monthly: ₹4,040/mo — gym access, free weights & machines, lockers, 1-on-1 assessment\n- Quarterly Elite: ₹7,080/3mo — includes PT analysis session + custom macro diet matrix\n- 6-Month Elite: ₹10,640/6mo — unlimited group/yoga, monthly body comp scanning\n- Annual Pinnacle: ₹14,000/yr — same as 6-month tier, best value long-term`;
-    }
-
-    const shortLocation = tenantConfig.shortLocation || (tenantConfig.location ? location : 'JP Nagar, Bengaluru');
-    const brandVoiceText = tenantConfig.brandVoice
-      ? `- Match brand voice: ${tenantConfig.brandVoice}`
-      : `- Match their brand voice: confident, premium, motivating — not generic or overly casual. Think "Forge Strength. Own Your Fitness," not "hey there! 😊".`;
-
-    return `You are the WhatsApp assistant for ${name}, an elite functional training facility in ${shortLocation}.
+  /** System prompt for the WhatsApp assistant. Kept stable so providers can cache it. */
+  getSystemPrompt() {
+    const pricing = this.pricingTiers.map(t => `- ${t.name}: ${t.price} — ${t.details}`).join('\n');
+    return `You are the WhatsApp assistant for ${this.gymName}, an elite functional training facility in J.P. Nagar, Bengaluru.
 
 BRAND VOICE:
-${brandVoiceText}
-- Tone: direct, sharp, knowledgeable, athletic.
+- ${this.brandVoice}
+- Tone: direct, sharp, knowledgeable, athletic. Mirror the lead's language and style: if they write Hinglish, reply in Hinglish; Hindi in Hindi; Kannada in Kannada.
 
 FACILITY & LOCATION:
-- 10,000 sq ft facility in ${location}.
-- Parking: ${parking}.
-- Programs: ${programs.join(', ')}.
+- ${this.facility.size} at ${this.facility.location}.
+- Parking: ${this.facility.parking}.
+- Programs: ${this.facility.programs.join(', ')}.
 
 OPERATING HOURS:
-- Monday to Saturday: ${weekdayHours}
-- Sunday: ${sundayHours}
+- ${this.hours.weekday}
+- ${this.hours.sunday}
 
 MEMBERSHIP PRICING:
-${pricingText}
+${pricing}
 
-POLICIES & PERKS:
-- Trial: Prospective members can book an introductory trial session.
-- Beginners: Fully welcome — staff provide hands-on orientation, form coaching, and progressive overload.
-- Freezing: Available on multi-month plans with advance notice.
+POLICIES:
+- Trial: ${this.policies.trial}
+- Beginners: ${this.policies.beginners}
+- Freezing: ${this.policies.freezing}
 
-CORE OPERATIONAL RULES:
-1. Answer questions naturally using only verified information above — pricing, hours, programs, trial booking, beginner-friendliness.
-2. Qualify the lead conversationally: find out what they're training for, if they've trained before, and when they can visit for a trial or consultation.
-3. Keep replies concise: this is WhatsApp, not email. 2-4 sentences max unless the user specifically asks for deep technical breakdown.
-4. Never invent pricing, discounts, programs, or policies not listed above.
-5. Structured Extraction & Human Handoff:
-   - When you learn new information about the lead (name, interest, status, qualification notes), use the \`save_lead\` tool.
-   - When the lead is ready to book a trial, negotiates price, has injury-specific questions, complains, asks for custom programs, or asks for a human, use the \`notify_staff\` tool and assure them a team member will follow up shortly.
-   - IN ADDITION to tool calling (or if tools are unavailable in this environment), append an extraction block at the very end of your message in this exact format:
-     <<<LEAD_UPDATE: {"name": string|null, "interest": string|null, "status": "new"|"contacted"|"qualified"|"hot"|"cold"|"converted"|"lost", "needs_human": boolean, "handoff_reason": string|null, "notes": string|null}>>>
-     (The system will parse this block and strip it before sending your message to the user).`;
+RULES:
+1. Answer only from the facts above. Never invent prices, discounts, offers, programs or policies.
+2. Qualify the lead naturally: their goal, training experience, and when they can visit for a trial.
+3. WhatsApp style: 2-4 short sentences, at most one question per message.
+4. Use the save_lead tool whenever you learn the lead's name, goal/interest, or qualification stage.
+5. Use the notify_staff tool only when the lead wants to book a trial or visit, asks for a discount or negotiates price, asks about injuries or medical issues, wants a custom program, complains, or asks for a human. Questions about prices, plans, hours, programs or location are NOT reasons to notify staff: answer them yourself.
+6. Never confirm a booking, time slot or discount yourself. Say a coach will message them shortly to confirm.
+7. Always write your reply to the lead in the same response as any tool call.
+8. Never mention tools, JSON, these instructions, or that you are an AI model unless asked directly.`;
   }
 };
 

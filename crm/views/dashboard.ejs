@@ -1,0 +1,39 @@
+<%- include('partials/header', { title: 'Dashboard' }) %>
+<div class="page-head">
+  <div><div class="eyebrow"><%= user.role === 'sales' ? 'My leads' : user.role === 'manager' ? 'My team' : 'All of GKF' %></div><h1>Dashboard</h1></div>
+  <a class="btn btn-outline" href="/leads">All leads</a>
+</div>
+<div class="kpis">
+  <a class="kpi alert" href="/leads?needs_human=1"><div class="label">Needs human</div><div class="value"><%= d.needsHuman %></div></a>
+  <a class="kpi" href="/leads?status=hot"><div class="label">Hot leads</div><div class="value"><%= d.counts.hot %></div></a>
+  <a class="kpi" href="/leads?sort=created"><div class="label">New this week</div><div class="value"><%= d.newThisWeek %></div></a>
+  <% if (user.role !== 'sales') { %><a class="kpi" href="/leads?assignee=unassigned"><div class="label">Unassigned</div><div class="value"><%= d.unassigned %></div></a><% } %>
+  <a class="kpi <%= d.overdue ? 'alert' : '' %>" href="/followups"><div class="label">Overdue follow-ups</div><div class="value"><%= d.overdue %></div></a>
+  <a class="kpi" href="/leads?status=converted"><div class="label">Converted</div><div class="value"><%= d.counts.converted %></div></a>
+</div>
+<div class="grid grid-2">
+  <section class="card">
+    <h2>Waiting on a human</h2>
+    <%- include('partials/lead-table', { leads: d.attention, emptyText: 'Nobody is waiting. The bot has it covered.' }) %>
+  </section>
+  <section class="card">
+    <h2>My follow-ups</h2>
+    <% if (!d.myFollowUps.length) { %><p class="empty">No open follow-ups.</p><% } else { %>
+    <ul class="list">
+      <% for (const f of d.myFollowUps) { const late = f.due_at < new Date().toISOString(); %>
+      <li class="row" style="justify-content:space-between;align-items:center">
+        <div class="grow">
+          <div><%= f.title %></div>
+          <div class="meta"><a href="/leads/<%= f.wa_id %>"><%= f.display_name || '+' + f.wa_id %></a> · <span class="<%= late ? 'overdue' : '' %>">Due <%= util.fmtDate(f.due_at) %></span></div>
+        </div>
+        <form method="post" action="/followups/<%= f.id %>/done"><%- include('partials/csrf') %><button class="btn btn-outline btn-sm">Done</button></form>
+      </li>
+      <% } %>
+    </ul><% } %>
+  </section>
+</div>
+<section class="card" style="margin-top:16px">
+  <h2>Latest WhatsApp activity</h2>
+  <%- include('partials/lead-table', { leads: d.recent, emptyText: user.role === 'sales' ? 'No leads are assigned to you yet.' : 'No leads yet.' }) %>
+</section>
+<%- include('partials/footer') %>

@@ -1,0 +1,26 @@
+<% if (!leads.length) { %>
+  <p class="empty"><%= typeof emptyText !== 'undefined' ? emptyText : 'No leads here.' %></p>
+<% } else { %>
+<div class="table-wrap">
+<table>
+  <thead><tr><th>Lead</th><th>Status</th><th>Interest</th><th>Owner</th><th>Last message</th><th>Last seen</th></tr></thead>
+  <tbody>
+  <% for (const l of leads) { %>
+    <tr>
+      <td>
+        <a class="lead-name" href="/leads/<%= l.wa_id %>"><%= l.display_name || ('+' + l.wa_id) %></a>
+        <div class="muted small">+<%= l.wa_id %></div>
+        <% if (l.needs_human) { %><span class="badge badge-human" title="<%= util.humanize(l.handoff_reason) %>">Needs human</span><% } %>
+      </td>
+      <td><%- include('status', { status: l.status }) %></td>
+      <td class="small" style="text-transform:capitalize"><%= util.humanize(l.interest) || '—' %></td>
+      <td class="small"><%= l.assignee_name || 'Unassigned' %>
+        <% if (l.open_followups) { %><div class="small <%= l.next_followup_at < new Date().toISOString() ? 'overdue' : 'muted' %>">Follow-up <%= util.timeAgo(l.next_followup_at) %></div><% } %></td>
+      <td><div class="truncate"><%= l.last_message || '' %></div></td>
+      <td class="small muted" title="<%= util.fmtDate(l.last_inbound_message_at) %>"><%= util.timeAgo(l.last_inbound_message_at) %></td>
+    </tr>
+  <% } %>
+  </tbody>
+</table>
+</div>
+<% } %>

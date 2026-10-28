@@ -1,0 +1,27 @@
+{
+  "name": "gkf-crm",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Staff CRM for Gold Kraft Fitness, on the GKF WhatsApp bot's Postgres database",
+  "main": "src/index.js",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "start": "node src/server.js",
+    "dev": "node --watch src/server.js",
+    "seed": "node scripts/seed.js",
+    "test": "NODE_ENV=test node --test \"test/*.test.js\""
+  },
+  "license": "UNLICENSED",
+  "dependencies": {
+    "dotenv": "^18.0.9",
+    "ejs": "^7.0.2",
+    "express": "^4.22.3",
+    "pg": "8.23.1"
+  },
+  "devDependencies": {
+    "@electric-sql/pglite": "0.5.8",
+    "supertest": "^7.3.1"
+  }
+}

@@ -1,0 +1,57 @@
+<%- include('partials/header', { title: 'Staff' }) %>
+<div class="page-head"><div><div class="eyebrow">Owner only</div><h1>Staff Accounts</h1></div></div>
+<div class="table-wrap">
+<table>
+  <thead><tr><th>Name</th><th>Role</th><th>Reports to</th><th class="num">Leads</th><th>Last login</th><th>Status</th><th></th></tr></thead>
+  <tbody>
+  <% for (const u of list) { %>
+    <tr>
+      <td><strong><%= u.name %></strong><div class="muted small"><%= u.email %></div></td>
+      <td><span class="badge badge-role"><%= ROLE_LABELS[u.role] %></span></td>
+      <td class="small"><%= u.manager_name || '—' %></td>
+      <td class="num"><%= u.lead_count %></td>
+      <td class="small muted"><%= u.last_login_at ? util.timeAgo(u.last_login_at) : 'Never' %><%= u.must_change_password ? ' · temp password' : '' %></td>
+      <td><span class="badge <%= u.active ? 'st-converted' : 'badge-danger' %>"><%= u.active ? 'Active' : 'Disabled' %></span></td>
+      <td>
+        <details class="edit"><summary>Edit</summary>
+          <form method="post" action="/users/<%= u.id %>">
+            <%- include('partials/csrf') %>
+            <div class="field"><label>Name</label><input name="name" value="<%= u.name %>" required></div>
+            <div class="field"><label>Email</label><input name="email" type="email" value="<%= u.email %>" required></div>
+            <div class="row">
+              <div class="grow"><label>Role</label><select name="role"><% for (const r of ROLES) { %><option value="<%= r %>" <%= r === u.role ? 'selected' : '' %>><%= ROLE_LABELS[r] %></option><% } %></select></div>
+              <div class="grow"><label>Manager (sales)</label><select name="manager_id"><option value="">None</option><% for (const m of managers) { %><option value="<%= m.id %>" <%= m.id === u.manager_id ? 'selected' : '' %>><%= m.name %></option><% } %></select></div>
+            </div>
+            <label class="check" style="display:flex;gap:6px;margin:10px 0"><input type="checkbox" name="active" value="1" <%= u.active ? 'checked' : '' %>> Active</label>
+            <button class="btn btn-sm" type="submit">Save</button>
+          </form>
+          <form method="post" action="/users/<%= u.id %>/password" style="margin-top:12px">
+            <%- include('partials/csrf') %>
+            <label>Set temporary password</label>
+            <div class="row"><input class="grow" name="password" type="password" autocomplete="new-password" minlength="10" required><button class="btn btn-outline btn-sm" type="submit">Reset</button></div>
+          </form>
+        </details>
+      </td>
+    </tr>
+  <% } %>
+  </tbody>
+</table>
+</div>
+<section class="card" style="margin-top:16px;max-width:640px">
+  <h2>Add staff member</h2>
+  <form method="post" action="/users">
+    <%- include('partials/csrf') %>
+    <div class="row">
+      <div class="grow field"><label for="n">Name</label><input id="n" name="name" required value="<%= form.name || '' %>"></div>
+      <div class="grow field"><label for="e">Email</label><input id="e" name="email" type="email" required value="<%= form.email || '' %>"></div>
+    </div>
+    <div class="row">
+      <div class="grow field"><label for="r">Role</label><select id="r" name="role"><% for (const r of ROLES) { %><option value="<%= r %>" <%= (form.role || 'sales') === r ? 'selected' : '' %>><%= ROLE_LABELS[r] %></option><% } %></select></div>
+      <div class="grow field"><label for="m">Manager (sales only)</label><select id="m" name="manager_id"><option value="">None</option><% for (const m of managers) { %><option value="<%= m.id %>"><%= m.name %></option><% } %></select></div>
+    </div>
+    <div class="field"><label for="p">Temporary password</label><input id="p" name="password" type="password" autocomplete="new-password" minlength="10" required>
+      <div class="muted small" style="margin-top:4px">They'll be asked to change it at first login.</div></div>
+    <button class="btn" type="submit">Create account</button>
+  </form>
+</section>
+<%- include('partials/footer') %>

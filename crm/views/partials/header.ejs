@@ -1,0 +1,29 @@
+<%- include('head') %>
+<body>
+<div class="shell">
+  <aside class="sidebar">
+    <%- include('brand') %>
+    <nav class="nav">
+      <% const nav = [['/', 'Dashboard'], ['/leads', 'Leads'], ['/pipeline', 'Pipeline'], ['/followups', 'Follow-ups']];
+         if (can.viewReports(user)) nav.push(['/reports', 'Reports']);
+         if (can.manageUsers(user)) nav.push(['/users', 'Staff']);
+         for (const [href, label] of nav) {
+           const active = href === '/' ? path === '/' : path.startsWith(href); %>
+        <a href="<%= href %>" class="<%= active ? 'active' : '' %>"><%= label %></a>
+      <% } %>
+    </nav>
+    <div class="me">
+      <strong><%= user.name %></strong>
+      <span class="badge badge-role"><%= ROLE_LABELS[user.role] %></span>
+      <div class="links">
+        <a href="/account/password" class="small">Password</a>
+        <form method="post" action="/logout" class="inline-form">
+          <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+          <button class="linkbtn small" type="submit">Log out</button>
+        </form>
+      </div>
+    </div>
+  </aside>
+  <main class="main">
+    <% if (flash) { %><div class="alert alert-ok" role="status"><%= flash %></div><% } %>
+    <% if (error) { %><div class="alert alert-err" role="alert"><%= error %></div><% } %>

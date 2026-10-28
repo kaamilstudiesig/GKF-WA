@@ -85,7 +85,8 @@ class AIService {
 
   /** One chat completion. Records usage either way. */
   async callModel(model, messages, { tools = true, requestId, timeoutMs = 15000 } = {}) {
-    const body = { model, messages, temperature: 0.3, max_tokens: 350, usage: { include: true } };
+    // 1000 leaves room for models that think before answering; replies themselves stay short.
+    const body = { model, messages, temperature: 0.3, max_tokens: 1000, usage: { include: true } };
     if (tools) { body.tools = AI_TOOLS; body.tool_choice = 'auto'; }
     const started = Date.now();
     try {

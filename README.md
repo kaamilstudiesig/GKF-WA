@@ -41,7 +41,7 @@ All settings are environment variables; `.env.example` lists them with comments.
 | `META_WEBHOOK_VERIFY_TOKEN` | Any secret string; the same value goes in Meta's webhook settings. |
 | `META_APP_SECRET` | Meta app secret, used to check webhook signatures. |
 | `OPENROUTER_API_KEY` | OpenRouter key. |
-| `OPENROUTER_MODEL`, `OPENROUTER_FALLBACK_MODEL` | Default `google/gemini-2.5-flash-lite`, fallback `google/gemini-2.5-flash`. |
+| `OPENROUTER_MODEL`, `OPENROUTER_FALLBACK_MODEL` | Default `deepseek/deepseek-v4.1-flash`, fallback `google/gemini-3.5-flash-lite` (chosen from a 16-model test on GKF lead scenarios, Oct 2026). |
 | `AI_MONTHLY_TOKEN_BUDGET`, `AI_MONTHLY_REQUEST_BUDGET` | Monthly AI limits. |
 | `AI_HISTORY_MESSAGES` | Earlier messages the AI sees with each reply (default 10). |
 | `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID` | Staff alerts and daily backups. |
@@ -63,7 +63,7 @@ Tests run on an in-memory PGlite database and a fake OpenRouter, so they need no
 `scripts/eval.js` sends 8 realistic lead messages (pricing, trial booking, discount, injury, complaint, Hinglish beginner, "talk to a human", "Fees?") to each model you name and prints latency, tokens, cost, tool calls, the reply, and a flag when the reply leaks markup. It calls the real API and costs a few cents, so it is not part of `npm test`.
 
 ```bash
-OPENROUTER_API_KEY=sk-or-... node scripts/eval.js google/gemini-2.5-flash-lite google/gemini-2.5-flash
+OPENROUTER_API_KEY=sk-or-... node scripts/eval.js deepseek/deepseek-v4.1-flash google/gemini-3.5-flash-lite
 ```
 
 ## Deploy to Heroku

@@ -22,8 +22,8 @@ const env = {
 
   // OpenRouter
   openRouterApiKey: process.env.OPENROUTER_API_KEY || '',
-  openRouterModel: process.env.OPENROUTER_MODEL || 'google/gemini-2.5-flash-lite',
-  openRouterFallbackModel: process.env.OPENROUTER_FALLBACK_MODEL || 'google/gemini-2.5-flash',
+  openRouterModel: process.env.OPENROUTER_MODEL || 'deepseek/deepseek-v4.1-flash',
+  openRouterFallbackModel: process.env.OPENROUTER_FALLBACK_MODEL || 'google/gemini-3.5-flash-lite',
   openRouterBaseUrl: process.env.OPENROUTER_BASE_URL || 'https://openrouter.ai/api/v1',
 
   // AI cost guardrails (per calendar month, UTC). When hit, leads go to staff instead.

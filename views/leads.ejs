@@ -1,0 +1,35 @@
+<%- include('partials/header', { title: 'Leads' }) %>
+<div class="page-head">
+  <div><div class="eyebrow"><%= result.total %> lead<%= result.total === 1 ? '' : 's' %></div><h1>Leads</h1></div>
+  <% if (can.exportLeads(user)) { %><a class="btn btn-outline" href="/reports/leads.csv">Export CSV</a><% } %>
+</div>
+<form class="filters card" method="get" action="/leads">
+  <div><label for="q">Search</label><input id="q" name="q" value="<%= filters.q %>" placeholder="Name, number, interest"></div>
+  <div><label for="status">Status</label>
+    <select id="status" name="status"><option value="">All statuses</option>
+      <% for (const s of LEAD_STATUSES) { %><option value="<%= s %>" <%= filters.status === s ? 'selected' : '' %>><%= s %></option><% } %>
+    </select></div>
+  <% if (user.role !== 'sales') { %>
+  <div><label for="assignee">Owner</label>
+    <select id="assignee" name="assignee"><option value="">Anyone</option>
+      <option value="me" <%= filters.assignee === 'me' ? 'selected' : '' %>>Me</option>
+      <option value="unassigned" <%= filters.assignee === 'unassigned' ? 'selected' : '' %>>Unassigned</option>
+      <% for (const s of staff) { if (s.id === user.id) continue; %><option value="<%= s.id %>" <%= String(filters.assignee) === String(s.id) ? 'selected' : '' %>><%= s.name %></option><% } %>
+    </select></div>
+  <% } %>
+  <div><label for="sort">Sort</label>
+    <select id="sort" name="sort">
+      <% for (const [v, t] of [['attention', 'Needs human first'], ['recent', 'Latest message'], ['created', 'Newest leads'], ['oldest', 'Oldest message'], ['followup', 'Next follow-up']]) { %>
+        <option value="<%= v %>" <%= filters.sort === v ? 'selected' : '' %>><%= t %></option><% } %>
+    </select></div>
+  <label class="check"><input type="checkbox" name="needs_human" value="1" <%= filters.needsHuman ? 'checked' : '' %>> Needs human</label>
+  <div style="flex:0 0 auto"><button class="btn" type="submit">Filter</button></div>
+</form>
+<%- include('partials/lead-table', { leads: result.leads, emptyText: user.role === 'sales' ? 'No leads match. You only see leads assigned to you.' : 'No leads match these filters.' }) %>
+<% if (result.pages > 1) { const qs = p => new URLSearchParams({ ...query, page: p }).toString(); %>
+<div class="pager">
+  <% if (result.page > 1) { %><a href="/leads?<%= qs(result.page - 1) %>">← Prev</a><% } %>
+  <span class="muted">Page <%= result.page %> of <%= result.pages %></span>
+  <% if (result.page < result.pages) { %><a href="/leads?<%= qs(result.page + 1) %>">Next →</a><% } %>
+</div><% } %>
+<%- include('partials/footer') %>

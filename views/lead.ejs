@@ -1,0 +1,148 @@
+<%- include('partials/header', { title: lead.display_name || ('+' + lead.wa_id) }) %>
+<div class="page-head">
+  <div>
+    <div class="eyebrow"><a href="/leads">Leads</a> / +<%= lead.wa_id %></div>
+    <h1><%= lead.display_name || ('+' + lead.wa_id) %></h1>
+    <div class="row" style="gap:8px">
+      <%- include('partials/status', { status: lead.status }) %>
+      <% if (lead.needs_human) { %><span class="badge badge-human">Needs human · <%= util.humanize(lead.handoff_reason) %></span><% } %>
+      <span class="badge <%= lead.window_open ? 'st-converted' : 'badge-muted' %>"><%= lead.window_open ? 'Reply window open' : 'Reply window closed' %></span>
+    </div>
+  </div>
+  <a class="btn btn-outline" href="https://wa.me/<%= lead.wa_id %>" target="_blank" rel="noopener noreferrer">Open in WhatsApp</a>
+</div>
+
+<div class="lead-layout">
+  <div>
+    <section class="card">
+      <h2>Conversation</h2>
+      <div class="chat" aria-label="WhatsApp conversation">
+        <% if (!messages.length && !queued.length) { %><p class="empty">No messages yet.</p><% } %>
+        <% for (const m of messages) { %>
+          <div class="bubble <%= m.direction %>"><%= m.text %><span class="meta"><%= m.direction === 'in' ? 'Lead' : 'GKF' %> · <%= util.fmtDate(m.timestamp) %></span></div>
+        <% } %>
+        <% for (const q of queued) { %>
+          <div class="bubble queued <%= q.status === 'failed' ? 'failed' : '' %>"><%= q.text %><span class="meta"><%= q.metadata.user_name || 'Staff' %> · <%= q.status === 'failed' ? 'Failed: ' + (q.last_error || 'unknown error') : 'Queued, waiting for the WhatsApp bot to send' %></span></div>
+        <% } %>
+      </div>
+      <form class="composer" method="post" action="/leads/<%= lead.wa_id %>/message" data-confirm="Send this message to the lead on WhatsApp?">
+        <%- include('partials/csrf') %>
+        <label for="reply">Reply on WhatsApp</label>
+        <textarea id="reply" name="text" maxlength="4096" data-count rows="3" <%= lead.window_open ? '' : 'disabled' %> placeholder="<%= lead.window_open ? 'Type a reply. The WA bot sends it from the GKF number.' : 'The 24-hour window is closed. The lead has to message GKF again first.' %>" required></textarea>
+        <div class="row" style="justify-content:space-between;margin-top:8px">
+          <span class="muted small" data-counter></span>
+          <button class="btn" type="submit" <%= lead.window_open ? '' : 'disabled' %>>Send reply</button>
+        </div>
+      </form>
+    </section>
+
+    <section class="card">
+      <h2>Notes</h2>
+      <form method="post" action="/leads/<%= lead.wa_id %>/notes">
+        <%- include('partials/csrf') %>
+        <div class="field"><label for="note">Add a note</label><textarea id="note" name="body" rows="2" maxlength="5000" required placeholder="Call outcome, preferences, objections…"></textarea></div>
+        <button class="btn btn-sm" type="submit">Save note</button>
+      </form>
+      <ul class="list" style="margin-top:10px">
+        <% for (const n of notes) { %><li><div class="note-body"><%= n.body %></div><div class="meta"><%= n.user_name || 'Former staff' %> · <%= util.fmtDate(n.created_at) %></div></li><% } %>
+        <% if (lead.notes) { %><li><div class="note-body muted"><%= lead.notes %></div><div class="meta">From the WhatsApp bot</div></li><% } %>
+        <% if (!notes.length && !lead.notes) { %><li class="empty">No notes yet.</li><% } %>
+      </ul>
+    </section>
+  </div>
+
+  <div>
+    <section class="card">
+      <h2>Lead</h2>
+      <dl class="dl">
+        <dt>Phone</dt><dd>+<%= lead.wa_id %></dd>
+        <dt>Interest</dt><dd style="text-transform:capitalize"><%= util.humanize(lead.interest) || '—' %></dd>
+        <dt>Source</dt><dd><%= util.humanize(lead.source) %></dd>
+        <% if (lead.ad) { %><dt>Ad</dt><dd><span style="text-transform:capitalize"><%= lead.ad.platform %></span>: <%= lead.ad.headline || ('ad ' + (lead.ad.source_id || '')) %>
+          <% if (lead.ad.source_url && /^https:\/\//.test(lead.ad.source_url)) { %> · <a href="<%= lead.ad.source_url %>" target="_blank" rel="noopener noreferrer">view</a><% } %></dd><% } %>
+        <dt>First contact</dt><dd><%= util.fmtDate(lead.first_contact_at) %></dd>
+        <dt>Last message</dt><dd><%= util.fmtDate(lead.last_inbound_message_at) %> (<%= util.timeAgo(lead.last_inbound_message_at) %>)</dd>
+        <dt>Owner</dt><dd><%= lead.assignee_name || 'Unassigned' %></dd>
+      </dl>
+      <form method="post" action="/leads/<%= lead.wa_id %>/status" class="row" style="margin-top:16px">
+        <%- include('partials/csrf') %>
+        <div class="grow"><label for="st">Status</label>
+          <select id="st" name="status"><% for (const s of LEAD_STATUSES) { %><option value="<%= s %>" <%= s === lead.status ? 'selected' : '' %>><%= s %></option><% } %></select></div>
+        <button class="btn btn-sm" type="submit">Update</button>
+      </form>
+      <% if (can.assignLeads(user)) { %>
+      <form method="post" action="/leads/<%= lead.wa_id %>/assign" class="row" style="margin-top:12px">
+        <%- include('partials/csrf') %>
+        <div class="grow"><label for="as">Assign to</label>
+          <select id="as" name="user_id"><option value="">Unassigned</option>
+            <% for (const s of staff) { %><option value="<%= s.id %>" <%= s.id === lead.assignee_id ? 'selected' : '' %>><%= s.name %> (<%= ROLE_LABELS[s.role] %>)</option><% } %>
+          </select></div>
+        <button class="btn btn-sm" type="submit">Assign</button>
+      </form>
+      <% } %>
+      <% if (lead.needs_human) { %>
+      <form method="post" action="/leads/<%= lead.wa_id %>/handoff/resolve" style="margin-top:14px" data-confirm="Mark this handoff as handled?">
+        <%- include('partials/csrf') %>
+        <button class="btn btn-outline btn-sm" type="submit">Mark handoff resolved</button>
+      </form>
+      <% } %>
+    </section>
+
+    <section class="card">
+      <h2>Follow-ups</h2>
+      <form method="post" action="/leads/<%= lead.wa_id %>/followups">
+        <%- include('partials/csrf') %>
+        <div class="field"><label for="fu">What</label><input id="fu" name="title" maxlength="200" required placeholder="Call to confirm trial"></div>
+        <div class="row">
+          <div class="grow"><label for="due">Due</label><input id="due" name="due_at" type="datetime-local" required></div>
+          <% if (staff.length) { %><div class="grow"><label for="fuw">For</label>
+            <select id="fuw" name="user_id"><option value="">Lead owner</option><% for (const s of staff) { %><option value="<%= s.id %>"><%= s.name %></option><% } %></select></div><% } %>
+        </div>
+        <button class="btn btn-sm" type="submit" style="margin-top:10px">Schedule</button>
+      </form>
+      <ul class="list" style="margin-top:10px">
+        <% for (const f of followUps) { const late = f.status === 'open' && f.due_at < new Date().toISOString(); %>
+        <li class="row" style="justify-content:space-between;align-items:center">
+          <div class="grow">
+            <div class="<%= f.status === 'done' ? 'done-text' : '' %>"><%= f.title %></div>
+            <div class="meta"><%= f.user_name %> · <span class="<%= late ? 'overdue' : '' %>"><%= f.status === 'done' ? 'Done ' + util.fmtDate(f.completed_at) : 'Due ' + util.fmtDate(f.due_at) %></span></div>
+          </div>
+          <% if (f.status === 'open') { %><form method="post" action="/followups/<%= f.id %>/done"><%- include('partials/csrf') %><button class="btn btn-outline btn-sm">Done</button></form><% } %>
+        </li>
+        <% } %>
+        <% if (!followUps.length) { %><li class="empty">Nothing scheduled.</li><% } %>
+      </ul>
+    </section>
+
+    <% if (handoffs.length) { %>
+    <section class="card">
+      <h2>Bot handoffs</h2>
+      <ul class="list">
+        <% for (const h of handoffs) { %>
+        <li><span class="badge <%= h.status === 'resolved' ? 'badge-muted' : 'badge-human' %>"><%= h.status %></span> <span style="text-transform:capitalize"><%= util.humanize(h.reason) %></span>
+          <% if (h.summary) { %><div class="small muted"><%= h.summary %></div><% } %>
+          <div class="meta"><%= util.fmtDate(h.created_at) %><%= h.assigned_to ? ' · ' + h.assigned_to : '' %></div></li>
+        <% } %>
+      </ul>
+    </section>
+    <% } %>
+
+    <section class="card">
+      <h2>Activity</h2>
+      <% const labels = { status_change: 'changed status', assigned: 'assigned the lead', unassigned: 'unassigned the lead', note_added: 'added a note',
+           followup_added: 'scheduled a follow-up', followup_done: 'completed a follow-up', message_queued: 'sent a WhatsApp reply', handoff_resolved: 'resolved the handoff' }; %>
+      <ul class="list">
+        <% for (const a of activity) { %>
+        <% let extra = '';
+           if (a.action === 'status_change') extra = `: ${a.details.from} → ${a.details.to}${a.details.auto ? ' (auto)' : ''}`;
+           else if (a.action === 'assigned') extra = ` to ${a.details.to}`;
+           else if (a.details.title) extra = `: ${a.details.title}`; %>
+        <li class="small"><strong><%= a.user_name || 'System' %></strong> <%= (labels[a.action] || a.action) + extra %>
+          <div class="meta"><%= util.fmtDate(a.created_at) %></div></li>
+        <% } %>
+        <% if (!activity.length) { %><li class="empty">No staff activity yet.</li><% } %>
+      </ul>
+    </section>
+  </div>
+</div>
+<%- include('partials/footer') %>

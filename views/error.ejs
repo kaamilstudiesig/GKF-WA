@@ -1,0 +1,7 @@
+<% if (user) { %><%- include('partials/header', { title: 'Error' }) %><% } else { %><%- include('partials/head', { title: 'Error' }) %><body><main class="main"><% } %>
+<div class="page-head"><div><div class="eyebrow">Error <%= status %></div><h1><%= status === 404 ? 'Not Found' : status === 403 ? 'Not Allowed' : 'Something Went Wrong' %></h1></div></div>
+<div class="card" style="max-width:560px">
+  <p><%= message %></p>
+  <a class="btn btn-outline btn-sm" href="/">Back to dashboard</a>
+</div>
+<% if (user) { %><%- include('partials/footer') %><% } else { %></main></body></html><% } %>

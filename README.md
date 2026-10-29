@@ -72,6 +72,9 @@ All settings are environment variables; `.env.example` lists them with comments.
 | `OPENROUTER_MODEL`, `OPENROUTER_FALLBACK_MODEL` | Default `deepseek/deepseek-v4.1-flash`, fallback `google/gemini-3.5-flash-lite` (chosen from a 16-model test on GKF lead scenarios, Oct 2026). |
 | `AI_MONTHLY_TOKEN_BUDGET`, `AI_MONTHLY_REQUEST_BUDGET` | Monthly AI limits. |
 | `AI_HISTORY_MESSAGES` | Earlier messages the AI sees with each reply (default 10). |
+| `MAX_BOT_REPLIES_PER_LEAD_PER_DAY` | Bot replies per lead per 24 hours (default 30). At the limit the lead gets one last reply and goes to staff; after that the bot stays quiet. |
+| `BOT_PAUSE_HOURS_AFTER_STAFF_REPLY` | Hours the bot stays quiet after a staff reply from the CRM (default 12). New messages from that lead are alerted to Telegram. `0` turns the pause off. |
+| `GYM_LATITUDE`, `GYM_LONGITUDE` | Map pin sent after the location answer. Leave empty to send the address only. |
 | `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID` | Staff alerts and daily backups. |
 | `CRM_BASE_URL` | CRM address for "Open in CRM" links in Telegram alerts: `https://crm.goldkraftfitness.com`. |
 | `CRM_HOSTS` | Hostnames served by the CRM, comma-separated, matched without the port. Default `crm.goldkraftfitness.com,crm.localhost`. |

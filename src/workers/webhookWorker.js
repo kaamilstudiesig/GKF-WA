@@ -7,6 +7,8 @@ const aiPolicy = require('../services/aiPolicy');
 const deterministicRouter = require('../services/deterministicRouter');
 const aiService = require('../services/aiService');
 const whatsappService = require('../services/whatsappService');
+const botGuard = require('../services/botGuard');
+const notifyService = require('../services/notifyService');
 const { applyLeadUpdates } = require('../services/leadUpdates');
 const { applyReferral } = require('../services/adAttribution');
 const gymConfig = require('../config/gymConfig');
@@ -23,19 +25,22 @@ function textOf(msg) {
   }
 }
 
-/** Decides the reply to one inbound message: safety check, fixed replies, then AI. */
+/**
+ * Decides the reply to one inbound message: safety check, fixed replies, then AI.
+ * Returns { text, buttons?, location? }.
+ */
 async function decideReply(lead, text) {
   const medical = aiPolicy.checkMedicalInjurySafety(text);
   if (medical.isMedicalQuery) {
     await applyLeadUpdates(lead, { needs_human: true, handoff_reason: medical.handoffReason, summary: 'Asked an injury/medical question.' });
-    return medical.disclaimerText;
+    return { text: medical.disclaimerText };
   }
   const routed = deterministicRouter.routeMessage(text, {}, lead);
   if (routed.matched) {
     if (routed.updates) await applyLeadUpdates(lead, routed.updates);
-    return routed.replyText;
+    return { text: routed.replyText, buttons: routed.buttons, location: routed.location };
   }
-  return (await aiService.reply(lead, text)).replyText;
+  return { text: (await aiService.reply(lead, text)).replyText };
 }
 
 async function processEvent(event) {
@@ -65,13 +70,31 @@ async function processEvent(event) {
         text: text !== null ? text : `[${String(msg.type || 'unknown').toUpperCase()} message]`
       });
     }
+    const guard = await botGuard.check(waId);
+    if (guard.paused || guard.overCap) {
+      // Staff are handling this lead (or it hit the daily cap): record the message, don't answer.
+      whatsappService.markReadWithTyping(msg.id, { typing: false });
+      if (guard.paused) notifyService.notifyLeadMessage({ waId, text: text ?? `[${msg.type} message]` });
+      logger.info('Bot stayed quiet', { wa_id: waId, reason: guard.paused ? 'staff_handling' : 'daily_cap' });
+      await eventRepository.complete(event.id);
+      return;
+    }
     whatsappService.markReadWithTyping(msg.id); // fire and forget
 
-    const replyText = text !== null && text.trim()
-      ? await decideReply(lead, text)
-      : gymConfig.fallbackMessages.nonTextMessage;
+    let reply;
+    if (guard.capReached) {
+      await applyLeadUpdates(lead, { needs_human: true, handoff_reason: 'other', summary: 'Daily bot reply limit reached for this lead.' });
+      reply = { text: gymConfig.fallbackMessages.systemError };
+    } else {
+      reply = text !== null && text.trim()
+        ? await decideReply(lead, text)
+        : { text: gymConfig.fallbackMessages.nonTextMessage };
+    }
 
-    await outboundRepository.enqueue({ dedupKey: replyKey, waId, text: replyText, metadata: { in_reply_to: msg.id } });
+    const metadata = { in_reply_to: msg.id };
+    if (reply.buttons?.length) metadata.buttons = reply.buttons;
+    if (reply.location) metadata.location = reply.location;
+    await outboundRepository.enqueue({ dedupKey: replyKey, waId, text: reply.text, metadata });
     if (outboundWorker.running) outboundWorker.kick();
     await eventRepository.complete(event.id);
   } catch (err) {
@@ -90,3 +113,4 @@ const webhookWorker = new QueueWorker('Inbound message worker', {
 module.exports = webhookWorker;
 module.exports.processEvent = processEvent;
 module.exports.textOf = textOf;
+module.exports.decideReply = decideReply;

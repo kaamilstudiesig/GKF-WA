@@ -31,6 +31,14 @@ const env = {
   aiMonthlyRequestBudget: num(process.env.AI_MONTHLY_REQUEST_BUDGET, 20000),
   // How many earlier chat messages the AI sees with each reply.
   aiHistoryMessages: num(process.env.AI_HISTORY_MESSAGES, 10),
+  // Most bot replies one lead can get in 24 hours; past it the lead goes to staff (stops spam and runaway cost).
+  maxBotRepliesPerLeadPerDay: num(process.env.MAX_BOT_REPLIES_PER_LEAD_PER_DAY, 30),
+  // The bot stays quiet for this many hours after a staff member replies from the CRM.
+  botPauseHoursAfterStaffReply: num(process.env.BOT_PAUSE_HOURS_AFTER_STAFF_REPLY, 12),
+
+  // Gym map pin sent with the location answer. Leave empty to send the address only.
+  gymLatitude: num(process.env.GYM_LATITUDE, NaN),
+  gymLongitude: num(process.env.GYM_LONGITUDE, NaN),
 
   // Hostnames that get the staff CRM instead of the bot (comma list, matched without the port).
   crmHosts: (process.env.CRM_HOSTS || 'crm.goldkraftfitness.com,crm.localhost')

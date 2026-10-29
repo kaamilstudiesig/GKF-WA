@@ -13,7 +13,9 @@ function isRetryable(err) {
 
 async function sendOne(job) {
   try {
-    const providerId = await whatsappService.sendText(job.wa_id, job.text);
+    const providerId = await whatsappService.sendText(job.wa_id, job.text, {
+      buttons: job.metadata?.buttons, location: job.metadata?.location
+    });
     await outboundRepository.markSent(job.id, providerId);
   } catch (err) {
     const retryable = isRetryable(err);

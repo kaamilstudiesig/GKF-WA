@@ -69,6 +69,26 @@ class NotifyService {
     return true;
   }
 
+  /** Fire-and-forget alert that a lead wrote while the bot is paused for staff. */
+  notifyLeadMessage({ waId, text }) {
+    if (!this.sendOverride && (!this.isEnabled() || process.env.NODE_ENV === 'test')) return;
+    setImmediate(async () => {
+      try {
+        const leadRepository = require('../db/leadRepository');
+        const lead = await leadRepository.findByWaId(waId);
+        const { crmBaseUrl } = this.config;
+        const link = crmBaseUrl ? `${crmBaseUrl}/leads/${waId}` : `https://wa.me/${waId}`;
+        await this.send([
+          `💬 <b>${escapeHtml(lead?.display_name || 'Lead')}</b> · +${escapeHtml(waId)} replied (bot paused for staff)`,
+          `“${escapeHtml(String(text || '').slice(0, 300))}”`,
+          `<a href="${escapeHtml(link)}">Reply in CRM</a>`
+        ].join('\n'));
+      } catch (err) {
+        logger.error('Failed to send Telegram lead-message alert', { wa_id: waId, error: err.message });
+      }
+    });
+  }
+
   /**
    * Fire-and-forget alert for a newly opened hand-off. Runs after the current
    * call stack so a slow Telegram call never delays the WhatsApp reply.

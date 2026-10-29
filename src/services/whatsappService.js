@@ -1,154 +1,62 @@
 const axios = require('axios');
 const env = require('../config/env');
 const leadRepository = require('../db/leadRepository');
-const tenantService = require('./tenantService');
 const logger = require('../utils/logger');
-const { captureException } = require('../utils/sentry');
 
+/**
+ * Meta WhatsApp Cloud API client. Without META_ACCESS_TOKEN (local dev) or in
+ * tests, sends are simulated and still recorded in the conversation.
+ */
 class WhatsAppService {
   constructor() {
-    this.version = env.metaGraphApiVersion;
-    this._forceLiveNetwork = false;
+    this.transport = null; // tests replace this to fake Meta responses
+  }
+
+  get live() {
+    return Boolean(this.transport || (env.metaAccessToken && env.metaPhoneNumberId && env.nodeEnv !== 'test'));
+  }
+
+  async post(payload, timeout = 10000) {
+    if (this.transport) return this.transport(payload);
+    const url = `https://graph.facebook.com/${env.metaGraphApiVersion}/${env.metaPhoneNumberId}/messages`;
+    const res = await axios.post(url, payload, {
+      headers: { Authorization: `Bearer ${env.metaAccessToken}`, 'Content-Type': 'application/json' },
+      timeout
+    });
+    return res.data;
+  }
+
+  /** Sends a text reply and records it in the conversation. Returns Meta's message id. */
+  async sendText(waId, text) {
+    const to = String(waId).replace(/[^0-9]/g, '');
+    if (!to || !text) throw new Error('sendText needs a recipient and text');
+
+    let messageId;
+    if (this.live) {
+      const data = await this.post({
+        messaging_product: 'whatsapp', recipient_type: 'individual', to, type: 'text',
+        text: { preview_url: false, body: text }
+      });
+      messageId = data?.messages?.[0]?.id || null;
+      logger.info('WhatsApp message sent', { to_suffix: to.slice(-4), message_id: messageId });
+    } else {
+      messageId = `wamid.simulated_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+      logger.debug('Simulated WhatsApp send (no Meta token or test mode)', { to_suffix: to.slice(-4) });
+    }
+    await leadRepository.saveMessage({ messageId, waId: to, direction: 'out', text });
+    return messageId;
   }
 
   /**
-   * Sends a plain text message to a WhatsApp user via Meta Cloud API.
-   * Multi-tenant aware: resolves tenant by options.tenantId and uses tenant's
-   * whatsapp_phone_number_id when available, falling back to global env.metaPhoneNumberId.
-   * Fails closed if an explicit tenantId cannot be resolved.
-   * 
-   * @param {string} toWaId - Recipient phone number without '+'
-   * @param {string} textBody - Message text content
-   * @param {object} options - Optional parameters (tenantId, previewUrl, forceLiveNetwork)
-   * @returns {Promise<object>} API response or simulated payload
+   * Marks the lead's message as read (blue ticks) and shows "typing…" while the
+   * reply is prepared. Best effort: failures are logged and ignored.
    */
-  async sendTextMessage(toWaId, textBody, options = {}) {
-    if (!toWaId || !textBody) {
-      throw new Error('toWaId and textBody are required to send a WhatsApp message.');
-    }
-
-    const cleanWaId = toWaId.replace(/[^0-9]/g, '');
-    const tenantId = options.tenantId || 'goldkraft';
-    let phoneNumberId = env.metaPhoneNumberId;
-
-    // Resolve tenant-specific WhatsApp Phone Number ID
-    if (options.tenantId) {
-      const tenant = tenantService.getTenantById(options.tenantId);
-      if (!tenant) {
-        throw new Error(`Cannot send outbound WhatsApp message: Unknown tenant ID '${options.tenantId}'.`);
-      }
-      if (tenant.whatsapp_phone_number_id) {
-        phoneNumberId = tenant.whatsapp_phone_number_id;
-      } else if (!phoneNumberId) {
-        throw new Error(`Cannot send outbound WhatsApp message: Tenant '${options.tenantId}' has no WhatsApp phone number configured and no default fallback exists.`);
-      }
-    } else if (!phoneNumberId) {
-      throw new Error('Cannot send outbound WhatsApp message: No WhatsApp phone number ID configured.');
-    }
-
-    const url = `https://graph.facebook.com/${this.version}/${phoneNumberId}/messages`;
-
-    const payload = {
-      messaging_product: 'whatsapp',
-      recipient_type: 'individual',
-      to: cleanWaId,
-      type: 'text',
-      text: {
-        preview_url: options.previewUrl || false,
-        body: textBody
-      }
-    };
-
-    logger.info('Dispatching outbound WhatsApp text message', {
-      to: cleanWaId,
-      body: textBody,
-      tenant_id: tenantId,
-      phone_number_id: phoneNumberId
-    });
-
-    // Determine simulation vs live Meta network send
-    const forceLive = Boolean(options.forceLiveNetwork || this._forceLiveNetwork);
-    const shouldSimulate = !forceLive && (!env.metaAccessToken || !phoneNumberId || process.env.NODE_ENV === 'test');
-
-    if (shouldSimulate) {
-      const simulatedMsgId = `wamid.simulated_${Date.now()}_${Math.random().toString(36).substring(2, 8)}`;
-      logger.debug('Simulated outbound send (development/test mode)', {
-        message_id: simulatedMsgId,
-        to: cleanWaId,
-        tenant_id: tenantId
-      });
-      
-      leadRepository.saveMessage({
-        messageId: simulatedMsgId,
-        tenantId,
-        waId: cleanWaId,
-        direction: 'out',
-        text: textBody,
-        timestamp: new Date().toISOString(),
-        rawPayload: { simulated: true, payload }
-      });
-
-      return {
-        messaging_product: 'whatsapp',
-        contacts: [{ input: cleanWaId, wa_id: cleanWaId }],
-        messages: [{ id: simulatedMsgId }]
-      };
-    }
-
+  async markReadWithTyping(messageId) {
+    if (!this.live || !messageId) return;
     try {
-      const response = await axios.post(url, payload, {
-        headers: {
-          'Authorization': `Bearer ${env.metaAccessToken || 'test_token'}`,
-          'Content-Type': 'application/json'
-        },
-        timeout: 10000
-      });
-
-      const messageId = response.data?.messages?.[0]?.id || null;
-      logger.info('Delivered message to Meta Cloud API', {
-        message_id: messageId,
-        to: cleanWaId,
-        tenant_id: tenantId,
-        phone_number_id: phoneNumberId
-      });
-
-      leadRepository.saveMessage({
-        messageId,
-        tenantId,
-        waId: cleanWaId,
-        direction: 'out',
-        text: textBody,
-        timestamp: new Date().toISOString(),
-        rawPayload: response.data
-      });
-
-      return response.data;
-    } catch (error) {
-      const errorData = error.response?.data || error.message;
-      captureException(error, {
-        component: 'whatsapp_outbound',
-        recipient: cleanWaId,
-        tenantId
-      });
-
-      logger.error('Failed to send outbound WhatsApp message:', {
-        to: cleanWaId,
-        tenant_id: tenantId,
-        error: errorData
-      });
-      
-      // Explicitly preserve tenant identity when logging attempted outbound failure
-      leadRepository.saveMessage({
-        messageId: `failed_${Date.now()}`,
-        tenantId,
-        waId: cleanWaId,
-        direction: 'out',
-        text: `[FAILED SEND] ${textBody}`,
-        timestamp: new Date().toISOString(),
-        rawPayload: { error: errorData }
-      });
-
-      throw error;
+      await this.post({ messaging_product: 'whatsapp', status: 'read', message_id: messageId, typing_indicator: { type: 'text' } }, 5000);
+    } catch (err) {
+      logger.debug('Could not mark message read', { error: err.response?.data?.error?.message || err.message });
     }
   }
 }

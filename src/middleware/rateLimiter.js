@@ -1,57 +1,17 @@
 const { rateLimit } = require('express-rate-limit');
 const env = require('../config/env');
 
-const isTest = env.nodeEnv === 'test';
-
 /**
- * Rate limiter for inbound webhook traffic from Meta
- * Standard: 100 requests per minute per IP
+ * Generous per-IP limit on the webhook. Meta's legitimate traffic stays well
+ * below this; it only stops floods of junk requests.
  */
 const webhookRateLimiter = rateLimit({
-  windowMs: 60 * 1000, // 1 minute
-  max: isTest ? 10000 : 100,
+  windowMs: 60 * 1000,
+  max: 600,
   standardHeaders: true,
   legacyHeaders: false,
-  message: {
-    error: 'Too many webhook requests from this IP. Please slow down.'
-  },
-  skip: () => isTest
+  message: { error: 'Too many webhook requests from this IP.' },
+  skip: () => env.nodeEnv === 'test'
 });
 
-/**
- * Rate limiter for CRM dashboard and lead management APIs
- * Standard: 60 requests per minute per IP
- */
-const dashboardRateLimiter = rateLimit({
-  windowMs: 60 * 1000, // 1 minute
-  max: isTest ? 10000 : 60,
-  standardHeaders: true,
-  legacyHeaders: false,
-  message: {
-    success: false,
-    error: 'Too many dashboard requests. Rate limit exceeded.'
-  },
-  skip: () => isTest
-});
-
-/**
- * Rate limiter for WhatsApp interactive demo endpoints
- * Standard: 30 requests per minute per IP
- */
-const demoRateLimiter = rateLimit({
-  windowMs: 60 * 1000, // 1 minute
-  max: isTest ? 10000 : 30,
-  standardHeaders: true,
-  legacyHeaders: false,
-  message: {
-    success: false,
-    error: 'Too many demo requests. Please slow down.'
-  },
-  skip: () => isTest
-});
-
-module.exports = {
-  webhookRateLimiter,
-  dashboardRateLimiter,
-  demoRateLimiter
-};
+module.exports = { webhookRateLimiter };

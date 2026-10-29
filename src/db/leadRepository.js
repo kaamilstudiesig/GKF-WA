@@ -1,257 +1,78 @@
-const { getDatabase } = require('./database');
+const db = require('./index');
 
-class LeadRepository {
-  constructor(db = null) {
-    this.customDb = db;
-  }
+const WINDOW_MS = 24 * 60 * 60 * 1000;
+const UPDATABLE = ['display_name', 'status', 'interest', 'source', 'needs_human', 'handoff_reason', 'notes', 'metadata'];
 
-  get db() {
-    return this.customDb || getDatabase();
-  }
+/** Leads and their WhatsApp conversation history. */
+const leadRepository = {
+  /** WhatsApp allows free-form replies only within 24h of the lead's last message. */
+  windowOpen(lastInboundAt) {
+    const t = new Date(lastInboundAt).getTime();
+    if (Number.isNaN(t)) return false;
+    const age = Date.now() - t;
+    return age >= 0 && age <= WINDOW_MS;
+  },
 
-  /**
-   * Computes if a 24-hour customer service window is open.
-   * @param {string|number|Date} lastInboundAt 
-   * @returns {boolean}
-   */
-  computeWindowOpen(lastInboundAt) {
-    if (!lastInboundAt) return false;
-    const lastInboundTime = new Date(lastInboundAt).getTime();
-    if (isNaN(lastInboundTime)) return false;
-    const diffMs = Date.now() - lastInboundTime;
-    return diffMs >= 0 && diffMs <= 24 * 60 * 60 * 1000;
-  }
-
-  /**
-   * Formats raw database lead record for API/domain consumption
-   */
-  formatLead(row) {
+  format(row) {
     if (!row) return null;
-    return {
-      wa_id: row.wa_id,
-      tenant_id: row.tenant_id || 'goldkraft',
-      display_name: row.display_name,
-      status: row.status,
-      interest: row.interest,
-      source: row.source,
-      first_contact_at: row.first_contact_at,
-      last_inbound_message_at: row.last_inbound_message_at,
-      last_outbound_message_at: row.last_outbound_message_at,
-      window_open: this.computeWindowOpen(row.last_inbound_message_at),
-      needs_human: Boolean(row.needs_human),
-      handoff_reason: row.handoff_reason,
-      notes: row.notes,
-      metadata: row.metadata_json ? JSON.parse(row.metadata_json) : {},
-      created_at: row.created_at,
-      updated_at: row.updated_at
-    };
-  }
+    return { ...row, metadata: row.metadata || {}, window_open: this.windowOpen(row.last_inbound_message_at) };
+  },
 
-  /**
-   * Finds a lead by WhatsApp ID, strictly scoped to tenant (defaults to 'goldkraft')
-   */
-  findByWaId(waId, tenantId = 'goldkraft') {
-    const targetTenant = tenantId || 'goldkraft';
-    const stmt = this.db.prepare('SELECT * FROM leads WHERE wa_id = ? AND tenant_id = ?');
-    const row = stmt.get(waId, targetTenant);
-    return this.formatLead(row);
-  }
+  async findByWaId(waId) {
+    return this.format(await db.one('SELECT * FROM leads WHERE wa_id = $1', [waId]));
+  },
 
-  /**
-   * Atomically finds or initializes a lead record upon receiving an inbound message
-   */
-  getOrCreateLead(waId, displayName = null, inboundTimestamp = null, tenantId = 'goldkraft') {
-    const targetTenant = tenantId || 'goldkraft';
-    const now = inboundTimestamp || new Date().toISOString();
+  /** Creates the lead on first contact, or refreshes name and last-seen time. */
+  async upsertInbound(waId, displayName = null, at = new Date().toISOString()) {
+    const row = await db.one(`
+      INSERT INTO leads (wa_id, display_name, first_contact_at, last_inbound_message_at, created_at, updated_at)
+      VALUES ($1, $2, $3, $3, now(), now())
+      ON CONFLICT (wa_id) DO UPDATE SET
+        display_name = COALESCE(EXCLUDED.display_name, leads.display_name),
+        last_inbound_message_at = GREATEST(leads.last_inbound_message_at, EXCLUDED.last_inbound_message_at),
+        updated_at = now()
+      RETURNING *`, [waId, displayName, at]);
+    return this.format(row);
+  },
 
-    const stmt = this.db.prepare(`
-      INSERT INTO leads (
-        wa_id, tenant_id, display_name, status, interest, source,
-        first_contact_at, last_inbound_message_at, last_outbound_message_at,
-        needs_human, handoff_reason, notes, metadata_json, created_at, updated_at
-      ) VALUES (?, ?, ?, 'new', NULL, 'whatsapp_inbound', ?, ?, NULL, 0, NULL, NULL, NULL, ?, ?)
-      ON CONFLICT(tenant_id, wa_id) DO UPDATE SET
-        display_name = COALESCE(excluded.display_name, leads.display_name),
-        last_inbound_message_at = excluded.last_inbound_message_at,
-        updated_at = excluded.updated_at
-    `);
-
-    stmt.run(
-      waId,
-      targetTenant,
-      displayName || null,
-      now,
-      now,
-      now,
-      now
-    );
-
-    return this.findByWaId(waId, targetTenant);
-  }
-
-  /**
-   * Updates fields of an existing lead scoped to tenant
-   */
-  updateLead(waId, updates = {}, tenantId = 'goldkraft') {
-    const targetTenant = tenantId || 'goldkraft';
-    const allowedFields = [
-      'display_name',
-      'status',
-      'interest',
-      'source',
-      'last_inbound_message_at',
-      'last_outbound_message_at',
-      'needs_human',
-      'handoff_reason',
-      'notes',
-      'metadata_json'
-    ];
-
-    const fieldsToSet = [];
-    const values = [];
-
-    for (const [key, val] of Object.entries(updates)) {
-      if (allowedFields.includes(key)) {
-        fieldsToSet.push(`${key} = ?`);
-        if (key === 'needs_human') {
-          values.push(val ? 1 : 0);
-        } else if (key === 'metadata_json' && typeof val === 'object' && val !== null) {
-          values.push(JSON.stringify(val));
-        } else {
-          values.push(val);
-        }
-      }
-    }
-
-    if (fieldsToSet.length === 0) return this.findByWaId(waId, targetTenant);
-
-    fieldsToSet.push('updated_at = ?');
-    values.push(new Date().toISOString());
-    values.push(waId);
-    values.push(targetTenant);
-
-    const sql = `UPDATE leads SET ${fieldsToSet.join(', ')} WHERE wa_id = ? AND tenant_id = ?`;
-    this.db.prepare(sql).run(...values);
-    return this.findByWaId(waId, targetTenant);
-  }
-
-  /**
-   * Appends notes to a lead
-   */
-  appendNotes(waId, newNote, tenantId = 'goldkraft') {
-    const targetTenant = tenantId || 'goldkraft';
-    const lead = this.findByWaId(waId, targetTenant);
-    if (!lead) return null;
-    const updatedNotes = lead.notes ? `${lead.notes}\n[${new Date().toISOString()}] ${newNote}` : `[${new Date().toISOString()}] ${newNote}`;
-    return this.updateLead(waId, { notes: updatedNotes }, targetTenant);
-  }
-
-  /**
-   * Checks if an incoming message_id has already been processed (Deduplication)
-   */
-  hasMessageBeenProcessed(messageId) {
-    if (!messageId) return false;
-    const stmt = this.db.prepare('SELECT 1 FROM messages WHERE message_id = ? LIMIT 1');
-    const result = stmt.get(messageId);
-    return Boolean(result);
-  }
-
-  /**
-   * Saves a message record to conversation history atomically
-   */
-  saveMessage({ messageId, waId, direction, text, timestamp, rawPayload = null, tenantId = 'goldkraft' }) {
-    const targetTenant = tenantId || 'goldkraft';
-    const stmt = this.db.prepare(`
-      INSERT INTO messages (message_id, tenant_id, wa_id, direction, text, timestamp, raw_payload, created_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-      ON CONFLICT(message_id) DO NOTHING
-    `);
-
-    stmt.run(
-      messageId || null,
-      targetTenant,
-      waId,
-      direction,
-      text,
-      timestamp || new Date().toISOString(),
-      rawPayload ? JSON.stringify(rawPayload) : null,
-      new Date().toISOString()
-    );
-
-    if (direction === 'out') {
-      this.updateLead(waId, { last_outbound_message_at: timestamp || new Date().toISOString() }, targetTenant);
-    }
-  }
-
-  /**
-   * Retrieves conversation history for a lead bounded by limit, strictly filtered by tenant
-   */
-  getConversationHistory(waId, limit = 20, tenantId = 'goldkraft') {
-    const targetTenant = tenantId || 'goldkraft';
-    const innerSql = 'SELECT * FROM messages WHERE wa_id = ? AND tenant_id = ? ORDER BY timestamp DESC, id DESC LIMIT ?';
-    const sql = `SELECT * FROM (${innerSql}) ORDER BY timestamp ASC, id ASC`;
-    const rows = this.db.prepare(sql).all(waId, targetTenant, limit);
-
-    return rows.map(r => ({
-      id: r.id,
-      message_id: r.message_id,
-      tenant_id: r.tenant_id,
-      direction: r.direction,
-      text: r.text,
-      timestamp: r.timestamp,
-      created_at: r.created_at
-    }));
-  }
-
-  /**
-   * Lists leads with filters, sorting, and pagination with strict multi-tenant scoping
-   */
-  listLeads({ tenantId = null, status, needsHuman, sortBy = 'recency', limit = 50, offset = 0 } = {}) {
-    const conditions = [];
+  async update(waId, updates = {}) {
+    const sets = [];
     const params = [];
-
-    if (tenantId) {
-      conditions.push('tenant_id = ?');
-      params.push(tenantId);
+    for (const [key, value] of Object.entries(updates)) {
+      if (!UPDATABLE.includes(key)) continue;
+      params.push(key === 'metadata' ? JSON.stringify(value || {}) : key === 'needs_human' ? Boolean(value) : value);
+      sets.push(key === 'metadata' ? `metadata = $${params.length}::jsonb` : `${key} = $${params.length}`);
     }
+    if (sets.length === 0) return this.findByWaId(waId);
+    params.push(waId);
+    const row = await db.one(
+      `UPDATE leads SET ${sets.join(', ')}, updated_at = now() WHERE wa_id = $${params.length} RETURNING *`, params);
+    return this.format(row);
+  },
 
-    if (status) {
-      conditions.push('status = ?');
-      params.push(status);
+  async hasMessage(messageId) {
+    if (!messageId) return false;
+    return Boolean(await db.one('SELECT 1 FROM messages WHERE message_id = $1', [messageId]));
+  },
+
+  /** Stores a message once (deduplicated on Meta's message id). */
+  async saveMessage({ messageId = null, waId, direction, text, timestamp = new Date().toISOString() }) {
+    await db.query(`
+      INSERT INTO messages (message_id, wa_id, direction, text, timestamp)
+      VALUES ($1, $2, $3, $4, $5)
+      ON CONFLICT (message_id) DO NOTHING`, [messageId, waId, direction, text, timestamp]);
+    if (direction === 'out') {
+      await db.query('UPDATE leads SET last_outbound_message_at = $2, updated_at = now() WHERE wa_id = $1', [waId, timestamp]);
     }
+  },
 
-    if (typeof needsHuman === 'boolean') {
-      conditions.push('needs_human = ?');
-      params.push(needsHuman ? 1 : 0);
-    }
-
-    let orderClause = 'ORDER BY last_inbound_message_at DESC';
-    if (sortBy === 'oldest') {
-      orderClause = 'ORDER BY last_inbound_message_at ASC';
-    } else if (sortBy === 'created_recent') {
-      orderClause = 'ORDER BY first_contact_at DESC';
-    } else if (sortBy === 'needs_human_first') {
-      orderClause = 'ORDER BY needs_human DESC, last_inbound_message_at DESC';
-    }
-
-    const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
-    const sql = `SELECT * FROM leads ${whereClause} ${orderClause} LIMIT ? OFFSET ?`;
-    params.push(limit, offset);
-
-    const rows = this.db.prepare(sql).all(...params);
-
-    const countSql = `SELECT COUNT(*) as total FROM leads ${whereClause}`;
-    const totalCount = this.db.prepare(countSql).get(...params.slice(0, params.length - 2)).total;
-
-    return {
-      total: totalCount,
-      limit,
-      offset,
-      leads: rows.map(r => this.formatLead(r))
-    };
+  /** The most recent `limit` messages, oldest first. */
+  async history(waId, limit = 10) {
+    const rows = await db.many(`
+      SELECT id, message_id, direction, text, timestamp FROM messages
+      WHERE wa_id = $1 ORDER BY timestamp DESC, id DESC LIMIT $2`, [waId, limit]);
+    return rows.reverse();
   }
-}
+};
 
-module.exports = new LeadRepository();
-module.exports.LeadRepository = LeadRepository;
-
+module.exports = leadRepository;

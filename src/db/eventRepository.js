@@ -1,199 +1,78 @@
-const { getDatabase, runTransaction } = require('./database');
+const db = require('./index');
 const logger = require('../utils/logger');
 
-class EventRepository {
-  constructor(db = null) {
-    this.customDb = db;
-  }
+const STALE_SECONDS = 120;
 
-  get db() {
-    return this.customDb || getDatabase();
-  }
-
-  /**
-   * Atomically records an inbound webhook event.
-   * Guaranteed idempotent via UNIQUE constraint on event_key.
-   * @param {object} param0
-   * @returns {{ inserted: boolean, id: number|null }}
-   */
-  recordEvent({ eventKey, tenantId = 'goldkraft', messageId = null, eventType = 'message', payload, maxAttempts = 5 }) {
-    const now = new Date().toISOString();
-    const payloadJson = typeof payload === 'string' ? payload : JSON.stringify(payload);
-
-    try {
-      const stmt = this.db.prepare(`
-        INSERT INTO webhook_events (
-          event_key, tenant_id, message_id, event_type, payload_json,
-          status, attempts, max_attempts, available_at, created_at, updated_at
-        ) VALUES (?, ?, ?, ?, ?, 'pending', 0, ?, ?, ?, ?)
-        ON CONFLICT(event_key) DO NOTHING
-      `);
-
-      const result = stmt.run(
-        eventKey,
-        tenantId,
-        messageId,
-        eventType,
-        payloadJson,
-        maxAttempts,
-        now,
-        now,
-        now
-      );
-
-      const inserted = result.changes > 0;
-      return {
-        inserted,
-        id: inserted ? result.lastInsertRowid : null
-      };
-    } catch (err) {
-      logger.error('Failed to record webhook event:', { eventKey, error: err.message });
-      throw err;
-    }
-  }
+/**
+ * Durable queue of inbound WhatsApp messages. The webhook stores each message
+ * here and answers Meta immediately; workers then process them.
+ */
+const eventRepository = {
+  /** Stores an event once. Returns its id, or null if it was already stored. */
+  async record({ eventKey, waId = null, messageId = null, payload, maxAttempts = 5 }) {
+    const row = await db.one(`
+      INSERT INTO webhook_events (event_key, wa_id, message_id, payload, max_attempts)
+      VALUES ($1, $2, $3, $4::jsonb, $5)
+      ON CONFLICT (event_key) DO NOTHING
+      RETURNING id`, [eventKey, waId, messageId, JSON.stringify(payload), maxAttempts]);
+    return row ? row.id : null;
+  },
 
   /**
-   * Reserves the next available pending event or reclaims a stale processing event.
-   * Atomic operation executed inside a transaction.
-   * @param {number} lockDurationSec
-   * @returns {object|null}
+   * Claims the next ready event (or one whose worker died). Messages from the
+   * same lead are handled strictly in order, one at a time, so replies never
+   * cross; different leads are processed in parallel.
    */
-  getNextPendingEvent(lockDurationSec = 60) {
-    return runTransaction((txDb) => {
-      const now = new Date().toISOString();
-      const staleCutoff = new Date(Date.now() - lockDurationSec * 1000).toISOString();
+  async claimNext(staleSeconds = STALE_SECONDS) {
+    return db.one(`
+      UPDATE webhook_events e
+      SET status = 'processing', locked_at = now(), attempts = e.attempts + 1, updated_at = now()
+      WHERE e.id = (
+        SELECT c.id FROM webhook_events c
+        WHERE ((c.status = 'pending' AND c.available_at <= now())
+            OR (c.status = 'processing' AND c.locked_at <= now() - make_interval(secs => $1)))
+          AND NOT EXISTS (
+            SELECT 1 FROM webhook_events p
+            WHERE c.wa_id IS NOT NULL AND p.wa_id = c.wa_id AND p.id <> c.id
+              AND ((p.status = 'processing' AND p.locked_at > now() - make_interval(secs => $1))
+                OR (p.status IN ('pending', 'processing') AND p.id < c.id)))
+        ORDER BY c.id
+        FOR UPDATE SKIP LOCKED
+        LIMIT 1)
+      RETURNING e.*`, [staleSeconds]);
+  },
 
-      // Find pending event ready to process OR stale processing event
-      const findStmt = txDb.prepare(`
-        SELECT * FROM webhook_events
-        WHERE (status = 'pending' AND available_at <= ?)
-           OR (status = 'processing' AND locked_at <= ?)
-        ORDER BY id ASC
-        LIMIT 1
-      `);
+  async complete(id) {
+    await db.query(`UPDATE webhook_events SET status = 'completed', processed_at = now(), locked_at = NULL, updated_at = now()
+      WHERE id = $1`, [id]);
+  },
 
-      const event = findStmt.get(now, staleCutoff);
-      if (!event) return null;
-
-      // Lock event for processing atomically
-      const updateStmt = txDb.prepare(`
-        UPDATE webhook_events
-        SET status = 'processing',
-            locked_at = ?,
-            attempts = attempts + 1,
-            updated_at = ?
-        WHERE id = ? AND ((status = 'pending' AND available_at <= ?) OR (status = 'processing' AND locked_at <= ?))
-      `);
-
-      const result = updateStmt.run(now, now, event.id, now, staleCutoff);
-      if (result.changes === 0) return null; // Another worker claimed this job
-
-      return {
-        ...event,
-        status: 'processing',
-        payload: JSON.parse(event.payload_json),
-        attempts: event.attempts + 1
-      };
-    }, this.db);
-  }
-
-  /**
-   * Marks event processing as completed
-   */
-  completeEvent(id) {
-    const now = new Date().toISOString();
-    const stmt = this.db.prepare(`
-      UPDATE webhook_events
-      SET status = 'completed',
-          processed_at = ?,
-          locked_at = NULL,
-          updated_at = ?
-      WHERE id = ?
-    `);
-    stmt.run(now, now, id);
-  }
-
-  /**
-   * Marks event as failed and schedules retry with exponential backoff,
-   * or transitions to dead_letter if max_attempts reached.
-   */
-  failEvent(id, errorMessage, baseDelaySec = 5) {
-    const now = new Date().toISOString();
-    const event = this.db.prepare('SELECT attempts, max_attempts FROM webhook_events WHERE id = ?').get(id);
-    if (!event) return;
-
-    if (event.attempts >= event.max_attempts) {
-      logger.warn('Webhook event reached max attempts, moving to dead_letter', { id, attempts: event.attempts });
-      const deadStmt = this.db.prepare(`
-        UPDATE webhook_events
-        SET status = 'dead_letter',
-            last_error = ?,
-            locked_at = NULL,
-            updated_at = ?
-        WHERE id = ?
-      `);
-      deadStmt.run(errorMessage, now, id);
+  /** Retries with exponential backoff, or gives up after max_attempts. */
+  async fail(id, errorMessage, baseDelaySec = 5) {
+    const row = await db.one('SELECT attempts, max_attempts FROM webhook_events WHERE id = $1', [id]);
+    if (!row) return;
+    if (row.attempts >= row.max_attempts) {
+      logger.warn('Webhook event gave up after max attempts', { id, attempts: row.attempts });
+      await db.query(`UPDATE webhook_events SET status = 'dead_letter', last_error = $2, locked_at = NULL, updated_at = now()
+        WHERE id = $1`, [id, String(errorMessage).slice(0, 2000)]);
       return;
     }
+    const delaySec = baseDelaySec * 2 ** Math.max(0, row.attempts - 1) + (baseDelaySec ? Math.random() : 0);
+    await db.query(`UPDATE webhook_events SET status = 'pending', available_at = now() + make_interval(secs => $3),
+      last_error = $2, locked_at = NULL, updated_at = now() WHERE id = $1`, [id, String(errorMessage).slice(0, 2000), delaySec]);
+  },
 
-    // Exponential backoff with jitter: delay = base * 2^(attempts-1) + jitter
-    const exponentialMultiplier = Math.pow(2, Math.max(0, event.attempts - 1));
-    const jitterMs = baseDelaySec === 0 ? 0 : Math.floor(Math.random() * 1000);
-    const delayMs = (baseDelaySec * exponentialMultiplier * 1000) + jitterMs;
-    const availableAt = new Date(Date.now() + delayMs).toISOString();
+  async failPermanent(id, errorMessage) {
+    await db.query(`UPDATE webhook_events SET status = 'failed', last_error = $2, locked_at = NULL, updated_at = now()
+      WHERE id = $1`, [id, String(errorMessage).slice(0, 2000)]);
+  },
 
-    const retryStmt = this.db.prepare(`
-      UPDATE webhook_events
-      SET status = 'pending',
-          available_at = ?,
-          last_error = ?,
-          locked_at = NULL,
-          updated_at = ?
-      WHERE id = ?
-    `);
-    retryStmt.run(availableAt, errorMessage, now, id);
+  /** Deletes finished events older than `days`; dead letters are kept for inspection. */
+  async cleanup(days = 14) {
+    const res = await db.query(`DELETE FROM webhook_events WHERE status IN ('completed', 'failed')
+      AND updated_at < now() - make_interval(days => $1)`, [days]);
+    return res.rowCount;
   }
+};
 
-  /**
-   * Marks event permanently failed (non-retryable validation error)
-   */
-  failPermanent(id, errorMessage) {
-    const now = new Date().toISOString();
-    const stmt = this.db.prepare(`
-      UPDATE webhook_events
-      SET status = 'failed',
-          last_error = ?,
-          locked_at = NULL,
-          updated_at = ?
-      WHERE id = ?
-    `);
-    stmt.run(errorMessage, now, id);
-  }
-
-  /**
-   * Checks if an event key has already been recorded
-   */
-  hasEventKey(eventKey) {
-    const stmt = this.db.prepare('SELECT 1 FROM webhook_events WHERE event_key = ? LIMIT 1');
-    return Boolean(stmt.get(eventKey));
-  }
-
-  /**
-   * Resets stale processing events back to pending for worker recovery
-   */
-  recoverStaleLocks(staleSeconds = 60) {
-    const cutoff = new Date(Date.now() - staleSeconds * 1000).toISOString();
-    const stmt = this.db.prepare(`
-      UPDATE webhook_events
-      SET status = 'pending',
-          locked_at = NULL,
-          updated_at = datetime('now')
-      WHERE status = 'processing' AND locked_at <= ?
-    `);
-    const result = stmt.run(cutoff);
-    return result.changes;
-  }
-}
-
-module.exports = new EventRepository();
-module.exports.EventRepository = EventRepository;
+module.exports = eventRepository;

@@ -33,7 +33,7 @@ describe('Production Environment Validation', () => {
     env.metaWebhookVerifyToken = 'verify_123';
     env.metaAppSecret = 'secret_123';
     env.openRouterApiKey = 'openrouter_123';
-    env.dashboardApiKey = 'dashboard_123';
+    env.databaseUrl = 'postgres://u:p@db.example:5432/gkf';
 
     const result = env.validateForProduction();
     assert.strictEqual(result, true);

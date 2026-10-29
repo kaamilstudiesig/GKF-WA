@@ -1,0 +1,27 @@
+<%- include('partials/header', { title: 'Follow-ups' }) %>
+<div class="page-head"><div><div class="eyebrow"><%= items.length %> <%= status %></div><h1>Follow-ups</h1></div></div>
+<div class="tabs">
+  <a href="/followups?view=<%= view %>&status=open" class="<%= status === 'open' ? 'active' : '' %>">Open</a>
+  <a href="/followups?view=<%= view %>&status=done" class="<%= status === 'done' ? 'active' : '' %>">Done</a>
+  <% if (can.viewTeamFollowUps(user)) { %>
+  <span style="width:16px"></span>
+  <a href="/followups?view=mine&status=<%= status %>" class="<%= view === 'mine' ? 'active' : '' %>">Mine</a>
+  <a href="/followups?view=team&status=<%= status %>" class="<%= view === 'team' ? 'active' : '' %>"><%= user.role === 'owner' ? 'Everyone' : 'My team' %></a>
+  <% } %>
+</div>
+<% if (!items.length) { %><div class="card"><p class="empty">Nothing here.</p></div><% } else { %>
+<div class="table-wrap"><table>
+  <thead><tr><th>Follow-up</th><th>Lead</th><th>Owner</th><th><%= status === 'open' ? 'Due' : 'Completed' %></th><th></th></tr></thead>
+  <tbody>
+  <% for (const f of items) { const late = status === 'open' && f.due_at < new Date().toISOString(); %>
+    <tr>
+      <td><%= f.title %></td>
+      <td><a class="lead-name" href="/leads/<%= f.wa_id %>"><%= f.display_name || '+' + f.wa_id %></a> <% if (f.lead_status) { %><%- include('partials/status', { status: f.lead_status }) %><% } %></td>
+      <td class="small"><%= f.user_name %></td>
+      <td class="small <%= late ? 'overdue' : '' %>"><%= util.fmtDate(status === 'open' ? f.due_at : f.completed_at) %><% if (late) { %> · overdue<% } %></td>
+      <td class="num"><% if (status === 'open') { %><form method="post" action="/followups/<%= f.id %>/done"><%- include('partials/csrf') %><button class="btn btn-outline btn-sm">Done</button></form><% } %></td>
+    </tr>
+  <% } %>
+  </tbody>
+</table></div><% } %>
+<%- include('partials/footer') %>

@@ -1,297 +1,162 @@
-# Goldkraft Fitness — Enterprise WhatsApp AI Lead-Management & Multi-Tenant SaaS Platform
+# Gold Kraft Fitness WhatsApp bot and staff CRM
 
-[![Node.js Version](https://img.shields.io/badge/node.js-22%20%7C%2024-brightgreen.svg)](https://nodejs.org/)
-[![Meta Graph API](https://img.shields.io/badge/Meta%20Cloud%20API-v23.0-blue.svg)](https://developers.facebook.com/docs/whatsapp/cloud-api)
-[![OpenRouter AI](https://img.shields.io/badge/OpenRouter-Gemini%202.5%20Flash-orange.svg)](https://openrouter.ai/)
-[![Database](https://img.shields.io/badge/Database-SQLite3%20WAL-lightgrey.svg)](https://www.sqlite.org/wal.html)
-[![Monitoring](https://img.shields.io/badge/Observability-Sentry-purple.svg)](https://sentry.io/)
+One app, two hostnames:
 
-A production-grade, highly resilient backend connecting WhatsApp (via **Meta Cloud API v23.0**) to an **intelligent AI sales & qualification agent** (via OpenRouter). Designed for fitness centers, gym franchises, and health clubs, the platform automates 24/7 lead capture, qualifies member intent, eliminates liability risks, and synchronizes conversations into a durable multi-tenant CRM with zero message loss.
+- **Bot** on `wa.goldkraftfitness.com`: answers people who message Gold Kraft Fitness on WhatsApp. It replies within seconds, learns each lead's name and goal, and hands the lead to a coach (with a Telegram alert) when they are ready to book, want a discount, ask about an injury, complain, or ask for a human.
+- **Staff CRM** on `crm.goldkraftfitness.com`: where the team reads conversations, replies on WhatsApp, moves leads through the pipeline, assigns them, keeps notes and follow-ups, and sees reports. Its code lives in [`crm/`](crm/README.md).
 
----
+Both run in one Node process on one Heroku dyno and share one Postgres database and one connection pool. The app picks the CRM or the bot by the request's `Host` header: hostnames listed in `CRM_HOSTS` get the CRM, everything else (including the `herokuapp.com` address) gets the bot.
 
-## Interactive Demo Simulator
+Stack: Node 24, Express, EJS (CRM pages), Postgres (Heroku Postgres in production, PGlite locally), Meta WhatsApp Cloud API, OpenRouter for the AI.
 
-The platform includes a built-in, mobile-first **WhatsApp Web Demo & Simulator** (`/demo`) that lets clients, gym owners, and sales teams test the AI agent live in their browser without setting up Meta webhooks or business credentials:
+## How a message flows
+
+1. **Webhook.** Meta sends `POST /webhook`. The bot checks the `X-Hub-Signature-256` signature, saves the event to the `webhook_events` queue and answers `200` straight away. If saving fails it answers `500`, so Meta retries (events are deduplicated, so retries are safe).
+2. **Inbound queue.** A worker claims queued events with `FOR UPDATE SKIP LOCKED`, one message per lead at a time, so a lead's messages are answered in order. It saves the lead and the message, sends a read receipt and typing indicator, and records Click-to-WhatsApp ad details when the lead came from an ad.
+3. **Deciding the reply**, in this order:
+   - **Safety check:** injury or medical questions get a fixed, non-diagnostic reply and go to a coach.
+   - **Fixed replies:** common questions (hours, location, "talk to a human", ...) get a set answer with no AI cost.
+   - **AI:** everything else goes to the OpenRouter model, which can call `save_lead` (name, goal, stage) and `notify_staff` (hand-off). A fallback model is used only when the main one has a temporary error. Monthly token and request budgets stop runaway costs; when reached, leads go to staff.
+4. **Outbound queue.** The reply is saved to `outbound_messages` and a second worker sends it through the WhatsApp API, retrying temporary errors with backoff.
+
+Hand-offs create a row in `handoffs` and post an alert to the staff Telegram group, with an "Open in CRM" link.
+
+Staff replies sent from the CRM go into the same `outbound_messages` queue, so the bot's worker sends them from the GKF number. The CRM keeps its own data in `crm_`-prefixed tables (see [crm/README.md](crm/README.md)).
+
+## Database migrations
+
+`npm run migrate` (and every server start) applies the bot's migrations (tracked in `schema_migrations`), then the CRM's (`crm_migrations`). On Heroku the `Procfile` release phase runs it before each new version starts. Both use Postgres advisory locks, so a release and a starting dyno can't apply the same migration twice.
+
+## Local development
 
 ```bash
-# Start the server locally and visit in your browser:
-npm run dev
-# Browser URL: http://localhost:3000/demo (or visit root http://localhost:3000)
+npm ci
 ```
 
-* **Live AI Chat & Deterministic FAQ responses**
-* **One-Click Auto-Play Script** simulating a complete prospect qualification journey
-* **Real-time Lead Card Inspector** (captures name, fitness goal, preferred timings, and CRM status)
-* **Light / Dark Mode** theme toggle
-
----
-
-## How the System Works (Client & Technical Flow)
-
-The following diagram illustrates the complete customer journey—from the moment a prospective gym member sends a WhatsApp message, through security verification, safety triage, AI conversation, and CRM lead capture.
-
-```mermaid
-flowchart TD
-    %% Styling Definitions
-    classDef clientNode fill:#E0F2FE,stroke:#0284C7,stroke-width:2px,color:#0369A1,font-weight:bold;
-    classDef securityNode fill:#FEF3C7,stroke:#D97706,stroke-width:2px,color:#92400E,font-weight:bold;
-    classDef queueNode fill:#F1F5F9,stroke:#475569,stroke-width:2px,color:#1E293B;
-    classDef decisionNode fill:#F3E8FF,stroke:#9333EA,stroke-width:2px,color:#6B21A8,font-weight:bold;
-    classDef aiNode fill:#DCFCE7,stroke:#16A34A,stroke-width:2px,color:#15803D,font-weight:bold;
-    classDef crmNode fill:#FFE4E6,stroke:#E11D48,stroke-width:2px,color:#9F1239,font-weight:bold;
-    classDef dispatchNode fill:#EDE9FE,stroke:#6366F1,stroke-width:2px,color:#3730A3,font-weight:bold;
-
-    %% Ingestion Channels
-    subgraph CHANNELS ["1. Lead Channels"]
-        WA["📱 Inbound WhatsApp Message<br/>(Prospective Gym Member)"]:::clientNode
-        DEMO["💻 Interactive Web Simulator<br/>(/demo)"]:::clientNode
-    end
-
-    %% Security & Ingestion Gate
-    subgraph INGESTION ["2. Security & Fast Ingestion Gate"]
-        WH["POST /webhook<br/>Meta Cloud API v23.0"]:::securityNode
-        SEC["HMAC-SHA256 Auth<br/>& Rate Limiting (100 req/m)"]:::securityNode
-        FAST_ACK["⚡ Fast ACK (HTTP 200)<br/>Returned in &lt; 50ms to Meta"]:::securityNode
-    end
-
-    %% Resilient Storage & Queues
-    subgraph STORAGE ["3. Durable Storage & Multi-Tenant Engine (SQLite WAL)"]
-        IN_QUEUE[("📥 Inbound Event Queue<br/>webhook_events<br/>(Atomic Deduplication)")]:::queueNode
-        TENANT["🏢 Tenant Identification<br/>(Phone ID ➔ Gym Branch)"]:::queueNode
-        DB_CRM[("🗄️ Multi-Tenant CRM<br/>leads, messages, audit_logs<br/>(Composite Foreign Keys)")]:::queueNode
-    end
-
-    %% 3-Tier Intelligent Processing Core
-    subgraph CORE ["4. Intelligent Processing & Safety Core"]
-        SAFETY_GATE{"⚠️ Medical / Injury Check?<br/>(Slip disc, ACL, rehab, cardiac)"}:::decisionNode
-        MED_ACTION["🚨 Medical Safety Triggered:<br/>1. Send Non-Diagnostic Disclaimer<br/>2. Flag Lead for Trainer Review"]:::decisionNode
-
-        FAQ_GATE{"⚡ Deterministic FAQ Match?<br/>(Hours, Location, Pricing tiers)"}:::decisionNode
-        FAQ_REPLY["💬 Instant Fixed Response<br/>(0ms Latency, ₹0 Token Cost)"]:::decisionNode
-
-        AI_ENGINE["🤖 AI Sales & Qualification<br/>(OpenRouter / Gemini 2.5 Flash)<br/>- Dynamic Gym Context<br/>- Fitness Goal & Budget Discovery<br/>- Output Sanitization (No Raw JSON)"]:::aiNode
-        AI_BUDGET{"💰 Token Budget Check<br/>(Monthly Limit Reached?)"}:::decisionNode
-        AI_FALLBACK["Fallback: Deterministic Reply<br/>+ Alert Staff"]:::decisionNode
-    end
-
-    %% Human-in-the-Loop CRM & Staff Portal
-    subgraph CRM_PORTAL ["5. Human-in-the-Loop CRM & Staff Portal"]
-        DASHBOARD["📊 Staff Operations Dashboard<br/>(/leads & /dashboard/summary)"]:::crmNode
-        DOSSIER["📋 Qualified Lead Dossier<br/>- 24-Hour WhatsApp Window<br/>- Fitness Goals & Notes<br/>- Human Conversion Gate"]:::crmNode
-    end
-
-    %% Outbound Resilient Dispatcher
-    subgraph OUTBOUND ["6. Resilient Outbound Delivery Engine"]
-        OUT_QUEUE[("📤 Outbound Dispatch Queue<br/>outbound_messages<br/>(Dedup Key Guard)")]:::queueNode
-        WORKER["🔄 Outbound Worker Loop<br/>- Exponential Backoff + Jitter<br/>- Retryable (429/5xx) Separation<br/>- Dead-Letter Isolation (4xx)"]:::dispatchNode
-        META_OUT["🚀 Meta Graph API<br/>POST /v23.0/{PHONE_ID}/messages"]:::securityNode
-    end
-
-    %% Flow Connections
-    WA -->|Inbound Message| WH
-    DEMO -->|Simulated Message| IN_QUEUE
-    WH --> SEC
-    SEC --> FAST_ACK
-    SEC --> IN_QUEUE
-    FAST_ACK -.->|Acknowledged| WA
-
-    IN_QUEUE --> TENANT
-    TENANT --> DB_CRM
-    TENANT --> SAFETY_GATE
-
-    SAFETY_GATE -- "Yes (Injury Detected)" --> MED_ACTION
-    SAFETY_GATE -- "No (General Inquiry)" --> FAQ_GATE
-
-    MED_ACTION --> OUT_QUEUE
-    MED_ACTION --> DASHBOARD
-
-    FAQ_GATE -- "Matches Standard FAQ" --> FAQ_REPLY
-    FAQ_GATE -- "Requires Conversation" --> AI_BUDGET
-
-    FAQ_REPLY --> OUT_QUEUE
-
-    AI_BUDGET -- "Within Budget" --> AI_ENGINE
-    AI_BUDGET -- "Over Budget" --> AI_FALLBACK
-
-    AI_ENGINE --> OUT_QUEUE
-    AI_ENGINE -.->|Log Tokens & Cost ₹| DB_CRM
-    AI_FALLBACK --> OUT_QUEUE
-
-    DASHBOARD --> DOSSIER
-    DOSSIER -.->|Staff Marks 'Converted'| DB_CRM
-
-    OUT_QUEUE --> WORKER
-    WORKER --> META_OUT
-    META_OUT -->|Verified Delivery| WA
-```
-
----
-
-## Major Features for Clients & Gym Operators
-
-| Major Feature | Client Value & Business ROI | Engineering Implementation |
-|---|---|---|
-| **24/7 Instant WhatsApp Concierge** | Never lose midnight or weekend prospects. Inbound messages are answered in seconds with a warm, encouraging fitness tone. | Meta Cloud API v23.0 webhook handler, sub-50ms fast acknowledgment, and asynchronous worker loop. |
-| **Zero-Cost Deterministic Router** | Saves **60%–80% in AI API costs**. Common queries (operating hours, location, parking, pricing plans) are answered instantly for ₹0. | Regex/keyword rule matcher running before the LLM, answering queries with 0 tokens and 0 latency. |
-| **Medical Safety & Liability Shield** | Protects the gym from medical liability. If a prospect mentions injuries (slipped disc, ACL tear, heart conditions), the bot never gives medical advice. | Automated injury classifier that triggers a legally protective non-diagnostic disclaimer and flags human trainers. |
-| **Multi-Tenant Franchise Isolation** | Run dozens of gym locations or separate brands on a single platform. Branch data, phone IDs, and configurations are 100% isolated. | Phone Number ID auto-resolution to `tenant_id`, composite database keys `(tenant_id, wa_id)`, and strict DAL boundaries. |
-| **Human-in-the-Loop Conversion Gate** | Prevents AI hallucination from distorting revenue. The AI qualifies leads, but only authorized human staff can mark a lead as `converted`. | Invariant 5 policy enforcement; `/leads/:wa_id` PATCH endpoint restricted to staff with immutable audit logging. |
-| **AI Cost & Token Budget Guardrails** | Eliminates surprise API bills. Gym owners can set monthly token and rupee caps per franchise branch. | Real-time `ai_usage` logging (input/output tokens, latency, cost in ₹ INR) with graceful fallback when limits are reached. |
-| **Bulletproof At-Least-Once Delivery** | Zero dropped customer messages. Handles network drops, Meta rate limits, or server restarts gracefully. | SQLite WAL mode, persistent inbound/outbound queues, exponential backoff with jitter, and dead-lettering. |
-| **Zero-Downtime Atomic Backups** | Continuous business protection. Live database backups without locking active readers or writers. | Automated `VACUUM INTO` command with immediate `PRAGMA integrity_check` and 14-cycle retention pruning. |
-
----
-
-## Client Lead Lifecycle: From Inquiry to Member
-
-```
-1. Inbound Text ➔ Prospect messages WhatsApp: "Hi, I'm looking for personal training in Bangalore."
-2. Triage & Auth ➔ Webhook verifies cryptographic HMAC-SHA256 signature and returns 200 OK instantly.
-3. Queue Ingestion ➔ Message is safely stored in SQLite with atomic deduplication.
-4. AI Qualification ➔ OpenRouter Gemini agent asks about fitness goals, experience, and preferred slots.
-5. Safety Check ➔ Checks if injuries are present; applies disclaimer and flags staff if necessary.
-6. CRM Capture ➔ Dossier updated: Name, Phone, Goal: Weight Loss, Stage: Qualified, Needs Human: False.
-7. Staff Handoff ➔ Gym manager views Dossier on /leads dashboard, schedules free trial, and sets status to Converted.
-```
-
----
-
-## Database Architecture & Schema Migrations
-
-The database engine utilizes **SQLite in WAL (Write-Ahead Logging) mode**, ensuring high-concurrency reading and writing without database locks. Schema changes are managed via an ordered, tracked migration runner (`src/db/migrations.js`):
-
-| Migration | Name | Tables / Capabilities Added |
-|---|---|---|
-| **001** | `001_initial_schema` | Baseline `leads` and `messages` tables with indexing |
-| **002** | `002_multi_tenancy` | `tenants` table, `tenant_id` scoping, and default `goldkraft` seed |
-| **003** | `003_durable_queues` | `webhook_events` and `outbound_messages` resilient queue tables |
-| **004** | `004_ai_handoffs_and_auth` | `ai_usage` (token/cost tracking), `handoffs`, `audit_logs`, `users` |
-| **005** | `005_composite_tenant_leads_and_fk_safety` | Upgrades `leads` to composite `(tenant_id, wa_id)` primary key with foreign key cascading |
-
-To execute migrations:
 ```bash
-npm run migrate
-```
-*(Migrations also run automatically on service startup with foreign-key integrity validation).*
-
----
-
-## Complete API Reference
-
-### Public & Lead Endpoints
-
-| Method | Path | Description | Access |
-|---|---|---|---|
-| `GET` | `/` | Service status, gym facility details, operating hours, and location | Public (redirects browsers to `/demo`) |
-| `GET` | `/demo` | Mobile-first interactive WhatsApp demo & conversation simulator | Public |
-| `POST` | `/demo/chat` | Send a simulated message through the full AI & qualification pipeline | Rate-Limited / Public |
-| `GET` | `/demo/conversation` | Retrieve conversation history for the demo session | Rate-Limited / Public |
-| `GET` | `/demo/lead` | Retrieve the active demo lead card and qualification status | Rate-Limited / Public |
-| `POST` | `/demo/reset` | Reset demo conversation and lead state back to initial state | Rate-Limited / Public |
-| `GET` | `/health` | Liveness health probe (uptime, timestamp) | Public |
-| `GET` | `/health/ready` | Readiness health probe (validates live SQLite connection) | Public |
-| `GET` | `/webhook` | Meta Webhook verification handshake (`hub.challenge`) | Public / Meta |
-| `POST` | `/webhook` | Meta Webhook event ingestion (requires `X-Hub-Signature-256`) | HMAC-SHA256 Verified |
-
-### Protected CRM & Staff Dashboard Endpoints
-*Requires header: `Authorization: Bearer <DASHBOARD_API_KEY>` or `x-api-key: <DASHBOARD_API_KEY>`*
-
-| Method | Path | Description | Key Query / Body Parameters |
-|---|---|---|---|
-| `GET` | `/leads` | List and search qualified leads | `status`, `needs_human`, `sort` (`recency`, `needs_human_first`), `limit`, `offset` |
-| `GET` | `/leads/:wa_id` | View full lead dossier, 24-hr service window, and conversation history | `wa_id` (Customer WhatsApp ID) |
-| `PATCH` | `/leads/:wa_id` | Update lead status, notes, or assign human agent | `status`, `notes`, `needs_human`, `interest`, `display_name` |
-| `GET` | `/dashboard/summary` | Aggregated metrics: leads by stage, active handoffs, AI token/cost usage, queue health | None |
-
----
-
-## Environment Configuration
-
-Create a `.env` file from the provided `.env.example`:
-
-| Environment Variable | Required in Prod | Description | Default |
-|---|---|---|---|
-| `PORT` | No | HTTP server port | `3000` |
-| `NODE_ENV` | No | Application environment (`development`, `production`, `test`) | `development` |
-| `LOG_LEVEL` | No | Logging verbosity (`debug`, `info`, `warn`, `error`) | `info` (prod) / `debug` (dev) |
-| `DASHBOARD_API_KEY` | **Yes** | Master security key for protected CRM & dashboard endpoints | — |
-| `META_ACCESS_TOKEN` | **Yes** | System User Permanent Token from Meta Business Settings | — |
-| `META_PHONE_NUMBER_ID` | **Yes** | WhatsApp Business Account Phone Number ID | — |
-| `META_WEBHOOK_VERIFY_TOKEN`| **Yes** | Secret handshake string configured in Meta App Webhook settings | — |
-| `META_APP_SECRET` | **Yes** | Meta App Secret for validating incoming SHA256 signatures | — |
-| `OPENROUTER_API_KEY` | **Yes** | OpenRouter API Key for LLM inferences | — |
-| `OPENROUTER_MODEL` | No | Primary conversational qualification model | `google/gemini-2.5-flash` |
-| `OPENROUTER_FALLBACK_MODEL`| No | Secondary backup model if primary experiences outage | `google/gemini-2.5-flash-lite` |
-| `DATABASE_PATH` | No | Path to SQLite database file | `./data/goldkraft_leads.db` |
-| `SENTRY_DSN` | No | Sentry DSN for exception tracking and crash telemetry | — |
-
----
-
-## Operations & Disaster Recovery
-
-### Running Locally
-```bash
-npm install
 cp .env.example .env
-# Fill in your Meta and OpenRouter API credentials
+```
+
+```bash
 npm run dev
 ```
 
-### Running Automated Test Suite
-```bash
-# In PowerShell:
-$env:NODE_ENV="test"; node --test test/**/*.test.js
+- Bot: http://localhost:3000 (webhook at `/webhook`).
+- CRM: http://crm.localhost:3000 (browsers resolve `*.localhost` to your machine). Log in with an account from [`crm/seed/users.example.json`](crm/seed/users.example.json); on the local database these accounts are created on first start.
+- With `DATABASE_URL` empty, the app uses PGlite (Postgres in-process) stored in `./data/pglite`. No database to install. Delete `data/` to start over.
+- With `OPENROUTER_API_KEY` empty, the bot gives simple offline replies instead of calling the AI.
+- With `META_ACCESS_TOKEN` empty, sends (including CRM replies) are simulated and still saved in the conversation.
+- With `TELEGRAM_BOT_TOKEN` empty, staff alerts are skipped.
 
-# Or via npm on Linux/macOS:
+To fill the CRM with a dozen demo leads, chats and hand-offs, stop `npm run dev` (PGlite allows one process at a time) and run:
+
+```bash
+npm run dev:demo-data
+```
+
+It refuses to run with `NODE_ENV=production`.
+
+Health checks: `GET /health` (process up) and `GET /health/ready` (database reachable) on the bot host; `GET /health` on the CRM host checks the CRM tables.
+
+## Config vars
+
+All settings are environment variables; `.env.example` lists them with comments.
+
+| Variable | What it is |
+| --- | --- |
+| `DATABASE_URL` | Postgres URL. Set by Heroku Postgres; leave empty locally. |
+| `META_ACCESS_TOKEN`, `META_PHONE_NUMBER_ID` | WhatsApp Cloud API credentials. |
+| `META_WEBHOOK_VERIFY_TOKEN` | Any secret string; the same value goes in Meta's webhook settings. |
+| `META_APP_SECRET` | Meta app secret, used to check webhook signatures. |
+| `OPENROUTER_API_KEY` | OpenRouter key. |
+| `OPENROUTER_MODEL`, `OPENROUTER_FALLBACK_MODEL` | Default `deepseek/deepseek-v4.1-flash`, fallback `google/gemini-3.5-flash-lite` (chosen from a 16-model test on GKF lead scenarios, Oct 2026). |
+| `AI_MONTHLY_TOKEN_BUDGET`, `AI_MONTHLY_REQUEST_BUDGET` | Monthly AI limits. |
+| `AI_HISTORY_MESSAGES` | Earlier messages the AI sees with each reply (default 10). |
+| `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID` | Staff alerts and daily backups. |
+| `CRM_BASE_URL` | CRM address for "Open in CRM" links in Telegram alerts: `https://crm.goldkraftfitness.com`. |
+| `CRM_HOSTS` | Hostnames served by the CRM, comma-separated, matched without the port. Default `crm.goldkraftfitness.com,crm.localhost`. |
+| `SESSION_TTL_HOURS` | How long a CRM login lasts (default 12). |
+| `DISPLAY_TIMEZONE`, `USD_TO_INR` | CRM display timezone (default `Asia/Kolkata`) and the rate for showing AI cost in rupees (default 85). |
+| `SEED_USERS_FILE` | Starting staff accounts for `npm run crm:seed` (default `crm/seed/users.example.json`). |
+| `DATABASE_POOL_MAX` | Postgres connections for the whole app (default 5; Essential-0 allows 20). |
+| `SENTRY_DSN` | Optional error tracking. |
+
+In production (`NODE_ENV=production`) the server refuses to start if the database, Meta or OpenRouter settings are missing. CRM login cookies are `HttpOnly`, `SameSite=Lax` and, in production, `Secure` (Heroku serves the app over HTTPS).
+
+## Tests
+
+```bash
 npm test
 ```
 
-### Atomic Database Backups
-SQLite WAL mode allows non-blocking atomic backups during active writing:
+One command runs the bot tests (`test/`) and the CRM tests (`test/crm/`). They run on an in-memory PGlite database and a fake OpenRouter, so they need no services or keys and never call Meta, OpenRouter or Telegram. The CRM tests cover login and password rules, roles, replies, notes, follow-ups, reports, routing by `Host` header, and the bot and CRM migrations running side by side. CI runs the same command on every push and pull request.
+
+### Comparing AI models (optional)
+
+`scripts/eval.js` sends 8 realistic lead messages (pricing, trial booking, discount, injury, complaint, Hinglish beginner, "talk to a human", "Fees?") to each model you name and prints latency, tokens, cost, tool calls, the reply, and a flag when the reply leaks markup. It calls the real API and costs a few cents, so it is not part of `npm test`.
+
 ```bash
-npm run backup
-```
-**Mechanism:**
-1. Executes `VACUUM INTO '<timestamped-backup>.db'` creating a point-in-time snapshot.
-2. Runs `PRAGMA integrity_check;` on the backup to ensure zero database corruption.
-3. Automatically prunes older backups, retaining the 14 most recent snapshots.
-
-### Emergency Database Restore
-```bash
-# 1. Stop the application service
-systemctl stop gkf-wa
-
-# 2. Verify backup integrity
-node -e "const { DatabaseSync } = require('node:sqlite'); const db = new DatabaseSync('data/backups/<backup-file>.db'); console.log(db.prepare('PRAGMA integrity_check;').get());"
-
-# 3. Replace live database with verified backup
-cp data/backups/<backup-file>.db data/goldkraft_leads.db
-rm -f data/goldkraft_leads.db-wal data/goldkraft_leads.db-shm
-
-# 4. Restart application service
-systemctl start gkf-wa
+OPENROUTER_API_KEY=sk-or-... node scripts/eval.js deepseek/deepseek-v4.1-flash google/gemini-3.5-flash-lite
 ```
 
-### Queue Dead-Letter Recovery
-If Meta or OpenRouter experiences an extended outage, jobs enter the `dead_letter` state. Once upstream service restores, replay jobs with zero data loss:
-```sql
--- View dead-lettered events:
-SELECT id, event_key, last_error, attempts, updated_at FROM webhook_events WHERE status = 'dead_letter';
+## Deploy to Heroku
 
--- Re-enqueue inbound events:
-UPDATE webhook_events SET status = 'pending', attempts = 0, available_at = datetime('now') WHERE status = 'dead_letter';
+One Basic dyno ($7/month) and Heroku Postgres Essential-0 ($5/month), about $12/month for both the bot and the CRM. The `Procfile` runs the bot and CRM migrations on every release, then starts the web process.
 
--- Re-enqueue outbound messages:
-UPDATE outbound_messages SET status = 'pending', attempts = 0, available_at = datetime('now') WHERE status = 'dead_letter';
-```
+1. Create the app in the EU region:
 
----
+   ```bash
+   heroku create <name> --region eu
+   ```
 
-## Architectural Guarantees & Boundaries
+2. Add Postgres (this sets `DATABASE_URL`):
 
-1. **Delivery Guarantee:** Resilient **at-least-once** external delivery. Outbound message deduplication is enforced by `dedup_key` in `outbound_messages`.
-2. **AI Conversion Safeguard:** AI cannot self-certify leads as converted. Conversions require staff confirmation via authenticated API.
-3. **Medical Safety Non-Negotiable:** Under no circumstance does the AI prescribe medical, injury, or physical therapy regimens.
-4. **Data Isolation:** Franchise data boundaries are enforced at the database schema level with composite tenant foreign keys.
-5. **Observability & PII Redaction:** Phone numbers are masked in production logs (`91*****3210`) to comply with privacy regulations.
+   ```bash
+   heroku addons:create heroku-postgresql:essential-0 -a <name>
+   ```
+
+3. Set the config vars in the dashboard (**Settings → Config Vars**): `NODE_ENV=production`, the Meta, OpenRouter and Telegram variables, and `CRM_BASE_URL=https://crm.goldkraftfitness.com`. `DATABASE_URL` is set by the add-on; the others in the table have sensible defaults.
+
+4. Deploy, either by connecting the GitHub repo in the dashboard (**Deploy → GitHub**, optionally with automatic deploys) or from your machine:
+
+   ```bash
+   git push heroku heroku-crm:main
+   ```
+
+5. After the first deploy, switch the dyno to Basic so it never sleeps:
+
+   ```bash
+   heroku ps:type web=basic -a <name>
+   ```
+
+6. Custom domain with automatic HTTPS:
+
+   ```bash
+   heroku certs:auto:enable -a <name>
+   ```
+
+   ```bash
+   heroku domains:add wa.goldkraftfitness.com -a <name>
+   ```
+
+   ```bash
+   heroku domains:add crm.goldkraftfitness.com -a <name>
+   ```
+
+   Each command prints a DNS target (`...herokudns.com`). Add a CNAME record for each hostname at your DNS provider, then wait for `heroku certs:auto -a <name>` to show both certificates as issued.
+
+7. Create the starting CRM staff accounts (owner, manager, sales) from [`crm/seed/users.example.json`](crm/seed/users.example.json). It is safe to run again; existing emails are left alone.
+
+   ```bash
+   heroku run npm run crm:seed -a <name>
+   ```
+
+   To use your own list instead, copy the file to `crm/seed/users.json` (git-ignored), edit it, and run the seed from your machine against the Heroku database: `DATABASE_URL=$(heroku config:get DATABASE_URL -a <name>) SEED_USERS_FILE=./crm/seed/users.json npm run crm:seed`.
+
+8. First login: open https://crm.goldkraftfitness.com, log in as the owner with the password from the seed file, and set a new password when asked (every seeded account must change its password at first login; at least 10 characters with letters and numbers). Then have the manager and sales accounts do the same, or reset their passwords from **Staff**. Add the rest of the team from **Staff**.
+
+9. Daily backup: add the free Heroku Scheduler add-on (`heroku addons:create scheduler:standard -a <name>`) and schedule `npm run backup` once a day. It sends a gzipped JSON of the bot and CRM tables (leads, chats, staff accounts, notes, assignments, follow-ups; not login sessions) to the staff Telegram group. To restore into an empty database, download the file from Telegram and run `heroku run --no-tty "node scripts/restore.js /dev/stdin" -a <name> < gkf-wa-....json.gz` (locally: `npm run restore -- <file>`).
+
+10. Check `https://wa.goldkraftfitness.com/health`, then in the Meta app dashboard (**WhatsApp → Configuration**) change the webhook URL to `https://wa.goldkraftfitness.com/webhook` with the same verify token. Send a test message.
+
+11. Retire Render: once Heroku has handled real messages, delete the Render service and remove `render.yaml` from the repo.

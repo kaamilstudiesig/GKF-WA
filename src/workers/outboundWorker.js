@@ -1,147 +1,35 @@
+const QueueWorker = require('./queueWorker');
 const outboundRepository = require('../db/outboundRepository');
 const whatsappService = require('../services/whatsappService');
 const logger = require('../utils/logger');
 const { captureException } = require('../utils/sentry');
 
-class OutboundWorker {
-  constructor() {
-    this.timer = null;
-    this.isRunning = false;
-    this.isProcessing = false;
-  }
+/** Network errors, rate limits and Meta 5xx are worth retrying; 4xx are not. */
+function isRetryable(err) {
+  if (!err.response) return true;
+  const status = err.response.status;
+  return status === 429 || status >= 500;
+}
 
-  /**
-   * Note on Outbound Delivery Semantics:
-   * External messaging providers like Meta WhatsApp Cloud API do not guarantee end-to-end
-   * idempotency across arbitrary network timeouts. Therefore, the outbound worker provides
-   * at-least-once external delivery with internal dedup_key deduplication.
-   */
-
-  /**
-   * Classifies whether an HTTP / network error from Meta Cloud API is retryable.
-   */
-  isRetryableError(error) {
-    if (!error.response) {
-      // Network timeout, connection reset, DNS lookup error
-      return true;
-    }
-    const status = error.response.status;
-    if (status === 429) return true; // Rate limited by Meta
-    if (status >= 500 && status <= 599) return true; // Meta server error
-    return false; // 400, 401, 403, 404: Permanent configuration or client errors
-  }
-
-  /**
-   * Processes a single pending outbound message.
-   * @param {object} options - Optional parameters
-   * @returns {Promise<boolean>} True if a message was processed, false if queue was empty
-   */
-  async processNext(options = {}) {
-    const message = outboundRepository.getNextPendingMessage(60);
-    if (!message) return false;
-
-    logger.debug('Processing outbound message job', {
-      id: message.id,
-      wa_id: message.wa_id,
-      attempts: message.attempts
-    });
-
-    try {
-      const result = await whatsappService.sendTextMessage(message.wa_id, message.text, {
-        tenantId: message.tenant_id,
-        skipQueue: true, // prevents re-enqueueing if whatsappService is called
-        forceLiveNetwork: options.forceLiveNetwork
-      });
-
-      const providerMsgId = result?.messages?.[0]?.id || null;
-      outboundRepository.markSent(message.id, providerMsgId);
-
-      logger.info('Outbound message sent successfully', {
-        id: message.id,
-        provider_message_id: providerMsgId,
-        wa_id: message.wa_id
-      });
-      return true;
-    } catch (error) {
-      const retryable = this.isRetryableError(error);
-      const errMsg = error.response?.data ? JSON.stringify(error.response.data) : error.message;
-
-      captureException(error, {
-        component: 'outbound_worker',
-        messageId: message.id,
-        wa_id: message.wa_id,
-        tenantId: message.tenant_id,
-        retryable
-      });
-
-      logger.error('Outbound message send failed', {
-        id: message.id,
-        wa_id: message.wa_id,
-        retryable,
-        error: errMsg
-      });
-
-      outboundRepository.markFailed(message.id, errMsg, retryable);
-      return true;
-    }
-  }
-
-  /**
-   * Drains all currently available pending outbound messages up to maxCycles.
-   */
-  async drain(maxCycles = 50, options = {}) {
-    let count = 0;
-    while (count < maxCycles) {
-      const processed = await this.processNext(options);
-      if (!processed) break;
-      count++;
-    }
-    return count;
-  }
-
-  /**
-   * Starts worker background polling loop.
-   * Drains up to maxDrainCycles items per tick to handle bursts and backlog efficiently.
-   * @param {number} intervalMs - Polling interval in milliseconds (default: 1000ms)
-   * @param {number} maxDrainCycles - Maximum queued items to process per tick (default: 25)
-   */
-  start(intervalMs = 1000, maxDrainCycles = 25) {
-    if (this.isRunning) return;
-    this.isRunning = true;
-
-    this.timer = setInterval(async () => {
-      if (this.isProcessing || !this.isRunning) return;
-      this.isProcessing = true;
-      try {
-        await this.drain(maxDrainCycles);
-      } catch (err) {
-        logger.error('Outbound worker polling loop error:', { error: err.message });
-      } finally {
-        this.isProcessing = false;
-      }
-    }, intervalMs);
-
-    logger.info('Outbound WhatsApp worker started', { intervalMs, maxDrainCycles });
-  }
-
-  /**
-   * Gracefully stops the worker
-   */
-  async stop() {
-    this.isRunning = false;
-    if (this.timer) {
-      clearInterval(this.timer);
-      this.timer = null;
-    }
-    // Wait briefly if actively processing
-    let waits = 0;
-    while (this.isProcessing && waits < 10) {
-      await new Promise(res => setTimeout(res, 100));
-      waits++;
-    }
-    logger.info('Outbound WhatsApp worker stopped.');
+async function sendOne(job) {
+  try {
+    const providerId = await whatsappService.sendText(job.wa_id, job.text);
+    await outboundRepository.markSent(job.id, providerId);
+  } catch (err) {
+    const retryable = isRetryable(err);
+    const detail = err.response?.data ? JSON.stringify(err.response.data) : err.message;
+    captureException(err, { component: 'outbound_worker', jobId: job.id, retryable });
+    logger.error('WhatsApp send failed', { id: job.id, retryable, error: detail });
+    await outboundRepository.markFailed(job.id, detail, retryable);
   }
 }
 
-module.exports = new OutboundWorker();
-module.exports.OutboundWorker = OutboundWorker;
+const outboundWorker = new QueueWorker('Outbound WhatsApp worker', {
+  claim: () => outboundRepository.claimNext(),
+  handle: sendOne,
+  concurrency: 2
+});
+
+module.exports = outboundWorker;
+module.exports.isRetryable = isRetryable;
+module.exports.sendOne = sendOne;

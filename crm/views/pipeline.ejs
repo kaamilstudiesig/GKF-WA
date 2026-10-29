@@ -1,0 +1,26 @@
+<%- include('partials/header', { title: 'Pipeline' }) %>
+<div class="page-head"><div><div class="eyebrow">Move leads through the funnel</div><h1>Pipeline</h1></div></div>
+<div class="board">
+  <% for (const col of columns) { %>
+  <section class="column">
+    <div class="column-head"><%- include('partials/status', { status: col.status }) %><span class="muted small"><%= col.total %></span></div>
+    <% if (!col.leads.length) { %><p class="empty small">Empty</p><% } %>
+    <% for (const l of col.leads) { %>
+    <div class="deal">
+      <a class="lead-name" href="/leads/<%= l.wa_id %>"><%= l.display_name || '+' + l.wa_id %></a>
+      <div class="muted"><%= util.humanize(l.interest) || 'No interest yet' %> · <%= util.timeAgo(l.last_inbound_message_at) %></div>
+      <div class="muted"><%= l.assignee_name || 'Unassigned' %><% if (l.needs_human) { %> · <span class="gold">needs human</span><% } %></div>
+      <form method="post" action="/leads/<%= l.wa_id %>/status" class="row">
+        <%- include('partials/csrf') %>
+        <select name="status" data-autosubmit aria-label="Move <%= l.display_name || l.wa_id %> to status" class="grow">
+          <% for (const s of LEAD_STATUSES) { %><option value="<%= s %>" <%= s === l.status ? 'selected' : '' %>><%= s %></option><% } %>
+        </select>
+        <button class="btn btn-sm js-hide" type="submit">Move</button>
+      </form>
+    </div>
+    <% } %>
+    <% if (col.total > col.leads.length) { %><a class="small" href="/leads?status=<%= col.status %>">See all <%= col.total %> →</a><% } %>
+  </section>
+  <% } %>
+</div>
+<%- include('partials/footer') %>

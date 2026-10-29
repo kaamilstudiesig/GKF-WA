@@ -1,10 +1,7 @@
 node_modules/
 .env
-data/*.db
-data/*.db-journal
-data/*.db-wal
-data/*.db-shm
-data/backups/
+data/
 coverage/
 logs/
 .DS_Store
+crm/seed/users.json

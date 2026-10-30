@@ -25,7 +25,7 @@
           <div class="bubble queued <%= q.status === 'failed' ? 'failed' : '' %>"><%= q.text %><span class="meta"><%= q.metadata.user_name || 'Staff' %> · <%= q.status === 'failed' ? 'Failed: ' + (q.last_error || 'unknown error') : 'Queued, waiting for the WhatsApp bot to send' %></span></div>
         <% } %>
       </div>
-      <form class="composer" method="post" action="/leads/<%= lead.wa_id %>/message" data-confirm="Send this message to the lead on WhatsApp?">
+      <form class="composer" method="post" action="/leads/<%= lead.wa_id %>/message">
         <%- include('partials/csrf') %>
         <label for="reply">Reply on WhatsApp</label>
         <textarea id="reply" name="text" maxlength="4096" data-count rows="3" <%= lead.window_open ? '' : 'disabled' %> placeholder="<%= lead.window_open ? 'Type a reply. The WA bot sends it from the GKF number.' : 'The 24-hour window is closed. The lead has to message GKF again first.' %>" required></textarea>

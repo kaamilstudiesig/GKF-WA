@@ -59,7 +59,7 @@ Phases and "done when" are in [PRODUCT_PLAN.md §4](PRODUCT_PLAN.md#4-roadmap).
 | R6 | Per-ad report: leads, joins, ₹, cost per member, ROAS (uses K5 data) | Krishna |
 | K5 | Marketing API spend import per ad (daily job) | Kaamil |
 | K6 | Lead Ads `leadgen` webhook → create lead → instant WhatsApp | Kaamil |
-| K7 | Conversions API sender: outcome events (R1) → Meta, plus `ctwa_clid` business-messaging events | Kaamil |
+| K7 | Conversions API sender: Visit booked → QualifiedLead, Joined → Purchase (₹), matched by `ctwa_clid` or hashed phone + Page ID; each outcome sent once (`crm_lead_outcomes.meta_status`) | Kaamil (in review) |
 | R7 | Nightly digest content + weekly agency report page | Krishna |
 
 ### Later: Phase D (platform)

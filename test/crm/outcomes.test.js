@@ -119,7 +119,7 @@ test('sales can only log outcomes on their own leads', async () => {
   try {
     const sales = await login(ctx.app, 'sales');
     const r = await post(sales, HOT_LEAD, { outcome: 'called_connected' });
-    assert.match(r.headers.location, /err=/);
+    assert.strictEqual(r.status, 404); // someone else's lead: not found, like viewing it
     assert.strictEqual((await outcomes(ctx.db, HOT_LEAD)).length, 0);
 
     const owner = await login(ctx.app, 'owner');

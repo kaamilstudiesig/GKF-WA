@@ -12,7 +12,7 @@ const zlib = require('zlib');
 const db = require('../src/db');
 
 // In restore order: parents before the rows that reference them.
-const BOT_TABLES = ['leads', 'messages', 'handoffs', 'outbound_messages', 'ai_usage', 'webhook_events'];
+const BOT_TABLES = ['leads', 'messages', 'handoffs', 'outbound_messages', 'ai_usage', 'webhook_events', 'business_profile'];
 const CRM_TABLES = ['crm_users', 'crm_lead_assignments', 'crm_lead_notes', 'crm_follow_ups', 'crm_lead_outcomes', 'crm_activity_log'];
 const TABLES = [...BOT_TABLES, ...CRM_TABLES];
 

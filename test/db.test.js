@@ -7,7 +7,7 @@ after(() => db.close());
 test('migrations apply once and are recorded', async () => {
   await db.init();
   const rows = await db.many('SELECT id, name FROM schema_migrations');
-  assert.deepStrictEqual(rows.map(r => r.id), [1, 2]);
+  assert.deepStrictEqual(rows.map(r => r.id), [1, 2, 3]);
 });
 
 test('rows are normalised: timestamps as ISO strings, counts as numbers, jsonb as objects', async () => {

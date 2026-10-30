@@ -6,6 +6,7 @@ const webhookWorker = require('./workers/webhookWorker');
 const outboundWorker = require('./workers/outboundWorker');
 const conversionsWorker = require('./workers/conversionsWorker');
 const conversionsApi = require('./services/conversionsApi');
+const businessProfile = require('./services/businessProfile');
 const eventRepository = require('./db/eventRepository');
 const outboundRepository = require('./db/outboundRepository');
 const logger = require('./utils/logger');
@@ -30,6 +31,8 @@ async function main() {
   initSentry();
   await migrateAll(); // connects, then applies pending bot and CRM migrations
   await ensureCrmUsers();
+  await businessProfile.load(); // K10: business facts from the database (first run saves the defaults)
+  businessProfile.startRefresh();
 
   const app = createApp();
   const server = app.listen(env.port, () => {

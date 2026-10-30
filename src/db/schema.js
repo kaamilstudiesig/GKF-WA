@@ -128,6 +128,20 @@ const migrations = [
       'CREATE UNIQUE INDEX leads_user_id_key ON leads (user_id) WHERE user_id IS NOT NULL',
       'CREATE INDEX leads_phone_idx ON leads (phone)'
     ]
+  },
+  {
+    // K10: the business's facts (name, hours, plans, FAQs...) live here, not in code.
+    // One row for now; K8 (multi-client) keys it by tenant.
+    id: 3,
+    name: 'business_profile',
+    up: [
+      `CREATE TABLE business_profile (
+        id INTEGER PRIMARY KEY DEFAULT 1 CHECK (id = 1),
+        profile JSONB NOT NULL,
+        updated_by TEXT,
+        updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+      )`
+    ]
   }
 ];
 

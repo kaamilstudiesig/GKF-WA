@@ -23,6 +23,7 @@
         const nav = [['/', 'Dashboard', 'home'], ['/leads', 'Leads', 'users'], ['/followups', 'Follow-ups', 'calendar'], ['/pipeline', 'Pipeline', 'kanban']];
         if (can.viewReports(user)) nav.push(['/reports', 'Reports', 'chart']);
         if (can.manageUsers(user)) nav.push(['/users', 'Staff', 'user']);
+        if (can.manageBusiness && can.manageBusiness(user)) nav.push(['/settings', 'Business', 'clipboard']);
       %>
       <ul class="menu w-full gap-1 p-0 text-[15px]">
         <% for (const [href, label, icon] of nav) { %>

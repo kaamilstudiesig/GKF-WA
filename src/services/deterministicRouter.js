@@ -74,9 +74,9 @@ const T = {
     kn: g => `ನಮಸ್ಕಾರ, ${g} ಗೆ ಸ್ವಾಗತ! ಬೆಲೆ, ಟ್ರಯಲ್ ಅಥವಾ ಲೊಕೇಶನ್‌ಗಾಗಿ ಕೆಳಗಿನ ಬಟನ್ ಒತ್ತಿ. ಅಥವಾ ನಿಮ್ಮ ಪ್ರಶ್ನೆಯನ್ನು ಇಲ್ಲೇ ಟೈಪ್ ಮಾಡಿ.`
   },
   hours: {
-    en: (g, w, s) => `${g} timings:\n• ${w}\n• ${s}\n\nMorning or evening works better for you?`,
-    hi: (g, w, s) => `${g} ki timings:\n• ${w}\n• ${s}\n\nAapke liye morning better hai ya evening?`,
-    kn: (g, w, s) => `${g} ಸಮಯ:\n• ${w}\n• ${s}\n\nನಿಮಗೆ ಬೆಳಿಗ್ಗೆ ಅನುಕೂಲವೋ ಸಂಜೆಯೋ?`
+    en: (g, lines) => `${g} timings:\n${lines}\n\nMorning or evening works better for you?`,
+    hi: (g, lines) => `${g} ki timings:\n${lines}\n\nAapke liye morning better hai ya evening?`,
+    kn: (g, lines) => `${g} ಸಮಯ:\n${lines}\n\nನಿಮಗೆ ಬೆಳಿಗ್ಗೆ ಅನುಕೂಲವೋ ಸಂಜೆಯೋ?`
   },
   location: {
     en: (loc, park) => `We're at ${loc}. ${park}.\n\nIf you want to come for a trial, just tell us the day and a coach will confirm.`,
@@ -110,10 +110,12 @@ const T = {
   }
 };
 
-/** Map pin for the gym, when coordinates are configured. */
+/** Map pin: from the business profile, else GYM_LATITUDE / GYM_LONGITUDE. */
 function gymLocation(cfg) {
-  if (!Number.isFinite(env.gymLatitude) || !Number.isFinite(env.gymLongitude)) return null;
-  return { latitude: env.gymLatitude, longitude: env.gymLongitude, name: cfg.gymName, address: cfg.facility.location };
+  const pin = cfg.mapPin || (Number.isFinite(env.gymLatitude) && Number.isFinite(env.gymLongitude)
+    ? { latitude: env.gymLatitude, longitude: env.gymLongitude } : null);
+  if (!pin) return null;
+  return { ...pin, name: cfg.gymName, address: cfg.facility.location };
 }
 
 class DeterministicRouter {
@@ -178,7 +180,7 @@ class DeterministicRouter {
 
     if (has(clean, ROUTES.hours)) {
       return hit('hours', {
-        replyText: T.hours[lang](g, cfg.hours.weekday, cfg.hours.sunday),
+        replyText: T.hours[lang](g, (cfg.hours.lines || [cfg.hours.weekday, cfg.hours.sunday]).filter(Boolean).map(h => `• ${h}`).join('\n')),
         updates: { status: 'contacted' },
         buttons: [BUTTONS.trial, BUTTONS.location, BUTTONS.prices]
       });

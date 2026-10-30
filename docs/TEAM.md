@@ -68,7 +68,7 @@ Phases and "done when" are in [PRODUCT_PLAN.md §4](PRODUCT_PLAN.md#4-roadmap).
 | --- | --- | --- |
 | K8 | Tenants: `tenant_id` everywhere, row-level security, webhook routing by `phone_number_id`, per-tenant budgets and fair queues | Kaamil |
 | K9 | Embedded Signup v4 backend: code → token exchange, number registration, coexistence states | Kaamil |
-| K10 | Business profile in DB → generated prompt + fixed answers; vertical packs | Kaamil |
+| K10 | Business profile in DB → generated prompt + fixed answers; vertical packs; owner's Business settings page | Kaamil (in review) |
 | R8 | Onboarding wizard UI (profile, preview chat, team, test checklist) | Krishna |
 | R9 | Agency dashboard + white-label (logo, domain) | Krishna |
 | R10 | Billing UI (Razorpay subscriptions) | Krishna |

@@ -14,7 +14,7 @@ const { TABLES } = require('./backup');
 
 const IDENTITY_TABLES = new Set(['messages', 'handoffs', 'outbound_messages', 'ai_usage', 'webhook_events',
   'crm_users', 'crm_lead_notes', 'crm_follow_ups', 'crm_lead_outcomes', 'crm_activity_log']);
-const JSON_COLUMNS = new Set(['metadata', 'payload', 'details']);
+const JSON_COLUMNS = new Set(['metadata', 'payload', 'details', 'profile']);
 
 async function restore(buffer) {
   const doc = JSON.parse(zlib.gunzipSync(buffer).toString('utf8'));

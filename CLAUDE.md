@@ -25,6 +25,7 @@ Read before larger changes: `docs/ARCHITECTURE.md`, `docs/PRODUCT_PLAN.md`, `doc
 - Don't run paid AI calls (`scripts/eval.js`, ad-hoc OpenRouter requests) without the user's OK. Keep AI to one call per reply.
 - Migrations are append-only (`src/db/schema.js`, `crm/src/migrations.js`); never edit one that already ran.
 - Don't deploy to Heroku or change production config unless the user explicitly asks.
+- Business facts (name, hours, plans, policies…) live in the `business_profile` table and are edited on the CRM's Business settings page. Read them through `src/config/gymConfig.js`; never hard-code a business fact in code or prompts. Selling method per business type lives in `src/config/verticals.js`.
 - The bot must stay business-scoped (Meta bans general-purpose AI assistants) and must never invent facts beyond the business profile.
 - Bot replies: simple Indian English (or the lead's language), no em dashes, no markdown, at most one question and only when it qualifies the lead.
 - `leads.wa_id` is the lead key: a phone number or Meta's business-scoped user ID (e.g. `IN.1234...`) for users who hide their phone. Never assume it's digits; use `leads.phone` (may be null), `src/services/identity.js` and the CRM's `util.contactLabel` / `util.leadPhone`.

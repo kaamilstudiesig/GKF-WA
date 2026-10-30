@@ -32,7 +32,8 @@
     "ejs": "7.0.1",
     "express": "^4.22.3",
     "express-rate-limit": "^8.7.0",
-    "pg": "8.23.1"
+    "pg": "8.23.1",
+    "sortablejs": "1.15.7"
   },
   "devDependencies": {
     "@electric-sql/pglite": "0.5.8",

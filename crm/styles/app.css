@@ -110,7 +110,7 @@
   border-radius: 1.4rem;
   background: #2a3942;
   padding: 0.65rem 1rem;
-  font-size: 15px;
+  font-size: 16px; /* 16px+ stops iOS zooming into the field */
   color: #e9edef;
   outline: none;
 }
@@ -130,3 +130,41 @@
 /* Bubble tails take the bubble colour. */
 .wa-wall .chat-bubble.wa-in::before { background-color: #202c33; }
 .wa-wall .chat-bubble.wa-out::before { background-color: #005c4b; }
+
+/* ---- Pipeline board (SortableJS states) ---- */
+.kanban-ghost { opacity: 0.35; }
+.kanban-chosen { box-shadow: 0 0 0 1px var(--color-primary); }
+.kanban-drag { transform: rotate(1.5deg); box-shadow: 0 12px 30px rgb(0 0 0 / 0.45); }
+@media (pointer: fine) { .kanban-card { cursor: grab; } .kanban-card:active { cursor: grabbing; } }
+
+/* ---- Feel native on phones + press feedback (Emil Kowalski's mobile-native / emil-design-eng skills) ---- */
+:root {
+  --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
+  --ease-in-out: cubic-bezier(0.77, 0, 0.175, 1);
+  --ease-drawer: cubic-bezier(0.32, 0.72, 0, 1);
+}
+/* An app, not a document: no pull-to-refresh or page rubber-band hijacking scroll. */
+html, body { overscroll-behavior: none; }
+/* No 300ms tap delay on controls. */
+a, button, summary, label, .btn, .tab, [role="button"] { touch-action: manipulation; }
+/* Long-press on a control shouldn't select its label or pop the link callout. Content stays selectable. */
+.btn, .tab, .dock > *, summary, .menu a, .kanban-card .badge {
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-touch-callout: none;
+}
+/* iOS zooms into inputs under 16px and never zooms back. */
+@media (pointer: coarse) {
+  input, textarea, select, .input, .select, .textarea { font-size: 16px; }
+}
+/* Press feedback that answers on pointer-down. `scale` (not transform) so it never fights other transforms. */
+@media (prefers-reduced-motion: no-preference) {
+  .btn, .dock > *, .list-row > a, .tab {
+    transition-property: color, background-color, border-color, box-shadow, opacity, scale;
+    transition-duration: 120ms;
+    transition-timing-function: var(--ease-out);
+  }
+  .btn:active:not(:disabled), .tab:active { scale: 0.97; }
+  .dock > *:active { scale: 0.94; }
+  .list-row > a:active { opacity: 0.7; }
+}

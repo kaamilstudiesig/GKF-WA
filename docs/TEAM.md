@@ -47,7 +47,7 @@ Phases and "done when" are in [PRODUCT_PLAN.md §4](PRODUCT_PLAN.md#4-roadmap).
 | K3 | Tech Provider: business verification (approved), App Review submission, privacy/terms/data-deletion pages + delete-lead script | Kaamil | Pages in PR; App Review steps in [META_APP_REVIEW.md](META_APP_REVIEW.md) |
 | R1 | **Outcomes:** `crm_lead_outcomes` table + one-tap outcome UI on the lead page (incl. Joined: plan + ₹, Lost: reason list) + automatic next follow-up | Kaamil (Krishna busy) | In review. Built as described in "Lead outcomes" below |
 | R2 | **Hot-lead queue:** shifts, round-robin auto-assign of new hand-offs, 5-min timer, escalation to manager | Krishna | Uses `handoffs` + `crm_lead_assignments` |
-| R3 | **Live board:** server-sent events endpoint + board page (New hot / Contacting / Visit booked / Joined-Lost), overdue cards red | Krishna | No websockets or extra services |
+| R3 | **Live board:** server-sent events so the kanban pipeline (built by Kaamil: journey stages, drag-and-drop, Move sheet) updates for everyone in real time; overdue cards red | Krishna | No websockets or extra services |
 | R4 | **PWA:** manifest + service worker so sales installs the CRM on their phone; mobile-first lead page | Krishna | |
 | K4 | Alert buttons: Telegram hand-off alerts get tap buttons (✅ Log outcome → `/leads/<key>#outcome`, 📋 Open lead, 💬 WhatsApp) | Kaamil | In review. Needs R1 to add `id="outcome"` (contract below) |
 

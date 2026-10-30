@@ -35,4 +35,14 @@ const LOST_REASONS = {
   other: 'Other'
 };
 
-module.exports = { LEAD_STATUSES, HANDOFF_REASONS, ROLES, ROLE_LABELS, WINDOW_MS, OUTCOMES, LOST_REASONS };
+// Pipeline board columns: the real sales journey, worked out from status + the latest visit outcome.
+const STAGES = {
+  new: 'New',
+  contacted: 'Contacted',
+  visit_booked: 'Visit booked',
+  visited: 'Visited',
+  joined: 'Joined',
+  lost: 'Lost'
+};
+
+module.exports = { LEAD_STATUSES, HANDOFF_REASONS, ROLES, ROLE_LABELS, WINDOW_MS, OUTCOMES, LOST_REASONS, STAGES };

@@ -33,7 +33,7 @@ flowchart LR
 This is how GKF was set up. It takes a few hours and needs access to the client's Meta Business.
 
 1. In the client's Meta Business: create or verify the business, add a WhatsApp Business Account and phone number, verify by OTP.
-2. In our Meta app: add the WhatsApp product, link the WABA, subscribe the webhook (`messages`) to `https://<bot host>/webhook` with our verify token.
+2. In our Meta app: add the WhatsApp product, link the WABA, set the webhook to `https://<bot host>/webhook` with our verify token, and tick the fields `messages`, `account_update`, `phone_number_quality_update`, `account_alerts`, `account_review_update` and `business_capability_update` (the last five feed the technical alerts).
 3. Business Settings → System users → generate a never-expiring token with **all** of `whatsapp_business_messaging`, `whatsapp_business_management`, `catalog_management`. Assign the WABA (full control) and catalog to the system user. Never generate a token with fewer scopes for the same system user (see [META_PLATFORM.md §6](META_PLATFORM.md#6-tokens-and-permissions-learned-the-hard-way)).
 4. Set `META_ACCESS_TOKEN`, `META_PHONE_NUMBER_ID`, `META_APP_SECRET`, `META_WEBHOOK_VERIFY_TOKEN` on the server.
 5. Edit the business facts and prompt (today `src/config/gymConfig.js`), map pin (`GYM_LATITUDE`/`GYM_LONGITUDE`), deploy.

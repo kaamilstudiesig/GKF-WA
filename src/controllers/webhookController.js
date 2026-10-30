@@ -2,6 +2,7 @@ const env = require('../config/env');
 const eventRepository = require('../db/eventRepository');
 const leadRepository = require('../db/leadRepository');
 const identity = require('../services/identity');
+const opsAlerts = require('../services/opsAlerts');
 const webhookWorker = require('../workers/webhookWorker');
 const logger = require('../utils/logger');
 
@@ -34,6 +35,12 @@ async function handleIncoming(req, res) {
     for (const entry of body.entry || []) {
       for (const change of entry.changes || []) {
         const value = change.value || {};
+
+        // Account warnings, bans, quality/limit changes: alert whoever runs the bot.
+        if (opsAlerts.isAccountField(change.field)) {
+          opsAlerts.accountEvent(change.field, value);
+          continue;
+        }
         const phoneNumberId = value.metadata?.phone_number_id;
 
         // Only handle traffic for our own WhatsApp number.
@@ -48,6 +55,7 @@ async function handleIncoming(req, res) {
             logger.warn('WhatsApp reported a failed delivery', {
               message_id: s.id, code: s.errors?.[0]?.code, title: s.errors?.[0]?.title
             });
+            opsAlerts.deliveryFailed(s.errors?.[0]);
           }
         }
 

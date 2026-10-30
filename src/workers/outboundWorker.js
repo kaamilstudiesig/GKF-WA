@@ -1,6 +1,7 @@
 const QueueWorker = require('./queueWorker');
 const outboundRepository = require('../db/outboundRepository');
 const whatsappService = require('../services/whatsappService');
+const opsAlerts = require('../services/opsAlerts');
 const logger = require('../utils/logger');
 const { captureException } = require('../utils/sentry');
 
@@ -23,6 +24,7 @@ async function sendOne(job) {
     captureException(err, { component: 'outbound_worker', jobId: job.id, retryable });
     logger.error('WhatsApp send failed', { id: job.id, retryable, error: detail });
     await outboundRepository.markFailed(job.id, detail, retryable);
+    opsAlerts.sendFailed(err); // pages us when it's an account problem (token, payment, ban)
   }
 }
 

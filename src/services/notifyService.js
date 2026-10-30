@@ -39,6 +39,8 @@ class NotifyService {
     return {
       token: process.env.TELEGRAM_BOT_TOKEN || '',
       chatId: process.env.TELEGRAM_CHAT_ID || '',
+      // Technical alerts (failed sends, account warnings). Defaults to the staff group.
+      opsChatId: process.env.TELEGRAM_OPS_CHAT_ID || process.env.TELEGRAM_CHAT_ID || '',
       crmBaseUrl: (process.env.CRM_BASE_URL || '').replace(/\/+$/, '')
     };
   }
@@ -68,11 +70,11 @@ class NotifyService {
     return lines.join('\n');
   }
 
-  async send(text) {
-    if (this.sendOverride) return this.sendOverride(text);
-    const { token, chatId } = this.config;
+  async send(text, { ops = false } = {}) {
+    if (this.sendOverride) return this.sendOverride(text, { ops });
+    const { token, chatId, opsChatId } = this.config;
     await axios.post(`https://api.telegram.org/bot${token}/sendMessage`, {
-      chat_id: chatId,
+      chat_id: ops ? opsChatId : chatId,
       text,
       parse_mode: 'HTML',
       disable_web_page_preview: true

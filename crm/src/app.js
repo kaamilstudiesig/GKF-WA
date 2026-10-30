@@ -18,9 +18,29 @@ const { Users } = require('./users');
 const { can } = require('./permissions');
 const { LEAD_STATUSES, ROLE_LABELS, ROLES, OUTCOMES, LOST_REASONS, STAGES } = require('./constants');
 
-// Plan names offered when logging "Joined". Read from the bot's business config when it's there.
-let PLAN_OPTIONS = [];
-try { PLAN_OPTIONS = require('../../src/config/gymConfig').pricingTiers.map(t => `${t.name} (${t.price})`); } catch (e) { /* standalone CRM */ }
+// The bot's business profile (K10): plan names for "Joined", and the Business settings page.
+let gymConfig = null;
+let businessProfile = null;
+try {
+  gymConfig = require('../../src/config/gymConfig');
+  businessProfile = require('../../src/services/businessProfile');
+} catch (e) { /* standalone CRM without the bot */ }
+const planOptions = () => (gymConfig ? gymConfig.pricingTiers.map(t => `${t.name} (${t.price})`) : []);
+const toArray = v => (Array.isArray(v) ? v : v === undefined ? [] : [v]);
+
+/** Business settings form -> profile object (businessProfile.normalize does the checking). */
+function profileFromForm(b) {
+  const names = toArray(b.plan_name); const prices = toArray(b.plan_price); const details = toArray(b.plan_details);
+  const pNames = toArray(b.policy_name); const pTexts = toArray(b.policy_text);
+  return {
+    name: b.name, type: b.type, area: b.area, address: b.address, parking: b.parking, facility: b.facility,
+    latitude: b.latitude, longitude: b.longitude, voice: b.voice,
+    hours: b.hours, programs: b.programs, sellingPoints: b.selling_points,
+    plans: names.map((n, i) => ({ name: n, price: prices[i], details: details[i] })),
+    policies: pNames.map((n, i) => ({ name: n, text: pTexts[i] })),
+    fallback: { systemError: b.fallback_error, nonTextMessage: b.fallback_media }
+  };
+}
 const util = require('./util');
 
 /** Express 4 does not catch rejected promises; pass them to the error handler. */
@@ -68,7 +88,7 @@ function createCrmApp({
     req.user = session ? session.user : null;
     req.csrfToken = session ? session.csrfToken : null;
     Object.assign(res.locals, {
-      user: req.user, csrfToken: req.csrfToken, can, util, LEAD_STATUSES, ROLE_LABELS, ROLES, OUTCOMES, LOST_REASONS, PLAN_OPTIONS, STAGES,
+      user: req.user, csrfToken: req.csrfToken, can, util, LEAD_STATUSES, ROLE_LABELS, ROLES, OUTCOMES, LOST_REASONS, PLAN_OPTIONS: planOptions(), STAGES,
       path: req.path, query: req.query, flash: req.query.ok || null, error: req.query.err || null
     });
     next();
@@ -268,6 +288,31 @@ function createCrmApp({
 
   // ---- users (owner only) ----
   const usersPage = async (res, extra = {}) => res.render('users', { list: await users.list(), managers: await users.managers(), form: {}, ...extra });
+  // ---- business settings (owner only, K10) ----
+  const settingsPage = async (res, extra = {}) => {
+    const { VERTICALS } = require('../../src/config/verticals');
+    res.render('settings', {
+      profile: gymConfig.profile, meta: await businessProfile.meta(), verticals: VERTICALS,
+      prompt: gymConfig.getSystemPrompt(), limits: businessProfile.LIMITS, ...extra
+    });
+  };
+  app.get('/settings', allow(can.manageBusiness), h(async (req, res) => {
+    if (!businessProfile) return res.status(404).render('error', { status: 404, message: 'Business settings need the WhatsApp bot.' });
+    await settingsPage(res);
+  }));
+  app.post('/settings', allow(can.manageBusiness), h(async (req, res) => {
+    const submitted = profileFromForm(req.body);
+    try {
+      await businessProfile.save(submitted, req.user.email);
+    } catch (err) {
+      if (!(err instanceof businessProfile.ProfileError)) throw err;
+      res.status(400);
+      return settingsPage(res, { error: err.message, profile: { ...gymConfig.profile, ...submitted, fallback: submitted.fallback } });
+    }
+    await crm.log(req.user, null, 'business_profile_updated');
+    res.redirect(withOk('/settings', 'Saved. The WhatsApp assistant uses the new details from its next reply.'));
+  }));
+
   app.get('/users', allow(can.manageUsers), h((req, res) => usersPage(res)));
   app.post('/users', allow(can.manageUsers), h(async (req, res) => {
     try {

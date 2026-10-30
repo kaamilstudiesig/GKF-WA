@@ -6,6 +6,7 @@
  */
 const can = {
   manageUsers: u => u.role === 'owner',
+  manageBusiness: u => u.role === 'owner',
   viewReports: u => u.role === 'owner' || u.role === 'manager',
   viewAiCost: u => u.role === 'owner',
   exportLeads: u => u.role === 'owner' || u.role === 'manager',

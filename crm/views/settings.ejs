@@ -1,0 +1,97 @@
+<%- include('partials/header', { title: 'Business settings' }) %>
+<%
+  const lines = v => (Array.isArray(v) ? v.join('\n') : (v || ''));
+  const card = 'rounded-box bg-base-100 p-4 space-y-3';
+  const plans = [...(profile.plans || [])]; while (plans.length < Math.min(limits.plans, (profile.plans || []).length + 3)) plans.push({});
+  const policies = [...(profile.policies || [])]; while (policies.length < Math.min(limits.policies, (profile.policies || []).length + 2)) policies.push({});
+  const field = 'fieldset py-0';
+%>
+<div class="mb-4 flex flex-wrap items-end justify-between gap-3">
+  <div>
+    <p class="text-sm text-base-content/60">What the WhatsApp assistant knows<% if (meta && meta.updated_at) { %> · saved <%= util.timeAgo(meta.updated_at) %><%= meta.updated_by && meta.updated_by !== 'defaults' ? ' by ' + meta.updated_by : '' %><% } %></p>
+    <h1 class="page-title max-lg:hidden">Business settings</h1>
+  </div>
+</div>
+
+<form method="post" action="/settings" class="grid gap-4 lg:grid-cols-2">
+  <%- include('partials/csrf') %>
+
+  <section class="<%= card %> min-w-0">
+    <h2>Basics</h2>
+    <fieldset class="<%= field %>"><legend class="fieldset-legend">Business name</legend><input name="name" required maxlength="80" value="<%= profile.name %>" class="input w-full"></fieldset>
+    <fieldset class="<%= field %>"><legend class="fieldset-legend">Type of business</legend>
+      <select name="type" class="select w-full"><% for (const [k, v] of Object.entries(verticals)) { %><option value="<%= k %>" <%= profile.type === k ? 'selected' : '' %>><%= v.label %></option><% } %></select>
+      <p class="label whitespace-normal">Sets how the assistant sells (what it asks, what it offers). More types coming.</p></fieldset>
+    <fieldset class="<%= field %>"><legend class="fieldset-legend">One-line description</legend><input name="facility" maxlength="160" value="<%= profile.facility %>" placeholder="10,000 sq ft functional training gym" class="input w-full"></fieldset>
+  </section>
+
+  <section class="<%= card %> min-w-0">
+    <h2>Location</h2>
+    <fieldset class="<%= field %>"><legend class="fieldset-legend">Area (how people say it)</legend><input name="area" maxlength="120" value="<%= profile.area %>" placeholder="J.P. Nagar, South Bengaluru" class="input w-full"></fieldset>
+    <fieldset class="<%= field %>"><legend class="fieldset-legend">Full address</legend><input name="address" required maxlength="240" value="<%= profile.address %>" class="input w-full"></fieldset>
+    <fieldset class="<%= field %>"><legend class="fieldset-legend">Parking</legend><input name="parking" maxlength="160" value="<%= profile.parking %>" class="input w-full"></fieldset>
+    <div class="grid grid-cols-2 gap-2">
+      <fieldset class="<%= field %>"><legend class="fieldset-legend">Map pin latitude</legend><input name="latitude" inputmode="decimal" value="<%= profile.latitude ?? '' %>" placeholder="12.9107732" class="input w-full"></fieldset>
+      <fieldset class="<%= field %>"><legend class="fieldset-legend">Longitude</legend><input name="longitude" inputmode="decimal" value="<%= profile.longitude ?? '' %>" placeholder="77.5821772" class="input w-full"></fieldset>
+    </div>
+    <p class="text-xs text-base-content/50">Optional. Sent as a map pin after the location answer. Leave empty to send the address only.</p>
+  </section>
+
+  <section class="<%= card %> min-w-0">
+    <h2>Hours and programs</h2>
+    <fieldset class="<%= field %>"><legend class="fieldset-legend">Opening hours (one line each)</legend><textarea name="hours" rows="3" required class="textarea w-full"><%= lines(profile.hours) %></textarea></fieldset>
+    <fieldset class="<%= field %>"><legend class="fieldset-legend">Programs and services (one per line)</legend><textarea name="programs" rows="6" class="textarea w-full"><%= lines(profile.programs) %></textarea></fieldset>
+  </section>
+
+  <section class="<%= card %> min-w-0">
+    <h2>Selling points</h2>
+    <p class="text-sm text-base-content/60">Which fact to mention for each goal, so the assistant gives people a reason to visit. One per line, like <em>Fat loss: our conditioning batches and diet plan</em>.</p>
+    <textarea name="selling_points" rows="5" class="textarea w-full" aria-label="Selling points"><%= lines(profile.sellingPoints) %></textarea>
+  </section>
+
+  <section class="<%= card %> min-w-0 lg:col-span-2">
+    <h2>Plans and prices</h2>
+    <p class="text-sm text-base-content/60">Exactly what the assistant quotes. Leave a row empty to remove it.</p>
+    <div class="space-y-2">
+      <% plans.forEach((pl, i) => { %>
+      <div class="grid gap-2 rounded-field bg-base-200 p-2 sm:grid-cols-[10rem_9rem_1fr]">
+        <input name="plan_name" maxlength="60" value="<%= pl.name || '' %>" placeholder="Plan name" aria-label="Plan <%= i + 1 %> name" class="input w-full">
+        <input name="plan_price" maxlength="60" value="<%= pl.price || '' %>" placeholder="₹4,040/month" aria-label="Plan <%= i + 1 %> price" class="input w-full">
+        <input name="plan_details" maxlength="240" value="<%= pl.details || '' %>" placeholder="What's included" aria-label="Plan <%= i + 1 %> details" class="input w-full">
+      </div>
+      <% }) %>
+    </div>
+  </section>
+
+  <section class="<%= card %> min-w-0 lg:col-span-2">
+    <h2>Policies and FAQs</h2>
+    <p class="text-sm text-base-content/60">Trials, beginners, freezing, refunds, anything people ask. The assistant only answers from what's here.</p>
+    <div class="space-y-2">
+      <% policies.forEach((po, i) => { %>
+      <div class="grid gap-2 rounded-field bg-base-200 p-2 sm:grid-cols-[10rem_1fr]">
+        <input name="policy_name" maxlength="60" value="<%= po.name || '' %>" placeholder="Topic" aria-label="Policy <%= i + 1 %> topic" class="input w-full">
+        <input name="policy_text" maxlength="400" value="<%= po.text || '' %>" placeholder="The answer" aria-label="Policy <%= i + 1 %> answer" class="input w-full">
+      </div>
+      <% }) %>
+    </div>
+  </section>
+
+  <section class="<%= card %> min-w-0 lg:col-span-2">
+    <h2>Voice and fallback messages</h2>
+    <fieldset class="<%= field %>"><legend class="fieldset-legend">How the assistant should sound</legend><textarea name="voice" rows="2" maxlength="400" class="textarea w-full"><%= profile.voice %></textarea></fieldset>
+    <div class="grid gap-3 lg:grid-cols-2">
+      <fieldset class="<%= field %>"><legend class="fieldset-legend">When the AI is unavailable</legend><input name="fallback_error" maxlength="300" value="<%= profile.fallback && profile.fallback.systemError %>" class="input w-full"></fieldset>
+      <fieldset class="<%= field %>"><legend class="fieldset-legend">When someone sends a photo or file</legend><input name="fallback_media" maxlength="300" value="<%= profile.fallback && profile.fallback.nonTextMessage %>" class="input w-full"></fieldset>
+    </div>
+  </section>
+
+  <div class="sticky bottom-[calc(4.5rem+env(safe-area-inset-bottom))] z-20 lg:bottom-4 lg:col-span-2">
+    <button class="btn btn-primary btn-lg w-full shadow-xl" type="submit">Save business settings</button>
+  </div>
+</form>
+
+<details class="collapse collapse-arrow mt-4 bg-base-100">
+  <summary class="collapse-title font-medium">What the assistant is told (generated from these settings)</summary>
+  <div class="collapse-content"><pre class="max-h-[60vh] overflow-auto whitespace-pre-wrap rounded-field bg-base-200 p-3 text-xs leading-relaxed"><%= prompt %></pre></div>
+</details>
+<%- include('partials/footer') %>

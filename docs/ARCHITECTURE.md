@@ -76,7 +76,7 @@ flowchart TB
 | Webhook + queues | `src/controllers`, `src/workers`, `src/db` | Postgres-backed queues, `FOR UPDATE SKIP LOCKED`, retries with backoff, dead letters |
 | Reply logic | `src/services` | Safety check → fixed answers → AI, plus guards (pause, caps, budget) |
 | Staff CRM | `crm/` | Roles owner/manager/sales, chat, pipeline, notes, follow-ups, reports, CSV |
-| Business facts + AI prompt | `src/config/gymConfig.js` | **GKF-specific today**; moves to the database for multi-client |
+| Business facts + AI prompt | `business_profile` table → `src/config/gymConfig.js` (live view) + `src/config/verticals.js` (selling method per business type) | Edited on the CRM's owner-only **Business settings** page; the prompt and fixed answers are generated from it |
 | Migrations | `src/db/schema.js`, `crm/src/migrations.js` | Run in Heroku's release phase and on boot, under advisory locks |
 | Backups | Heroku PG daily schedule + `scripts/backup.js` to Telegram | |
 
@@ -297,7 +297,7 @@ Ordered by risk; owners and timing are in [PRODUCT_PLAN.md](PRODUCT_PLAN.md) and
 
 | Gap | Why it matters |
 | --- | --- |
-| Single tenant (GKF facts in code, one number) | Can't onboard client #2 without code changes. |
+| Single tenant (one profile row, one number) | Business facts are now data (K10), but one deployment still serves one business until K8 adds tenants. |
 | No speed-to-lead timer or live board (outcomes are logged since R1) | Hot leads can sit unanswered unnoticed. |
 | No templates for leads outside the 24h window | Can't win back no-shows and quiet leads. |
 | No Lead Ads webhook / Conversions API | Missing the strongest Meta optimisation loop. |

@@ -15,6 +15,14 @@ const REASON_LABELS = {
   other: 'Needs staff'
 };
 
+/** "+91..." when we have the phone, "@username" or "phone hidden" otherwise. */
+const contactLabel = (lead, waId) => {
+  if (lead?.phone) return `+${lead.phone}`;
+  if (lead?.username) return `@${lead.username}`;
+  return /^[0-9]+$/.test(String(waId)) ? `+${waId}` : 'phone hidden';
+};
+const phoneOf = (lead, waId) => lead?.phone || (/^[0-9]+$/.test(String(waId)) ? String(waId) : null);
+
 const escapeHtml = s => String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 
 /**
@@ -45,15 +53,18 @@ class NotifyService {
     const name = lead?.display_name || 'Unknown name';
     const lines = [
       `🔔 <b>Lead needs a human</b>`,
-      `<b>${escapeHtml(name)}</b> · +${escapeHtml(waId)}`,
+      `<b>${escapeHtml(name)}</b> · ${escapeHtml(contactLabel(lead, waId))}`,
       `Reason: <b>${escapeHtml(REASON_LABELS[reason] || reason)}</b>`
     ];
     if (summary) lines.push(`“${escapeHtml(String(summary).slice(0, 300))}”`);
     const ad = lead?.metadata?.referral;
     if (ad) lines.push(`From ad: ${escapeHtml(ad.headline || ad.source_id || ad.platform || 'Meta ad')}`);
     lines.push('');
-    if (crmBaseUrl) lines.push(`<a href="${escapeHtml(`${crmBaseUrl}/leads/${waId}`)}">Open in CRM</a> · <a href="https://wa.me/${escapeHtml(waId)}">WhatsApp</a>`);
-    else lines.push(`<a href="https://wa.me/${escapeHtml(waId)}">Open in WhatsApp</a>`);
+    const phone = phoneOf(lead, waId);
+    const links = [];
+    if (crmBaseUrl) links.push(`<a href="${escapeHtml(`${crmBaseUrl}/leads/${encodeURIComponent(waId)}`)}">Open in CRM</a>`);
+    if (phone) links.push(`<a href="https://wa.me/${escapeHtml(phone)}">${crmBaseUrl ? 'WhatsApp' : 'Open in WhatsApp'}</a>`);
+    if (links.length) lines.push(links.join(' · '));
     return lines.join('\n');
   }
 
@@ -77,12 +88,13 @@ class NotifyService {
         const leadRepository = require('../db/leadRepository');
         const lead = await leadRepository.findByWaId(waId);
         const { crmBaseUrl } = this.config;
-        const link = crmBaseUrl ? `${crmBaseUrl}/leads/${waId}` : `https://wa.me/${waId}`;
+        const phone = phoneOf(lead, waId);
+        const link = crmBaseUrl ? `${crmBaseUrl}/leads/${encodeURIComponent(waId)}` : (phone ? `https://wa.me/${phone}` : '');
         await this.send([
-          `💬 <b>${escapeHtml(lead?.display_name || 'Lead')}</b> · +${escapeHtml(waId)} replied (bot paused for staff)`,
+          `💬 <b>${escapeHtml(lead?.display_name || 'Lead')}</b> · ${escapeHtml(contactLabel(lead, waId))} replied (bot paused for staff)`,
           `“${escapeHtml(String(text || '').slice(0, 300))}”`,
-          `<a href="${escapeHtml(link)}">Reply in CRM</a>`
-        ].join('\n'));
+          link ? `<a href="${escapeHtml(link)}">Reply in CRM</a>` : ''
+        ].filter(Boolean).join('\n'));
       } catch (err) {
         logger.error('Failed to send Telegram lead-message alert', { wa_id: waId, error: err.message });
       }
@@ -112,3 +124,4 @@ class NotifyService {
 module.exports = new NotifyService();
 module.exports.NotifyService = NotifyService;
 module.exports.REASON_LABELS = REASON_LABELS;
+module.exports.contactLabel = contactLabel;

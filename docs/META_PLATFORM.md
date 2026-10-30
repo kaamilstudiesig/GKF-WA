@@ -82,12 +82,16 @@ For us: the prompt must keep the bot scoped to the client's business. It answers
 
 WhatsApp is rolling out **usernames** (from mid-2026) so users can hide their phone number. To support that, webhooks now include a **business-scoped user ID (BSUID)** in `user_id`. When a user has a username and no prior chat with the business, `wa_id` / `from` **may contain the BSUID instead of a phone number, or be missing**. A BSUID is different per business and changes if the user changes their number. ([Meta: business-scoped user IDs](https://developers.facebook.com/documentation/business-messaging/whatsapp/business-scoped-user-ids/), [Twilio changelog](https://www.twilio.com/en-us/changelog/whatsapp-usernames--new-business-scoped-user-id--bsuid--field-re), [Chatwoot issue](https://github.com/chatwoot/chatwoot/issues/13837))
 
-**Our code is affected:** `src/controllers/webhookController.js` strips every non-digit from the sender, and `leads.wa_id` (a phone number) is the primary key everywhere. Fix, top priority:
+**How we handle it (task K1):**
 
-1. Store `user_id` (BSUID) on every inbound message and lead; keep the phone when present.
-2. Give leads an internal id; make BSUID and phone unique lookups, not the primary key.
-3. Send replies to whichever identifier Meta accepts for that user.
-4. CRM shows "username user (phone hidden)" when there's no phone; click-to-call and phone-based features handle that case.
+1. `leads.wa_id` stays the lead's key: the phone for existing and phone-known leads, the BSUID for username-only leads. Nothing that references leads had to change.
+2. New columns `leads.phone`, `leads.user_id` (unique) and `leads.username` hold whatever Meta has shared. Every inbound message fills them in.
+3. Incoming messages are matched to a lead by BSUID first, then phone (`leadRepository.resolveKey`), so a known lead stays one lead when Meta later hides the phone.
+4. Replies go to `to` (phone) when we have it, else to `recipient` (BSUID) (`identity.sendTarget`).
+5. `system` messages `user_changed_number` / `user_changed_user_id` move the new BSUID onto the lead; the bot doesn't answer them.
+6. CRM and Telegram show `+phone`, `@username` or "phone hidden", and only offer wa.me links when there's a phone.
+
+Not done yet: asking a username user for their phone (`REQUEST_CONTACT_INFO` button) and Meta's contact book API.
 
 ## 6. Tokens and permissions (learned the hard way)
 

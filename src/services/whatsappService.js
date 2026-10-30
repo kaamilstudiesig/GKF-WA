@@ -1,6 +1,7 @@
 const axios = require('axios');
 const env = require('../config/env');
 const leadRepository = require('../db/leadRepository');
+const identity = require('./identity');
 const logger = require('../utils/logger');
 
 /**
@@ -32,10 +33,13 @@ class WhatsAppService {
    * `location` (a map pin sent right after the text).
    */
   async sendText(waId, text, { buttons = [], location = null } = {}) {
-    const to = String(waId).replace(/[^0-9]/g, '');
-    if (!to || !text) throw new Error('sendText needs a recipient and text');
+    if (!waId || !text) throw new Error('sendText needs a recipient and text');
+    // Phone when we have it; otherwise Meta's business-scoped user ID (usernames).
+    const target = identity.sendTarget(await leadRepository.findByWaId(waId), String(waId));
+    if (!target) throw new Error('No phone number or WhatsApp user ID to send to');
+    const to = target.to || target.recipient; // for logs (masked)
 
-    const base = { messaging_product: 'whatsapp', recipient_type: 'individual', to };
+    const base = { messaging_product: 'whatsapp', recipient_type: 'individual', ...target };
     const replyButtons = (buttons || []).slice(0, 3).map(b => ({
       type: 'reply', reply: { id: String(b.id).slice(0, 256), title: String(b.title).slice(0, 20) }
     }));
@@ -44,12 +48,12 @@ class WhatsAppService {
       : { ...base, type: 'text', text: { preview_url: false, body: text } };
 
     const messageId = await this.deliver(payload, to);
-    await leadRepository.saveMessage({ messageId, waId: to, direction: 'out', text });
+    await leadRepository.saveMessage({ messageId, waId, direction: 'out', text });
 
     if (location && Number.isFinite(location.latitude) && Number.isFinite(location.longitude)) {
       try {
         const pinId = await this.deliver({ ...base, type: 'location', location }, to);
-        await leadRepository.saveMessage({ messageId: pinId, waId: to, direction: 'out', text: `[Location pin] ${location.name || ''}`.trim() });
+        await leadRepository.saveMessage({ messageId: pinId, waId, direction: 'out', text: `[Location pin] ${location.name || ''}`.trim() });
       } catch (err) {
         // The text already went out; a missing pin is not worth resending the reply for.
         logger.warn('Could not send location pin', { error: err.response?.data?.error?.message || err.message });

@@ -143,7 +143,7 @@ Cost levers, in order of impact: fixed answers (free), one AI call per reply ins
 
 ## 5. Data model
 
-Bot tables are owned by `src/db/schema.js`; CRM tables (prefixed `crm_`) by `crm/src/migrations.js`. Today a lead is keyed by its phone number (`wa_id`).
+Bot tables are owned by `src/db/schema.js`; CRM tables (prefixed `crm_`) by `crm/src/migrations.js`. A lead's key is `wa_id`: its phone number, or Meta's business-scoped user ID (BSUID) when the user hides their phone behind a WhatsApp username. `phone`, `user_id` and `username` hold whatever Meta has shared.
 
 ```mermaid
 erDiagram
@@ -159,7 +159,9 @@ erDiagram
   crm_users ||--o{ crm_activity_log : "acts in"
 
   leads {
-    text wa_id PK "phone today; see BSUID gap"
+    text wa_id PK "lead key: phone, or BSUID if hidden"
+    text phone "when Meta shares it"
+    text user_id UK "Meta business-scoped user ID"
     text display_name
     text status "new..converted/lost"
     text interest
@@ -276,7 +278,7 @@ Key decisions:
 - **Routing by `phone_number_id`.** All clients' WhatsApp numbers point at one webhook; the payload's `metadata.phone_number_id` picks the tenant.
 - **Secrets per tenant**, encrypted in the database (business tokens from Embedded Signup), never in environment variables.
 - **Business profile in the database** replaces `gymConfig.js`. The prompt and fixed answers are generated from it. Vertical packs (gym, clinic, salon, coaching, real estate) give defaults.
-- **Lead identity = BSUID first.** Store Meta's business-scoped user ID as the stable key and the phone number when Meta sends it (see [META_PLATFORM.md](META_PLATFORM.md#5-usernames-and-bsuid-identity-change)).
+- **Lead identity:** matched by BSUID first, then phone; send to the phone when known, else to the BSUID (done, see [META_PLATFORM.md](META_PLATFORM.md#5-usernames-and-bsuid-identity-change)). With tenants, BSUIDs are per business portfolio, so the lookup is per tenant.
 - **Fair queues.** One client's ad spike must not delay others: claim work round-robin across tenants, and keep per-tenant AI budgets and caps.
 - **Same stack until ~50 clients.** One app, one Postgres, more dynos. Move hosting to an India region when the first paying non-GKF client signs.
 
@@ -286,7 +288,6 @@ Ordered by risk; owners and timing are in [PRODUCT_PLAN.md](PRODUCT_PLAN.md) and
 
 | Gap | Why it matters |
 | --- | --- |
-| **Lead identity is the phone number**, and the webhook strips non-digits from the sender ID | WhatsApp usernames (rolling out since mid-2026) can hide the phone number and send a BSUID instead. Those leads would get a mangled ID and could land on the wrong lead or be dropped. |
 | Single tenant (GKF facts in code, one number) | Can't onboard client #2 without code changes. |
 | No "joined + ₹" outcome | No revenue per ad, which is the core promise to agencies. |
 | No speed-to-lead timer, outcome logging or live board | Hot leads can sit unanswered unnoticed. |

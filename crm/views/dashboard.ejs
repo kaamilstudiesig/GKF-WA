@@ -24,7 +24,7 @@
       <li class="row" style="justify-content:space-between;align-items:center">
         <div class="grow">
           <div><%= f.title %></div>
-          <div class="meta"><a href="/leads/<%= f.wa_id %>"><%= f.display_name || '+' + f.wa_id %></a> · <span class="<%= late ? 'overdue' : '' %>">Due <%= util.fmtDate(f.due_at) %></span></div>
+          <div class="meta"><a href="/leads/<%= f.wa_id %>"><%= util.leadTitle(f) %></a> · <span class="<%= late ? 'overdue' : '' %>">Due <%= util.fmtDate(f.due_at) %></span></div>
         </div>
         <form method="post" action="/followups/<%= f.id %>/done"><%- include('partials/csrf') %><button class="btn btn-outline btn-sm">Done</button></form>
       </li>

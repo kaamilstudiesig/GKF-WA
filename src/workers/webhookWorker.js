@@ -8,6 +8,7 @@ const deterministicRouter = require('../services/deterministicRouter');
 const aiService = require('../services/aiService');
 const whatsappService = require('../services/whatsappService');
 const botGuard = require('../services/botGuard');
+const identity = require('../services/identity');
 const notifyService = require('../services/notifyService');
 const { applyLeadUpdates } = require('../services/leadUpdates');
 const { applyReferral } = require('../services/adAttribution');
@@ -45,7 +46,7 @@ async function decideReply(lead, text) {
 
 async function processEvent(event) {
   try {
-    const { msg, contact } = event.payload || {};
+    const { msg, contact, ids } = event.payload || {};
     const waId = event.wa_id;
     if (!msg || !waId || !msg.id) {
       await eventRepository.failPermanent(event.id, 'Event is missing the message or sender');
@@ -53,7 +54,8 @@ async function processEvent(event) {
     }
     const timestamp = msg.timestamp ? new Date(Number(msg.timestamp) * 1000).toISOString() : new Date().toISOString();
 
-    let lead = await leadRepository.upsertInbound(waId, contact?.profile?.name || null, timestamp);
+    let lead = await leadRepository.upsertInbound(waId, contact?.profile?.name || null, timestamp,
+      ids || identity.fromWebhook(msg, contact));
     lead = await applyReferral(lead, msg);
 
     const replyKey = `reply:${msg.id}`;

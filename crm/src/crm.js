@@ -87,7 +87,7 @@ class Crm {
     else if (assignee && /^\d{1,9}$/.test(String(assignee))) where.push(`a.user_id = ${q.p(Number(assignee))}`);
     if (search) {
       const like = q.p(`%${String(search).trim()}%`);
-      where.push(`(l.wa_id ILIKE ${like} OR l.display_name ILIKE ${like} OR l.interest ILIKE ${like})`);
+      where.push(`(l.wa_id ILIKE ${like} OR l.phone ILIKE ${like} OR l.username ILIKE ${like} OR l.display_name ILIKE ${like} OR l.interest ILIKE ${like})`);
     }
 
     const orders = {

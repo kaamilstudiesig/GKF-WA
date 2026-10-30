@@ -27,5 +27,5 @@ Read before larger changes: `docs/ARCHITECTURE.md`, `docs/PRODUCT_PLAN.md`, `doc
 - Don't deploy to Heroku or change production config unless the user explicitly asks.
 - The bot must stay business-scoped (Meta bans general-purpose AI assistants) and must never invent facts beyond the business profile.
 - Bot replies: simple Indian English (or the lead's language), no em dashes, no markdown, at most one question and only when it qualifies the lead.
-- Lead identity is changing from phone (`wa_id`) to Meta's BSUID (`user_id`); don't add new code that assumes a sender is always a phone number.
+- `leads.wa_id` is the lead key: a phone number or Meta's business-scoped user ID (e.g. `IN.1234...`) for users who hide their phone. Never assume it's digits; use `leads.phone` (may be null), `src/services/identity.js` and the CRM's `util.contactLabel` / `util.leadPhone`.
 - Update the relevant doc in `docs/` in the same PR when behaviour changes.

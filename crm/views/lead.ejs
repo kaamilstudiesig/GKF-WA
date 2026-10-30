@@ -1,15 +1,15 @@
-<%- include('partials/header', { title: lead.display_name || ('+' + lead.wa_id) }) %>
+<%- include('partials/header', { title: util.leadTitle(lead) }) %>
 <div class="page-head">
   <div>
-    <div class="eyebrow"><a href="/leads">Leads</a> / +<%= lead.wa_id %></div>
-    <h1><%= lead.display_name || ('+' + lead.wa_id) %></h1>
+    <div class="eyebrow"><a href="/leads">Leads</a> / <%= util.contactLabel(lead) %></div>
+    <h1><%= util.leadTitle(lead) %></h1>
     <div class="row" style="gap:8px">
       <%- include('partials/status', { status: lead.status }) %>
       <% if (lead.needs_human) { %><span class="badge badge-human">Needs human · <%= util.humanize(lead.handoff_reason) %></span><% } %>
       <span class="badge <%= lead.window_open ? 'st-converted' : 'badge-muted' %>"><%= lead.window_open ? 'Reply window open' : 'Reply window closed' %></span>
     </div>
   </div>
-  <a class="btn btn-outline" href="https://wa.me/<%= lead.wa_id %>" target="_blank" rel="noopener noreferrer">Open in WhatsApp</a>
+  <% if (util.leadPhone(lead)) { %><a class="btn btn-outline" href="https://wa.me/<%= util.leadPhone(lead) %>" target="_blank" rel="noopener noreferrer">Open in WhatsApp</a><% } %>
 </div>
 
 <div class="lead-layout">
@@ -55,7 +55,7 @@
     <section class="card">
       <h2>Lead</h2>
       <dl class="dl">
-        <dt>Phone</dt><dd>+<%= lead.wa_id %></dd>
+        <dt>Phone</dt><dd><%= util.contactLabel(lead) %><% if (!util.leadPhone(lead)) { %> <span class="muted small">(WhatsApp username, number not shared)</span><% } %></dd>
         <dt>Interest</dt><dd style="text-transform:capitalize"><%= util.humanize(lead.interest) || '—' %></dd>
         <dt>Source</dt><dd><%= util.humanize(lead.source) %></dd>
         <% if (lead.ad) { %><dt>Ad</dt><dd><span style="text-transform:capitalize"><%= lead.ad.platform %></span>: <%= lead.ad.headline || ('ad ' + (lead.ad.source_id || '')) %>

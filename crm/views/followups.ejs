@@ -16,7 +16,7 @@
   <% for (const f of items) { const late = status === 'open' && f.due_at < new Date().toISOString(); %>
     <tr>
       <td><%= f.title %></td>
-      <td><a class="lead-name" href="/leads/<%= f.wa_id %>"><%= f.display_name || '+' + f.wa_id %></a> <% if (f.lead_status) { %><%- include('partials/status', { status: f.lead_status }) %><% } %></td>
+      <td><a class="lead-name" href="/leads/<%= f.wa_id %>"><%= util.leadTitle(f) %></a> <% if (f.lead_status) { %><%- include('partials/status', { status: f.lead_status }) %><% } %></td>
       <td class="small"><%= f.user_name %></td>
       <td class="small <%= late ? 'overdue' : '' %>"><%= util.fmtDate(status === 'open' ? f.due_at : f.completed_at) %><% if (late) { %> · overdue<% } %></td>
       <td class="num"><% if (status === 'open') { %><form method="post" action="/followups/<%= f.id %>/done"><%- include('partials/csrf') %><button class="btn btn-outline btn-sm">Done</button></form><% } %></td>

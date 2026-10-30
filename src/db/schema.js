@@ -112,6 +112,22 @@ const migrations = [
       )`,
       'CREATE INDEX ai_usage_created_idx ON ai_usage (created_at)'
     ]
+  },
+  {
+    // WhatsApp usernames: Meta may hide a user's phone and send a business-scoped
+    // user ID (BSUID, e.g. "IN.1234...") instead. leads.wa_id stays the lead's key
+    // (the phone for existing and phone-known leads, the BSUID otherwise);
+    // phone and user_id hold whichever identifiers Meta has shared.
+    id: 2,
+    name: 'bsuid_identity',
+    up: [
+      'ALTER TABLE leads ADD COLUMN phone TEXT',
+      'ALTER TABLE leads ADD COLUMN user_id TEXT',
+      'ALTER TABLE leads ADD COLUMN username TEXT',
+      "UPDATE leads SET phone = wa_id WHERE wa_id ~ '^[0-9]{6,15}$'",
+      'CREATE UNIQUE INDEX leads_user_id_key ON leads (user_id) WHERE user_id IS NOT NULL',
+      'CREATE INDEX leads_phone_idx ON leads (phone)'
+    ]
   }
 ];
 

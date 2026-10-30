@@ -8,8 +8,8 @@
   <% for (const l of leads) { %>
     <tr>
       <td>
-        <a class="lead-name" href="/leads/<%= l.wa_id %>"><%= l.display_name || ('+' + l.wa_id) %></a>
-        <div class="muted small">+<%= l.wa_id %></div>
+        <a class="lead-name" href="/leads/<%= l.wa_id %>"><%= util.leadTitle(l) %></a>
+        <div class="muted small"><%= util.contactLabel(l) %></div>
         <% if (l.needs_human) { %><span class="badge badge-human" title="<%= util.humanize(l.handoff_reason) %>">Needs human</span><% } %>
       </td>
       <td><%- include('status', { status: l.status }) %></td>

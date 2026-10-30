@@ -43,7 +43,17 @@ function timeAgo(iso) {
   return 'just now';
 }
 
-const cleanWaId = v => String(v || '').replace(/[^0-9]/g, '');
+// Lead keys are a phone number (digits) or Meta's business-scoped user ID ("IN.1234...").
+const cleanWaId = v => String(v || '').replace(/[^A-Za-z0-9.]/g, '').slice(0, 160);
+const leadPhone = l => l?.phone || (/^[0-9]+$/.test(String(l?.wa_id || '')) ? String(l.wa_id) : null);
+/** What to show for a lead's number: "+91...", "@username" or "Phone hidden". */
+const contactLabel = l => {
+  const phone = leadPhone(l);
+  if (phone) return `+${phone}`;
+  if (l?.username) return `@${l.username}`;
+  return 'Phone hidden';
+};
+const leadTitle = l => l?.display_name || contactLabel(l);
 const humanize = v => (v ? String(v).replace(/_/g, ' ') : '');
 
 /**
@@ -55,4 +65,4 @@ class Params {
   p(value) { this.values.push(value); return `$${this.values.length}`; }
 }
 
-module.exports = { Params, localInputToIso, localDay, fmtDate, timeAgo, cleanWaId, humanize, tzOffsetMs };
+module.exports = { Params, localInputToIso, localDay, fmtDate, timeAgo, cleanWaId, leadPhone, contactLabel, leadTitle, humanize, tzOffsetMs };

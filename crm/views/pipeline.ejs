@@ -7,7 +7,7 @@
     <% if (!col.leads.length) { %><p class="empty small">Empty</p><% } %>
     <% for (const l of col.leads) { %>
     <div class="deal">
-      <a class="lead-name" href="/leads/<%= l.wa_id %>"><%= l.display_name || '+' + l.wa_id %></a>
+      <a class="lead-name" href="/leads/<%= l.wa_id %>"><%= util.leadTitle(l) %></a>
       <div class="muted"><%= util.humanize(l.interest) || 'No interest yet' %> · <%= util.timeAgo(l.last_inbound_message_at) %></div>
       <div class="muted"><%= l.assignee_name || 'Unassigned' %><% if (l.needs_human) { %> · <span class="gold">needs human</span><% } %></div>
       <form method="post" action="/leads/<%= l.wa_id %>/status" class="row">

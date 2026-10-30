@@ -201,7 +201,7 @@ function createCrmApp({
     res.render('reports', { r: await crm.reports(req.user, { days, includeAiCost: can.viewAiCost(req.user), usdToInr }) });
   }));
   app.get('/reports/leads.csv', allow(can.exportLeads), h(async (req, res) => {
-    const cols = ['wa_id', 'display_name', 'status', 'interest', 'source', 'assignee_name', 'needs_human', 'handoff_reason',
+    const cols = ['wa_id', 'phone', 'username', 'display_name', 'status', 'interest', 'source', 'assignee_name', 'needs_human', 'handoff_reason',
       'open_followups', 'first_contact_at', 'last_inbound_message_at', 'last_outbound_message_at'];
     const esc = v => {
       let s = v === null || v === undefined ? '' : String(v);

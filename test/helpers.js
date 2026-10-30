@@ -31,12 +31,21 @@ function inbound(messages, { phoneNumberId = 'PNID_TEST' } = {}) {
         value: {
           messaging_product: 'whatsapp',
           metadata: { phone_number_id: phoneNumberId },
-          contacts: list.map(m => ({ wa_id: m.from, profile: { name: m.name || 'Test Lead' } })),
+          // m.userId = Meta's business-scoped user ID; m.from = null means the phone is hidden (username user).
+          contacts: list.map(m => {
+            const c = { profile: { name: m.name || 'Test Lead' } };
+            if (m.from) c.wa_id = m.from;
+            if (m.userId) c.user_id = m.userId;
+            if (m.username) c.profile.username = m.username;
+            return c;
+          }),
           messages: list.map(m => {
             const msg = {
-              from: m.from, id: m.id || `wamid.test_${++seq}_${Date.now()}`,
+              id: m.id || `wamid.test_${++seq}_${Date.now()}`,
               timestamp: String(Math.floor((m.at || Date.now()) / 1000)), type: m.type || 'text'
             };
+            if (m.from) msg.from = m.from;
+            if (m.userId) msg.from_user_id = m.userId;
             if (msg.type === 'text') msg.text = { body: m.text };
             if (m.referral) msg.referral = m.referral;
             if (m.extra) Object.assign(msg, m.extra);

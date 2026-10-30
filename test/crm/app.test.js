@@ -112,7 +112,7 @@ test('bot and CRM migrations coexist and are idempotent', async t => {
   await migrateAll();
   await migrateAll();
   await migrateCrm(db);
-  assert.deepStrictEqual(await db.many('SELECT id, name FROM schema_migrations ORDER BY id'), [{ id: 1, name: 'initial' }]);
+  assert.deepStrictEqual(await db.many('SELECT id, name FROM schema_migrations ORDER BY id'), [{ id: 1, name: 'initial' }, { id: 2, name: 'bsuid_identity' }]);
   assert.deepStrictEqual(await db.many('SELECT id, name FROM crm_migrations ORDER BY id'), [{ id: 1, name: 'initial' }]);
   const tables = (await db.many(`SELECT table_name FROM information_schema.tables
     WHERE table_schema = current_schema() ORDER BY table_name`)).map(r => r.table_name);

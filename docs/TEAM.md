@@ -42,7 +42,7 @@ Phases and "done when" are in [PRODUCT_PLAN.md §4](PRODUCT_PLAN.md#4-roadmap).
 
 | # | Task | Owner | Notes |
 | --- | --- | --- | --- |
-| K1 | **BSUID-safe lead identity.** Store Meta's `user_id`; stop stripping non-digits from the sender; internal lead id; migration for existing leads | Kaamil | Top priority: usernames are rolling out. See [META_PLATFORM.md §5](META_PLATFORM.md#5-usernames-and-bsuid-identity-change) |
+| K1 | **BSUID-safe lead identity.** Store Meta's `user_id`, match by BSUID then phone, send via `recipient` when the phone is hidden, follow ID changes | Kaamil | In review. See [META_PLATFORM.md §5](META_PLATFORM.md#5-usernames-and-bsuid-identity-change) |
 | K2 | Alert on outbound send failures (Telegram + Sentry) and on `account_update` webhooks | Kaamil | After the 30 Oct token incident |
 | K3 | Apply for Meta business verification + Tech Provider; draft privacy policy + data deletion endpoint | Kaamil | Takes weeks; start now |
 | R1 | **Outcomes:** `crm_lead_outcomes` table + one-tap outcome UI on the lead page (incl. Joined: plan + ₹, Lost: reason list) + automatic next follow-up | Krishna | Agree the table in a small PR first (contract below) |
@@ -80,7 +80,7 @@ Both: line up 3 pilot gyms through agency friends while Phase D is built.
 ```sql
 CREATE TABLE crm_lead_outcomes (
   id INTEGER GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
-  wa_id TEXT NOT NULL REFERENCES leads (wa_id) ON DELETE CASCADE, -- becomes lead_id after K1
+  wa_id TEXT NOT NULL REFERENCES leads (wa_id) ON DELETE CASCADE, -- lead key: phone or BSUID
   user_id INTEGER REFERENCES crm_users (id) ON DELETE SET NULL,
   outcome TEXT NOT NULL CHECK (outcome IN ('called_connected','no_answer','whatsapp_sent',
     'visit_booked','visited','no_show','joined','lost')),
@@ -93,7 +93,7 @@ CREATE TABLE crm_lead_outcomes (
 );
 ```
 
-K1 changes lead identity. Build R1 against `wa_id` now; the K1 migration will move both sides to `lead_id` together.
+After K1, `wa_id` is the lead's key: a phone number or, for WhatsApp username users, Meta's business-scoped user ID like `IN.1234...`. Don't assume it's digits; use `util.contactLabel(lead)` / `util.leadPhone(lead)` in the CRM to show a number.
 
 ## How we work
 

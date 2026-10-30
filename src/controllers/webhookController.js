@@ -1,6 +1,7 @@
 const env = require('../config/env');
 const eventRepository = require('../db/eventRepository');
 const leadRepository = require('../db/leadRepository');
+const identity = require('../services/identity');
 const webhookWorker = require('../workers/webhookWorker');
 const logger = require('../utils/logger');
 
@@ -52,15 +53,31 @@ async function handleIncoming(req, res) {
 
         const contacts = value.contacts || [];
         for (const msg of value.messages || []) {
-          const contact = contacts.find(c => c.wa_id === msg.from) || contacts[0] || null;
-          const waId = String(contact?.wa_id || msg.from || '').replace(/[^0-9]/g, '');
-          if (!waId || !msg.id) {
+          // Match the contact by BSUID first (always sent), then by phone.
+          const contact = contacts.find(c => msg.from_user_id && c.user_id === msg.from_user_id)
+            || contacts.find(c => msg.from && c.wa_id === msg.from) || contacts[0] || null;
+
+          // Meta tells us when a user's BSUID changes; move it onto the lead, no reply.
+          if (msg.type === 'system') {
+            const sys = msg.system || {};
+            if (sys.type === 'user_changed_number' || sys.type === 'user_changed_user_id') {
+              const key = await leadRepository.applyIdChange({
+                previousUserId: sys.previous_user_id, userId: sys.user_id || msg.from_user_id, phone: sys.wa_id
+              });
+              logger.info('WhatsApp user ID changed', { type: sys.type, matched: Boolean(key) });
+            }
+            continue;
+          }
+
+          const ids = identity.fromWebhook(msg, contact);
+          if ((!ids.phone && !ids.userId) || !msg.id) {
             logger.warn('Skipping message without sender or id');
             continue;
           }
           if (await leadRepository.hasMessage(msg.id)) continue; // Meta re-delivery
+          const waId = await leadRepository.resolveKey(ids);
           const id = await eventRepository.record({
-            eventKey: `msg:${msg.id}`, waId, messageId: msg.id, payload: { msg, contact }
+            eventKey: `msg:${msg.id}`, waId, messageId: msg.id, payload: { msg, contact, ids }
           });
           if (id) queued++;
         }

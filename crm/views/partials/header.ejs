@@ -7,6 +7,9 @@
 <div class="drawer lg:drawer-open">
   <input id="nav-drawer" type="checkbox" class="drawer-toggle" aria-label="Open menu">
   <div class="drawer-content flex min-h-dvh flex-col">
+    <% if (typeof mobileBar !== 'undefined' && mobileBar) { %>
+      <%- include(mobileBar) %>
+    <% } else { %>
     <header class="navbar sticky top-0 z-30 min-h-14 gap-1 border-b border-base-300 bg-base-200/90 px-2 backdrop-blur lg:hidden">
       <div class="navbar-start w-auto">
         <% if (backHref) { %>
@@ -20,6 +23,7 @@
         <label for="nav-drawer" class="btn btn-ghost btn-square drawer-button" aria-label="Menu"><%- include('icon', { name: 'menu', cls: 'size-6' }) %></label>
       </div>
     </header>
-    <main class="mx-auto w-full max-w-6xl flex-1 px-4 pt-4 pb-dock lg:px-8 lg:pt-8">
+    <% } %>
+    <main class="mx-auto w-full max-w-6xl flex-1 px-4 <%= typeof mobileBar !== 'undefined' && mobileBar ? 'pt-0 pb-0' : 'pt-4 pb-dock' %> lg:px-8 lg:pt-8 lg:pb-8">
       <% if (flash) { %><div role="status" class="alert alert-success alert-soft mb-4"><%- include('icon', { name: 'check' }) %><span><%= flash %></span></div><% } %>
       <% if (error) { %><div role="alert" class="alert alert-error alert-soft mb-4"><%- include('icon', { name: 'alert' }) %><span><%= error %></span></div><% } %>

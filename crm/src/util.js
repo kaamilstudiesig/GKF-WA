@@ -33,6 +33,24 @@ function fmtDate(iso, tz = config.timezone) {
   }).format(d);
 }
 
+/** "9:32 pm" in the display timezone (chat bubbles). */
+function fmtTime(iso, tz = config.timezone) {
+  const d = new Date(iso);
+  if (!iso || isNaN(d)) return '';
+  return new Intl.DateTimeFormat('en-IN', { timeZone: tz, hour: 'numeric', minute: '2-digit' }).format(d).toLowerCase();
+}
+
+/** "Today", "Yesterday" or "30 Oct 2026" (chat date separators). */
+function dayLabel(iso, tz = config.timezone) {
+  if (!iso) return '';
+  const day = localDay(iso, tz);
+  const today = localDay(new Date().toISOString(), tz);
+  const yesterday = localDay(new Date(Date.now() - 86400000).toISOString(), tz);
+  if (day === today) return 'Today';
+  if (day === yesterday) return 'Yesterday';
+  return new Intl.DateTimeFormat('en-IN', { timeZone: tz, day: 'numeric', month: 'short', year: 'numeric' }).format(new Date(iso));
+}
+
 function timeAgo(iso) {
   if (!iso) return '—';
   const diff = Date.now() - new Date(iso).getTime();
@@ -65,4 +83,4 @@ class Params {
   p(value) { this.values.push(value); return `$${this.values.length}`; }
 }
 
-module.exports = { Params, localInputToIso, localDay, fmtDate, timeAgo, cleanWaId, leadPhone, contactLabel, leadTitle, humanize, tzOffsetMs };
+module.exports = { Params, localInputToIso, localDay, fmtDate, fmtTime, dayLabel, timeAgo, cleanWaId, leadPhone, contactLabel, leadTitle, humanize, tzOffsetMs };

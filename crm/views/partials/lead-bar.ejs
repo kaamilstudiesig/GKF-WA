@@ -1,0 +1,12 @@
+<%# Lead page top bar on phones, WhatsApp-style: back · avatar · name/status · call · log outcome. %>
+<% const phone = util.leadPhone(lead); const initials = (lead.display_name || '#').split(' ').map(s => s[0]).join('').slice(0, 2).toUpperCase(); %>
+<header class="sticky top-0 z-30 flex h-14 items-center gap-1 border-b border-base-300 bg-base-100 px-1 lg:hidden">
+  <a href="/leads" class="btn btn-ghost btn-square btn-sm" aria-label="Back to leads"><%- include('icon', { name: 'back', cls: 'size-6' }) %></a>
+  <div class="avatar avatar-placeholder"><div class="w-9 rounded-full <%= lead.needs_human ? 'bg-primary text-primary-content' : 'bg-neutral text-neutral-content' %>"><span class="text-xs font-semibold"><%= initials %></span></div></div>
+  <button type="button" class="min-w-0 flex-1 px-2 text-left" data-tab-link="details" aria-label="Lead details">
+    <div class="truncate text-[15px] font-semibold leading-tight"><%= util.leadTitle(lead) %></div>
+    <div class="truncate text-xs leading-tight text-base-content/60"><span class="capitalize"><%= lead.status %></span><% if (lead.needs_human) { %> · <span class="text-primary">needs human</span><% } %><% if (lead.assignee_name) { %> · <%= lead.assignee_name %><% } %></div>
+  </button>
+  <% if (phone) { %><a href="tel:+<%= phone %>" class="btn btn-ghost btn-square" aria-label="Call"><%- include('icon', { name: 'phone' }) %></a><% } %>
+  <a href="#outcome" class="btn btn-primary btn-sm mr-1 gap-1 px-3"><%- include('icon', { name: 'clipboard', cls: 'size-4' }) %>Log</a>
+</header>

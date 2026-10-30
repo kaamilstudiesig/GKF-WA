@@ -1,4 +1,15 @@
 const path = require('path');
+const fs = require('fs');
+const crypto = require('crypto');
+
+/** Short hash of the CSS/JS so browsers fetch new files after every deploy (?v=...). */
+function assetVersion() {
+  const h = crypto.createHash('sha1');
+  for (const f of ['css/app.css', 'js/app.js']) {
+    try { h.update(fs.readFileSync(path.join(__dirname, '..', 'public', f))); } catch (e) { h.update(f); }
+  }
+  return h.digest('hex').slice(0, 10);
+}
 const express = require('express');
 const config = require('./config');
 const auth = require('./auth');
@@ -27,6 +38,7 @@ function createCrmApp({
     throw new Error('createCrmApp needs a db object with query/many/one/tx (see src/db.js).');
   }
   const app = express();
+  app.locals.assetV = assetVersion(); // cache-busting ?v= on CSS/JS links
   const crm = new Crm(db);
   const users = new Users(db);
   const throttle = new auth.LoginThrottle();

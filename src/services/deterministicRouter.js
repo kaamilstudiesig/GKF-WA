@@ -65,41 +65,42 @@ const ROUTES = {
   negotiation: [/\bdiscount/, /\boffers?\b/, /negotiat/, /\bcheaper\b/, /\bkam (karo|kar do|ho)/, /\bconcession\b/, /\bkadime\b/, 'ಕಡಿಮೆ']
 };
 
+// Plain, short Indian English. A question only where it qualifies the lead (goal or timing) or books the visit.
 const T = {
   greeting: {
-    en: g => `Welcome to ${g}! 💪 I can share our membership prices, help you book a trial, or send our location. What would you like?`,
-    hi: g => `${g} mein aapka swagat hai! 💪 Main aapko membership prices bata sakta hoon, trial book karwa sakta hoon, ya location bhej sakta hoon. Kya chahiye?`,
-    kn: g => `${g} ಗೆ ಸ್ವಾಗತ! 💪 ಸದಸ್ಯತ್ವ ಬೆಲೆಗಳು, ಟ್ರಯಲ್ ಬುಕಿಂಗ್ ಅಥವಾ ನಮ್ಮ ಲೊಕೇಶನ್ — ಏನು ಬೇಕು?`
+    en: g => `Hi, welcome to ${g}! Tap a button below for prices, a trial or our location. Or just type your question here.`,
+    hi: g => `Hi, ${g} mein welcome! Neeche button tap karke prices, trial ya location dekh lo. Ya apna sawaal yahin type karo.`,
+    kn: g => `ನಮಸ್ಕಾರ, ${g} ಗೆ ಸ್ವಾಗತ! ಬೆಲೆ, ಟ್ರಯಲ್ ಅಥವಾ ಲೊಕೇಶನ್‌ಗಾಗಿ ಕೆಳಗಿನ ಬಟನ್ ಒತ್ತಿ. ಅಥವಾ ನಿಮ್ಮ ಪ್ರಶ್ನೆಯನ್ನು ಇಲ್ಲೇ ಟೈಪ್ ಮಾಡಿ.`
   },
   hours: {
-    en: (g, w, s) => `${g} operating hours:\n• ${w}\n• ${s}\n\nWhen would you like to drop by for a workout or facility tour?`,
-    hi: (g, w, s) => `${g} ki timings:\n• ${w}\n• ${s}\n\nAap workout ya gym tour ke liye kab aana chahenge?`,
-    kn: (g, w, s) => `${g} ಸಮಯ:\n• ${w}\n• ${s}\n\nವರ್ಕೌಟ್ ಅಥವಾ ಜಿಮ್ ನೋಡಲು ಯಾವಾಗ ಬರುತ್ತೀರಿ?`
+    en: (g, w, s) => `${g} timings:\n• ${w}\n• ${s}\n\nMorning or evening works better for you?`,
+    hi: (g, w, s) => `${g} ki timings:\n• ${w}\n• ${s}\n\nAapke liye morning better hai ya evening?`,
+    kn: (g, w, s) => `${g} ಸಮಯ:\n• ${w}\n• ${s}\n\nನಿಮಗೆ ಬೆಳಿಗ್ಗೆ ಅನುಕೂಲವೋ ಸಂಜೆಯೋ?`
   },
   location: {
-    en: (loc, park) => `We are located at: ${loc}.\n\nParking: ${park}.\n\nAre you looking to visit for a personal consultation or trial session?`,
-    hi: (loc, park) => `Hum yahan hain: ${loc}.\n\nParking: ${park}.\n\nKya aap consultation ya trial session ke liye aana chahenge?`,
-    kn: (loc, park) => `ನಮ್ಮ ವಿಳಾಸ: ${loc}.\n\nಪಾರ್ಕಿಂಗ್: ${park}.\n\nಕನ್ಸಲ್ಟೇಶನ್ ಅಥವಾ ಟ್ರಯಲ್ ಸೆಷನ್‌ಗೆ ಬರುತ್ತೀರಾ?`
+    en: (loc, park) => `We're at ${loc}. ${park}.\n\nIf you want to come for a trial, just tell us the day and a coach will confirm.`,
+    hi: (loc, park) => `Hum yahan hain: ${loc}. ${park}.\n\nTrial ke liye aana ho toh bas din bata do, coach confirm kar dega.`,
+    kn: (loc, park) => `ನಮ್ಮ ವಿಳಾಸ: ${loc}. ${park}.\n\nಟ್ರಯಲ್‌ಗೆ ಬರಬೇಕಾದರೆ ದಿನ ತಿಳಿಸಿ, ಕೋಚ್ ಖಚಿತಪಡಿಸುತ್ತಾರೆ.`
   },
   prices: {
-    en: (g, list) => `${g} membership plans:\n${list}\n\nWhat's your main goal? I'll suggest the right plan.`,
-    hi: (g, list) => `${g} ke membership plans:\n${list}\n\nAapka main goal kya hai? Main sahi plan suggest kar deta hoon.`,
-    kn: (g, list) => `${g} ಸದಸ್ಯತ್ವ ಯೋಜನೆಗಳು:\n${list}\n\nನಿಮ್ಮ ಮುಖ್ಯ ಗುರಿ ಏನು? ಸರಿಯಾದ ಯೋಜನೆ ಸೂಚಿಸುತ್ತೇನೆ.`
+    en: (g, list) => `${g} membership plans:\n${list}\n\nLonger plans work out cheaper per month. What's your main goal, fat loss or muscle? I'll tell you which plan fits.`,
+    hi: (g, list) => `${g} ke membership plans:\n${list}\n\nLamba plan per month sasta padta hai. Aapka main goal kya hai, fat loss ya muscle?`,
+    kn: (g, list) => `${g} ಸದಸ್ಯತ್ವ ಯೋಜನೆಗಳು:\n${list}\n\nದೀರ್ಘ ಯೋಜನೆ ತಿಂಗಳಿಗೆ ಕಡಿಮೆ ಬೀಳುತ್ತದೆ. ನಿಮ್ಮ ಮುಖ್ಯ ಗುರಿ ಏನು, ತೂಕ ಇಳಿಕೆಯೋ ಮಸಲ್ ಬೆಳವಣಿಗೆಯೋ?`
   },
   human: {
-    en: g => `Understood! I've notified our coaching team at ${g}. A senior staff member will reach out to you shortly.`,
-    hi: g => `Theek hai! Maine ${g} ki coaching team ko bata diya hai. Hamare staff se koi aapko jaldi contact karega.`,
-    kn: g => `ಸರಿ! ${g} ಕೋಚಿಂಗ್ ತಂಡಕ್ಕೆ ತಿಳಿಸಿದ್ದೇನೆ. ನಮ್ಮ ಸಿಬ್ಬಂದಿ ಶೀಘ್ರದಲ್ಲೇ ನಿಮ್ಮನ್ನು ಸಂಪರ್ಕಿಸುತ್ತಾರೆ.`
+    en: () => "Sure, I've told our team. A coach will call or message you shortly.",
+    hi: () => 'Done, maine team ko bata diya hai. Coach aapko jaldi call ya message karenge.',
+    kn: () => 'ಸರಿ, ತಂಡಕ್ಕೆ ತಿಳಿಸಿದ್ದೇನೆ. ಕೋಚ್ ಶೀಘ್ರದಲ್ಲೇ ಕರೆ ಅಥವಾ ಮೆಸೇಜ್ ಮಾಡುತ್ತಾರೆ.'
   },
   complaint: {
-    en: g => `We sincerely apologize for this experience. We take facility standards very seriously at ${g}. Our management has been notified and will contact you directly.`,
-    hi: g => `Is experience ke liye hum maafi chahte hain. ${g} mein hum standards ko bahut seriously lete hain. Management ko bata diya gaya hai, woh aapse seedha contact karenge.`,
-    kn: g => `ಈ ಅನುಭವಕ್ಕಾಗಿ ಕ್ಷಮಿಸಿ. ${g} ನಲ್ಲಿ ನಾವು ಗುಣಮಟ್ಟವನ್ನು ಗಂಭೀರವಾಗಿ ಪರಿಗಣಿಸುತ್ತೇವೆ. ಮ್ಯಾನೇಜ್‌ಮೆಂಟ್‌ಗೆ ತಿಳಿಸಲಾಗಿದೆ, ಅವರು ನಿಮ್ಮನ್ನು ನೇರವಾಗಿ ಸಂಪರ್ಕಿಸುತ್ತಾರೆ.`
+    en: () => "Really sorry about this. I've passed it to our manager and they will contact you directly.",
+    hi: () => 'Iske liye sorry. Maine manager ko bata diya hai, woh aapse seedha baat karenge.',
+    kn: () => 'ಇದಕ್ಕಾಗಿ ಕ್ಷಮಿಸಿ. ಮ್ಯಾನೇಜರ್‌ಗೆ ತಿಳಿಸಿದ್ದೇನೆ, ಅವರು ನಿಮ್ಮನ್ನು ನೇರವಾಗಿ ಸಂಪರ್ಕಿಸುತ್ತಾರೆ.'
   },
   trial: {
-    en: () => 'You can book an introductory trial session with us! A coach will message you shortly to confirm. Which day and time works best for you?',
-    hi: () => 'Aap hamare saath trial session book kar sakte hain! Ek coach aapko jaldi message karke confirm karega. Aapke liye kaunsa din aur time theek rahega?',
-    kn: () => 'ನೀವು ನಮ್ಮೊಂದಿಗೆ ಟ್ರಯಲ್ ಸೆಷನ್ ಬುಕ್ ಮಾಡಬಹುದು! ಕೋಚ್ ಶೀಘ್ರದಲ್ಲೇ ಮೆಸೇಜ್ ಮಾಡಿ ಖಚಿತಪಡಿಸುತ್ತಾರೆ. ನಿಮಗೆ ಯಾವ ದಿನ ಮತ್ತು ಸಮಯ ಅನುಕೂಲ?'
+    en: () => "Sure, let's get you in for a trial. Which day and time suit you? A coach will message you to confirm.",
+    hi: () => 'Bilkul, trial book karte hain. Kaunsa din aur time theek rahega? Coach message karke confirm kar dega.',
+    kn: () => 'ಖಂಡಿತ, ಟ್ರಯಲ್ ಬುಕ್ ಮಾಡೋಣ. ಯಾವ ದಿನ ಮತ್ತು ಸಮಯ ಅನುಕೂಲ? ಕೋಚ್ ಮೆಸೇಜ್ ಮಾಡಿ ಖಚಿತಪಡಿಸುತ್ತಾರೆ.'
   }
 };
 
@@ -140,14 +141,14 @@ class DeterministicRouter {
 
     if (has(clean, ROUTES.human)) {
       return hit('human', {
-        replyText: T.human[lang](g),
+        replyText: T.human[lang](),
         updates: { needs_human: true, handoff_reason: 'human_requested', summary: 'Lead asked to talk to staff.' }
       });
     }
 
     if (has(clean, ROUTES.complaint)) {
       return hit('complaint', {
-        replyText: T.complaint[lang](g),
+        replyText: T.complaint[lang](),
         updates: { needs_human: true, handoff_reason: 'complaint', summary: 'Lead reported a facility or service complaint.' }
       });
     }

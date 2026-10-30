@@ -36,6 +36,9 @@ Setup: browser window on the left with the CRM (`https://crm.goldkraftfitness.co
 
 ## Video 2: `whatsapp_business_management`
 
+We recorded this with `node scripts/create-template.js trial_reminder` (creates a template through the Cloud API, never prints the token) next to WhatsApp Manager showing the new template. Submitted 30 Oct 2026.
+
+
 Goal: show creating a message template. Meta accepts doing it in **WhatsApp Manager**. 60-90 seconds.
 
 1. Open **business.facebook.com → WhatsApp Manager → Account tools → Message templates** (show the address bar).

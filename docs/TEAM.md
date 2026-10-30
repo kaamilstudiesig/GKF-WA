@@ -49,7 +49,7 @@ Phases and "done when" are in [PRODUCT_PLAN.md §4](PRODUCT_PLAN.md#4-roadmap).
 | R2 | **Hot-lead queue:** shifts, round-robin auto-assign of new hand-offs, 5-min timer, escalation to manager | Krishna | Uses `handoffs` + `crm_lead_assignments` |
 | R3 | **Live board:** server-sent events endpoint + board page (New hot / Contacting / Visit booked / Joined-Lost), overdue cards red | Krishna | No websockets or extra services |
 | R4 | **PWA:** manifest + service worker so sales installs the CRM on their phone; mobile-first lead page | Krishna | |
-| K4 | Alert buttons: Telegram/WhatsApp hand-off alert links straight to the outcome screen | Kaamil | Uses R1's URLs |
+| K4 | Alert buttons: Telegram hand-off alerts get tap buttons (✅ Log outcome → `/leads/<key>#outcome`, 📋 Open lead, 💬 WhatsApp) | Kaamil | In review. Needs R1 to add `id="outcome"` (contract below) |
 
 ### Next: Phase B + C
 
@@ -74,6 +74,10 @@ Phases and "done when" are in [PRODUCT_PLAN.md §4](PRODUCT_PLAN.md#4-roadmap).
 | R10 | Billing UI (Razorpay subscriptions) | Krishna |
 
 Both: line up 3 pilot gyms through agency friends while Phase D is built.
+
+## Contract: the outcome link (K4 ↔ R1)
+
+Telegram alerts have a **✅ Log outcome** button that opens `https://<crm host>/leads/<lead key>#outcome`. R1 must put the outcome form on the lead page inside an element with `id="outcome"` (for example `<section id="outcome">`), near the top on phones, so that tap lands staff straight on the one-tap outcome buttons. Until R1 ships, the link simply opens the lead page.
 
 ## Contract: lead outcomes (proposal for R1)
 

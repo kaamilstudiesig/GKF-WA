@@ -32,6 +32,7 @@ Sales floor → owner analytics → Meta loop (Lead Ads, Conversions API) → mu
 | [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | How it works, with diagrams: message flow, reply logic, data model, code map, target multi-client design |
 | [docs/PRODUCT_PLAN.md](docs/PRODUCT_PLAN.md) | Market, features, roadmap, cost plan, pricing, risks, metrics |
 | [docs/META_PLATFORM.md](docs/META_PLATFORM.md) | Meta facts that constrain us: onboarding, pricing, limits, AI policy, BSUID, APIs we'll use |
+| [docs/META_APP_REVIEW.md](docs/META_APP_REVIEW.md) | Becoming a Meta Tech Provider: App Review settings, videos, permission texts |
 | [docs/ONBOARDING.md](docs/ONBOARDING.md) | How a client goes live (target self-serve flow + today's manual steps) |
 | [docs/OPERATIONS.md](docs/OPERATIONS.md) | Local dev, config vars, tests, deploy, backups, incident runbook |
 | [docs/TEAM.md](docs/TEAM.md) | For collaborators: the idea, who owns what, task list, how we work |

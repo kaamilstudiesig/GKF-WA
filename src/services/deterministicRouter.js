@@ -35,6 +35,7 @@ const has = (text, patterns) => patterns.some(p => (p instanceof RegExp ? p.test
 
 const ROUTES = {
   greeting: [/^(hi+|hello+|hey+|hlo|helo|namaste|namaskar|namaskara|ನಮಸ್ಕಾರ|good (morning|afternoon|evening)|hi there|hello there)[\s!.]*$/],
+  deletion: [/\bdelete (my )?data\b/, /\bdelete my (number|details|info)\b/, /\bremove my (data|number|details)\b/],
   human: [
     'talk to human', 'speak to a person', 'speak to someone', 'call me', 'customer support', 'human agent',
     'human staff', 'connect to coach', 'speak to manager', 'connect me to', 'real person', 'speak to staff',
@@ -87,6 +88,11 @@ const T = {
     hi: (g, list) => `${g} ke membership plans:\n${list}\n\nLamba plan per month sasta padta hai. Aapka main goal kya hai, fat loss ya muscle?`,
     kn: (g, list) => `${g} ಸದಸ್ಯತ್ವ ಯೋಜನೆಗಳು:\n${list}\n\nದೀರ್ಘ ಯೋಜನೆ ತಿಂಗಳಿಗೆ ಕಡಿಮೆ ಬೀಳುತ್ತದೆ. ನಿಮ್ಮ ಮುಖ್ಯ ಗುರಿ ಏನು, ತೂಕ ಇಳಿಕೆಯೋ ಮಸಲ್ ಬೆಳವಣಿಗೆಯೋ?`
   },
+  deletion: {
+    en: () => "Got it. We'll delete your details and chat history within 30 days and confirm here when it's done.",
+    hi: () => 'Theek hai. Hum 30 din ke andar aapki details aur chat history delete karke yahin confirm kar denge.',
+    kn: () => 'ಸರಿ. 30 ದಿನಗಳ ಒಳಗೆ ನಿಮ್ಮ ವಿವರಗಳು ಮತ್ತು ಚಾಟ್ ಇತಿಹಾಸವನ್ನು ಅಳಿಸಿ ಇಲ್ಲೇ ಖಚಿತಪಡಿಸುತ್ತೇವೆ.'
+  },
   human: {
     en: () => "Sure, I've told our team. A coach will call or message you shortly.",
     hi: () => 'Done, maine team ko bata diya hai. Coach aapko jaldi call ya message karenge.',
@@ -136,6 +142,14 @@ class DeterministicRouter {
         replyText: T.greeting[lang](g),
         updates: { status: 'contacted' },
         buttons: [BUTTONS.prices, BUTTONS.trial, BUTTONS.location]
+      });
+    }
+
+    // Privacy: data deletion requests go straight to staff (see /data-deletion and scripts/delete-lead.js).
+    if (has(clean, ROUTES.deletion)) {
+      return hit('deletion', {
+        replyText: T.deletion[lang](),
+        updates: { needs_human: true, handoff_reason: 'other', summary: 'DATA DELETION REQUEST: delete this lead within 30 days (npm run delete-lead).' }
       });
     }
 

@@ -11,7 +11,8 @@
     "restore": "node scripts/restore.js",
     "test": "NODE_ENV=test node --test --test-concurrency=4 \"test/**/*.test.js\"",
     "crm:seed": "node crm/scripts/seed.js",
-    "dev:demo-data": "node scripts/demo-data.js"
+    "dev:demo-data": "node scripts/demo-data.js",
+    "delete-lead": "node scripts/delete-lead.js"
   },
   "keywords": [
     "whatsapp",

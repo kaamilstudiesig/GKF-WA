@@ -4,6 +4,8 @@ const createApp = require('./app');
 const { migrateAll } = require('./migrate');
 const webhookWorker = require('./workers/webhookWorker');
 const outboundWorker = require('./workers/outboundWorker');
+const conversionsWorker = require('./workers/conversionsWorker');
+const conversionsApi = require('./services/conversionsApi');
 const eventRepository = require('./db/eventRepository');
 const outboundRepository = require('./db/outboundRepository');
 const logger = require('./utils/logger');
@@ -39,6 +41,8 @@ async function main() {
 
   webhookWorker.start();
   outboundWorker.start();
+  if (conversionsApi.enabled) conversionsWorker.start(); // K7: sales results back to Meta
+  else logger.info('Conversions API off (set META_DATASET_ID and META_WABA_ID to send sales results to Meta)');
 
   // Housekeeping: keep the small Postgres plan small.
   const housekeeping = setInterval(async () => {
@@ -60,7 +64,7 @@ async function main() {
     logger.info(`${signal} received; finishing in-flight work`);
     setTimeout(() => process.exit(1), 25000).unref(); // Heroku allows 30s
     server.close();
-    await Promise.all([webhookWorker.stop(), outboundWorker.stop()]);
+    await Promise.all([webhookWorker.stop(), outboundWorker.stop(), conversionsWorker.stop()]);
     await db.close();
     process.exit(0);
   }

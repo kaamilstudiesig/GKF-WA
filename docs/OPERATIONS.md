@@ -67,6 +67,9 @@ All settings are environment variables; `.env.example` lists them with comments.
 | `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID` | Staff alerts and daily backups. |
 | `TELEGRAM_OPS_CHAT_ID` | Optional separate Telegram group for technical alerts (failed sends, account warnings). Defaults to `TELEGRAM_CHAT_ID`. |
 | `LEGAL_CONTACT_EMAIL`, `LEGAL_CONTACT_PHONE` | Contact shown on the public `/privacy`, `/terms` and `/data-deletion` pages (optional; without them the pages point to the WhatsApp number). |
+| `META_WABA_ID`, `META_DATASET_ID` | Conversions API: sends *Visit booked* (QualifiedLead) and *Joined* (Purchase, ₹) to Meta. Off until both are set. `node scripts/capi-setup.js --create` finds or creates the dataset. |
+| `META_PAGE_ID` | Optional. Lets leads without an ad click ID be matched by hashed phone (Meta attributes those only within 7 days of the ad). |
+| `META_CAPI_TEST_EVENT_CODE` | Optional. Sends events to Events Manager → Test events instead of live. |
 | `OPS_ALERT_COOLDOWN_MINUTES` | Minutes before the same technical alert repeats (default 30). |
 | `CRM_BASE_URL` | CRM address for "Open in CRM" links in Telegram alerts: `https://crm.goldkraftfitness.com`. |
 | `CRM_HOSTS` | Hostnames served by the CRM, comma-separated, matched without the port. Default `crm.goldkraftfitness.com,crm.localhost`. |

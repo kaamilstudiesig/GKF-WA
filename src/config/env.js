@@ -19,6 +19,11 @@ const env = {
   metaWebhookVerifyToken: process.env.META_WEBHOOK_VERIFY_TOKEN || '',
   metaAppSecret: process.env.META_APP_SECRET || '',
   metaGraphApiVersion: process.env.META_GRAPH_API_VERSION || 'v23.0',
+  // Conversions API (K7): send Visit booked / Joined back to Meta. Off until META_DATASET_ID is set.
+  metaWabaId: process.env.META_WABA_ID || '',
+  metaDatasetId: process.env.META_DATASET_ID || '',
+  metaPageId: process.env.META_PAGE_ID || '', // only needed for leads without an ad click ID
+  metaCapiTestEventCode: process.env.META_CAPI_TEST_EVENT_CODE || '',
 
   // OpenRouter
   openRouterApiKey: process.env.OPENROUTER_API_KEY || '',

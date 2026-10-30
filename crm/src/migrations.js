@@ -101,6 +101,17 @@ const CRM_MIGRATIONS = [
       // Follow-ups created automatically by an outcome are closed when the next outcome is logged.
       "ALTER TABLE crm_follow_ups ADD COLUMN source TEXT NOT NULL DEFAULT 'manual'"
     ]
+  },
+  {
+    // K7: delivery state for sending outcomes to Meta's Conversions API (written by the bot's worker).
+    id: 3,
+    name: 'outcome_meta_events',
+    up: [
+      'ALTER TABLE crm_lead_outcomes ADD COLUMN meta_status TEXT', // null = waiting, sending, sent, skipped, failed, dead
+      'ALTER TABLE crm_lead_outcomes ADD COLUMN meta_event TEXT',
+      'ALTER TABLE crm_lead_outcomes ADD COLUMN meta_attempts INTEGER NOT NULL DEFAULT 0',
+      'ALTER TABLE crm_lead_outcomes ADD COLUMN meta_error TEXT'
+    ]
   }
 ];
 

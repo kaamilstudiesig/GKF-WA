@@ -194,7 +194,8 @@ function createCrmApp({
       lostReason: req.body.lost_reason,
       note: req.body.note
     });
-    res.redirect(`${withOk(`/leads/${waId}`, `Saved: ${OUTCOMES[outcome]}.`)}#outcome`);
+    // No #outcome here: the sheet opens on that hash, and after saving it should be closed.
+    res.redirect(withOk(`/leads/${waId}`, `Saved: ${OUTCOMES[outcome]}.`));
   }));
   app.post('/leads/:waId/handoff/resolve', leadAction((req, waId) => crm.resolveHandoff(req.user, waId), 'Handoff resolved.'));
   app.post('/leads/:waId/followups', leadAction((req, waId) => crm.addFollowUp(req.user, waId, {

@@ -1,1 +1,1 @@
-<span class="badge st-<%= status %>"><%= status %></span>
+<% const ST = { new: 'badge-soft badge-info', contacted: 'badge-neutral border-base-content/20', qualified: 'badge-soft badge-secondary', hot: 'badge-soft badge-warning', cold: 'badge-ghost', converted: 'badge-soft badge-success', lost: 'badge-soft badge-error' }; %><span class="badge badge-sm capitalize <%= ST[status] || 'badge-ghost' %>"><%= status %></span>

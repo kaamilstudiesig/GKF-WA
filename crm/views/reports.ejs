@@ -1,89 +1,94 @@
 <%- include('partials/header', { title: 'Reports' }) %>
-<div class="page-head">
-  <div><div class="eyebrow"><%= user.role === 'owner' ? 'All of GKF' : 'My team and unassigned leads' %></div><h1>Reports</h1></div>
-  <div class="row">
-    <div class="tabs" style="margin:0">
-      <% for (const d of [7, 30, 90]) { %><a href="/reports?days=<%= d %>" class="<%= r.days === d ? 'active' : '' %>"><%= d %> days</a><% } %>
+<%
+  const card = 'rounded-box bg-base-100 p-4';
+  const bar = (label, value, max) => ({ label, value, pct: max ? (value / max * 100).toFixed(1) : 0 });
+%>
+<div class="mb-4 flex flex-wrap items-end justify-between gap-3">
+  <div><p class="text-sm text-base-content/60"><%= user.role === 'owner' ? 'All of GKF' : 'My team and unassigned leads' %></p><h1 class="page-title max-lg:hidden">Reports</h1></div>
+  <div class="flex items-center gap-2">
+    <div role="tablist" class="tabs tabs-box tabs-sm">
+      <% for (const d of [7, 30, 90]) { %><a role="tab" href="/reports?days=<%= d %>" class="tab <%= r.days === d ? 'tab-active' : '' %>"><%= d %>d</a><% } %>
     </div>
-    <a class="btn btn-outline" href="/reports/leads.csv">Export CSV</a>
+    <a class="btn btn-ghost btn-sm" href="/reports/leads.csv"><%- include('partials/icon', { name: 'download', cls: 'size-4' }) %>CSV</a>
   </div>
 </div>
-<div class="kpis">
-  <div class="kpi"><div class="label">Total leads</div><div class="value"><%= r.counts.total %></div></div>
-  <div class="kpi"><div class="label">Hot</div><div class="value"><%= r.counts.hot %></div></div>
-  <div class="kpi"><div class="label">Converted</div><div class="value"><%= r.counts.converted %></div></div>
-  <div class="kpi"><div class="label">Win rate</div><div class="value"><%= r.conversionRate === null ? '—' : r.conversionRate + '%' %></div><div class="muted small">converted ÷ (converted + lost)</div></div>
+
+<div class="mb-4 grid grid-cols-2 gap-3 lg:grid-cols-4">
+  <% for (const [label, value, hint, cls] of [['Total leads', r.counts.total, '', ''], ['Hot', r.counts.hot, '', 'text-warning'], ['Converted', r.counts.converted, '', 'text-success'], ['Win rate', r.conversionRate === null ? '—' : r.conversionRate + '%', 'converted ÷ (converted + lost)', 'text-primary']]) { %>
+  <div class="<%= card %>"><div class="text-xs text-base-content/60"><%= label %></div><div class="mt-1 text-3xl font-bold tabular-nums <%= cls %>"><%= value %></div><% if (hint) { %><div class="text-[11px] text-base-content/50"><%= hint %></div><% } %></div>
+  <% } %>
 </div>
-<div class="grid grid-2">
-  <section class="card">
-    <h2>Pipeline</h2>
+
+<div class="grid gap-4 lg:grid-cols-2">
+  <section class="<%= card %>">
+    <h2 class="mb-3">Pipeline</h2>
     <% const maxS = Math.max(1, ...LEAD_STATUSES.map(s => r.counts[s])); %>
-    <div class="bars">
-      <% for (const s of LEAD_STATUSES) { %>
-      <div class="bar-row"><span class="name"><%= s %></span><div class="bar-track"><div class="bar-fill" style="width:<%= (r.counts[s] / maxS * 100).toFixed(1) %>%"></div></div><span class="v"><%= r.counts[s] %></span></div>
+    <div class="space-y-2">
+      <% for (const s of LEAD_STATUSES) { const b = bar(s, r.counts[s], maxS); %>
+      <div class="grid grid-cols-[6.5rem_1fr_2.5rem] items-center gap-2 text-sm"><span class="capitalize text-base-content/70"><%= s %></span><progress class="progress progress-primary" value="<%= b.pct %>" max="100"></progress><span class="text-right tabular-nums"><%= b.value %></span></div>
       <% } %>
     </div>
   </section>
-  <section class="card">
-    <h2>New leads per day</h2>
+  <section class="<%= card %>">
+    <h2 class="mb-3">New leads per day</h2>
     <% const maxD = Math.max(1, ...r.perDay.map(p => p.c)); %>
-    <div class="spark" role="img" aria-label="New leads per day for the last <%= r.perDay.length %> days">
-      <% for (const p of r.perDay) { %><div class="col <%= p.c ? '' : 'zero' %>" style="height:<%= Math.max(2, p.c / maxD * 100).toFixed(1) %>%" title="<%= p.day %>: <%= p.c %>"></div><% } %>
+    <div class="flex h-32 items-end gap-0.5" role="img" aria-label="New leads per day for the last <%= r.perDay.length %> days">
+      <% for (const p of r.perDay) { %><div class="flex-1 rounded-t-sm <%= p.c ? 'bg-primary' : 'bg-base-300' %>" style="height:<%= Math.max(3, p.c / maxD * 100).toFixed(1) %>%" title="<%= p.day %>: <%= p.c %>"></div><% } %>
     </div>
-    <div class="spark-axis"><span><%= r.perDay[0] && r.perDay[0].day %></span><span>peak <%= maxD %>/day</span><span><%= r.perDay.length && r.perDay[r.perDay.length - 1].day %></span></div>
+    <div class="mt-2 flex justify-between text-xs text-base-content/50"><span><%= r.perDay[0] && r.perDay[0].day %></span><span>peak <%= maxD %>/day</span><span><%= r.perDay.length && r.perDay[r.perDay.length - 1].day %></span></div>
   </section>
-  <section class="card">
-    <h2>What leads ask about</h2>
-    <% if (!r.interests.length) { %><p class="empty">No data yet.</p><% } else { const maxI = Math.max(...r.interests.map(i => i.c)); %>
-    <div class="bars"><% for (const i of r.interests) { %>
-      <div class="bar-row"><span class="name"><%= util.humanize(i.interest) %></span><div class="bar-track"><div class="bar-fill" style="width:<%= (i.c / maxI * 100).toFixed(1) %>%"></div></div><span class="v"><%= i.c %></span></div>
+  <section class="<%= card %>">
+    <h2 class="mb-3">What leads ask about</h2>
+    <% if (!r.interests.length) { %><p class="text-sm text-base-content/60">No data yet.</p><% } else { const maxI = Math.max(...r.interests.map(i => i.c)); %>
+    <div class="space-y-2"><% for (const i of r.interests) { const b = bar(util.humanize(i.interest), i.c, maxI); %>
+      <div class="grid grid-cols-[8rem_1fr_2.5rem] items-center gap-2 text-sm"><span class="truncate capitalize text-base-content/70"><%= b.label %></span><progress class="progress progress-primary" value="<%= b.pct %>" max="100"></progress><span class="text-right tabular-nums"><%= b.value %></span></div>
     <% } %></div><% } %>
   </section>
-  <section class="card">
-    <h2>Bot handoffs (<%= r.days %>d)</h2>
-    <% if (!r.handoffReasons.length) { %><p class="empty">No handoffs in this period.</p><% } else { %>
-    <table><thead><tr><th>Reason</th><th class="num">Total</th><th class="num">Open</th></tr></thead><tbody>
-      <% for (const h of r.handoffReasons) { %><tr><td style="text-transform:capitalize"><%= util.humanize(h.reason) %></td><td class="num"><%= h.c %></td><td class="num <%= h.open ? 'gold' : '' %>"><%= h.open %></td></tr><% } %>
-    </tbody></table><% } %>
+  <section class="<%= card %>">
+    <h2 class="mb-3">Bot hand-offs (<%= r.days %>d)</h2>
+    <% if (!r.handoffReasons.length) { %><p class="text-sm text-base-content/60">No handoffs in this period.</p><% } else { %>
+    <div class="overflow-x-auto"><table class="table table-sm"><thead><tr><th>Reason</th><th class="text-right">Total</th><th class="text-right">Open</th></tr></thead><tbody>
+      <% for (const h of r.handoffReasons) { %><tr><td class="capitalize"><%= util.humanize(h.reason) %></td><td class="text-right"><%= h.c %></td><td class="text-right <%= h.open ? 'text-primary' : '' %>"><%= h.open %></td></tr><% } %>
+    </tbody></table></div><% } %>
+  </section>
+  <section class="<%= card %>">
+    <h2 class="mb-3">Lead sources (<%= r.days %>d)</h2>
+    <% if (!r.sources.length) { %><p class="text-sm text-base-content/60">No leads in this period.</p><% } else { %>
+    <div class="overflow-x-auto"><table class="table table-sm"><thead><tr><th>Source</th><th class="text-right">Leads</th><th class="text-right">Joined</th><th class="text-right">Rate</th></tr></thead><tbody>
+      <% for (const s of r.sources) { %><tr><td class="capitalize"><%= util.humanize(s.source) %></td><td class="text-right"><%= s.c %></td><td class="text-right"><%= s.converted %></td><td class="text-right"><%= s.c ? Math.round(s.converted / s.c * 100) + '%' : '—' %></td></tr><% } %>
+    </tbody></table></div><% } %>
+  </section>
+  <section class="<%= card %>">
+    <h2 class="mb-3">Ads (<%= r.days %>d)</h2>
+    <% if (!r.ads.length) { %><p class="text-sm text-base-content/60">No leads from Instagram or Facebook ads yet. They appear here once people message from a Click-to-WhatsApp ad.</p><% } else { %>
+    <div class="overflow-x-auto"><table class="table table-sm"><thead><tr><th>Ad</th><th class="text-right">Leads</th><th class="text-right">Warm</th><th class="text-right">Joined</th></tr></thead><tbody>
+      <% for (const a of r.ads) { %><tr><td><span class="badge badge-ghost badge-xs capitalize"><%= a.platform || 'meta' %></span> <%= a.headline || ('Ad ' + (a.ad_id || 'unknown')) %></td><td class="text-right"><%= a.c %></td><td class="text-right"><%= a.warm %></td><td class="text-right"><%= a.converted %></td></tr><% } %>
+    </tbody></table></div><% } %>
   </section>
 </div>
-<div class="grid grid-2" style="margin-top:16px">
-  <section class="card">
-    <h2>Lead sources (<%= r.days %>d)</h2>
-    <% if (!r.sources.length) { %><p class="empty">No leads in this period.</p><% } else { %>
-    <table><thead><tr><th>Source</th><th class="num">Leads</th><th class="num">Joined</th><th class="num">Join rate</th></tr></thead><tbody>
-      <% for (const s of r.sources) { %><tr><td style="text-transform:capitalize"><%= util.humanize(s.source) %></td><td class="num"><%= s.c %></td><td class="num"><%= s.converted %></td><td class="num"><%= s.c ? Math.round(s.converted / s.c * 100) + '%' : '—' %></td></tr><% } %>
-    </tbody></table><% } %>
-  </section>
-  <section class="card">
-    <h2>Ads (<%= r.days %>d)</h2>
-    <% if (!r.ads.length) { %><p class="empty">No leads from Instagram or Facebook ads yet. They appear here once people message from a Click-to-WhatsApp ad.</p><% } else { %>
-    <table><thead><tr><th>Ad</th><th class="num">Leads</th><th class="num">Warm</th><th class="num">Joined</th></tr></thead><tbody>
-      <% for (const a of r.ads) { %><tr><td><span class="badge badge-muted"><%= a.platform || 'meta' %></span> <%= a.headline || ('Ad ' + (a.ad_id || 'unknown')) %></td><td class="num"><%= a.c %></td><td class="num"><%= a.warm %></td><td class="num"><%= a.converted %></td></tr><% } %>
-    </tbody></table><% } %>
-  </section>
-</div>
-<section class="card" style="margin-top:16px">
-  <h2>Team performance</h2>
-  <% if (!r.reps.length) { %><p class="empty">No staff to show.</p><% } else { %>
-  <div class="table-wrap" style="border:0"><table>
-    <thead><tr><th>Name</th><th>Role</th><th class="num">Assigned</th><th class="num">Hot</th><th class="num">Converted</th><th class="num">Lost</th><th class="num">Open follow-ups</th><th class="num">Overdue</th><th class="num">Actions (<%= r.days %>d)</th></tr></thead>
+
+<section class="<%= card %> mt-4">
+  <h2 class="mb-3">Team performance</h2>
+  <% if (!r.reps.length) { %><p class="text-sm text-base-content/60">No staff to show.</p><% } else { %>
+  <div class="overflow-x-auto"><table class="table table-sm">
+    <thead><tr><th>Name</th><th class="text-right">Assigned</th><th class="text-right">Hot</th><th class="text-right">Won</th><th class="text-right">Lost</th><th class="text-right">Open tasks</th><th class="text-right">Overdue</th><th class="text-right">Actions</th></tr></thead>
     <tbody><% for (const p of r.reps) { %>
-      <tr><td><%= p.name %></td><td><span class="badge badge-role"><%= ROLE_LABELS[p.role] %></span></td>
-        <td class="num"><%= p.assigned %></td><td class="num"><%= p.hot %></td><td class="num"><%= p.converted %></td><td class="num"><%= p.lost %></td>
-        <td class="num"><%= p.open_followups %></td><td class="num <%= p.overdue ? 'overdue' : '' %>"><%= p.overdue %></td><td class="num"><%= p.actions %></td></tr>
+      <tr><td><div class="font-medium"><%= p.name %></div><div class="text-xs text-base-content/50"><%= ROLE_LABELS[p.role] %></div></td>
+        <td class="text-right"><%= p.assigned %></td><td class="text-right"><%= p.hot %></td><td class="text-right"><%= p.converted %></td><td class="text-right"><%= p.lost %></td>
+        <td class="text-right"><%= p.open_followups %></td><td class="text-right <%= p.overdue ? 'text-error' : '' %>"><%= p.overdue %></td><td class="text-right"><%= p.actions %></td></tr>
     <% } %></tbody>
   </table></div><% } %>
 </section>
+
 <% if (r.ai) { %>
-<section class="card" style="margin-top:16px">
-  <h2>WhatsApp bot AI usage (<%= r.days %>d)</h2>
-  <% if (!r.ai.length) { %><p class="empty">No AI calls in this period.</p><% } else { const totUsd = r.ai.reduce((s, a) => s + a.cost_usd, 0); %>
-  <table><thead><tr><th>Model</th><th class="num">Requests</th><th class="num">Failed</th><th class="num">Tokens</th><th class="num">Cost (USD)</th><th class="num">Est. cost (₹)</th></tr></thead><tbody>
-    <% for (const a of r.ai) { %><tr><td><%= a.model %></td><td class="num"><%= a.requests %></td><td class="num"><%= a.failed %></td><td class="num"><%= a.tokens.toLocaleString('en-IN') %></td><td class="num">$<%= a.cost_usd.toFixed(4) %></td><td class="num">₹<%= a.cost_inr.toFixed(2) %></td></tr><% } %>
-    <tr><td><strong>Total</strong></td><td></td><td></td><td></td><td class="num"><strong>$<%= totUsd.toFixed(4) %></strong></td><td class="num"><strong>₹<%= (totUsd * r.usdToInr).toFixed(2) %></strong></td></tr>
-  </tbody></table>
-  <p class="small muted">₹ at ~<%= r.usdToInr %> per USD.</p><% } %>
+<section class="<%= card %> mt-4">
+  <h2 class="mb-3">WhatsApp bot AI usage (<%= r.days %>d)</h2>
+  <% if (!r.ai.length) { %><p class="text-sm text-base-content/60">No AI calls in this period.</p><% } else { const totUsd = r.ai.reduce((s, a) => s + a.cost_usd, 0); %>
+  <div class="overflow-x-auto"><table class="table table-sm"><thead><tr><th>Model</th><th class="text-right">Requests</th><th class="text-right">Failed</th><th class="text-right">Tokens</th><th class="text-right">USD</th><th class="text-right">₹ (est.)</th></tr></thead><tbody>
+    <% for (const a of r.ai) { %><tr><td class="max-w-48 truncate"><%= a.model %></td><td class="text-right"><%= a.requests %></td><td class="text-right"><%= a.failed %></td><td class="text-right"><%= a.tokens.toLocaleString('en-IN') %></td><td class="text-right">$<%= a.cost_usd.toFixed(4) %></td><td class="text-right">₹<%= a.cost_inr.toFixed(2) %></td></tr><% } %>
+    <tr class="font-semibold"><td>Total</td><td></td><td></td><td></td><td class="text-right">$<%= totUsd.toFixed(4) %></td><td class="text-right">₹<%= (totUsd * r.usdToInr).toFixed(2) %></td></tr>
+  </tbody></table></div>
+  <p class="mt-2 text-xs text-base-content/50">₹ at ~<%= r.usdToInr %> per USD.</p><% } %>
 </section>
 <% } %>
 <%- include('partials/footer') %>

@@ -1,25 +1,30 @@
 <%- include('partials/header', { title: 'Pipeline' }) %>
-<div class="page-head"><div><div class="eyebrow">Move leads through the funnel</div><h1>Pipeline</h1></div></div>
-<div class="board">
+<div class="mb-4">
+  <p class="text-sm text-base-content/60">Move leads through the funnel</p>
+  <h1 class="page-title max-lg:hidden">Pipeline</h1>
+</div>
+<div class="-mx-4 flex snap-x snap-mandatory gap-3 overflow-x-auto px-4 pb-4 lg:mx-0 lg:px-0">
   <% for (const col of columns) { %>
-  <section class="column">
-    <div class="column-head"><%- include('partials/status', { status: col.status }) %><span class="muted small"><%= col.total %></span></div>
-    <% if (!col.leads.length) { %><p class="empty small">Empty</p><% } %>
+  <section class="w-[82vw] max-w-xs shrink-0 snap-start rounded-box bg-base-100 p-3 lg:w-72">
+    <div class="mb-3 flex items-center justify-between"><%- include('partials/status', { status: col.status }) %><span class="text-sm text-base-content/60"><%= col.total %></span></div>
+    <% if (!col.leads.length) { %><p class="py-4 text-center text-xs text-base-content/50">Empty</p><% } %>
+    <div class="space-y-2">
     <% for (const l of col.leads) { %>
-    <div class="deal">
-      <a class="lead-name" href="/leads/<%= l.wa_id %>"><%= util.leadTitle(l) %></a>
-      <div class="muted"><%= util.humanize(l.interest) || 'No interest yet' %> · <%= util.timeAgo(l.last_inbound_message_at) %></div>
-      <div class="muted"><%= l.assignee_name || 'Unassigned' %><% if (l.needs_human) { %> · <span class="gold">needs human</span><% } %></div>
-      <form method="post" action="/leads/<%= l.wa_id %>/status" class="row">
+    <div class="rounded-field bg-base-200 p-3">
+      <a class="font-semibold hover:text-primary" href="/leads/<%= l.wa_id %>"><%= util.leadTitle(l) %></a>
+      <div class="text-xs text-base-content/60"><span class="capitalize"><%= util.humanize(l.interest) || 'No interest yet' %></span> · <%= util.timeAgo(l.last_inbound_message_at) %></div>
+      <div class="text-xs text-base-content/60"><%= l.assignee_name || 'Unassigned' %><% if (l.needs_human) { %> · <span class="text-primary">needs human</span><% } %></div>
+      <form method="post" action="/leads/<%= l.wa_id %>/status" class="mt-2 flex gap-2">
         <%- include('partials/csrf') %>
-        <select name="status" data-autosubmit aria-label="Move <%= l.display_name || l.wa_id %> to status" class="grow">
+        <select name="status" data-autosubmit aria-label="Move <%= l.display_name || l.wa_id %> to status" class="select select-sm flex-1 capitalize">
           <% for (const s of LEAD_STATUSES) { %><option value="<%= s %>" <%= s === l.status ? 'selected' : '' %>><%= s %></option><% } %>
         </select>
         <button class="btn btn-sm js-hide" type="submit">Move</button>
       </form>
     </div>
     <% } %>
-    <% if (col.total > col.leads.length) { %><a class="small" href="/leads?status=<%= col.status %>">See all <%= col.total %> →</a><% } %>
+    </div>
+    <% if (col.total > col.leads.length) { %><a class="link link-hover mt-2 block text-sm text-primary" href="/leads?status=<%= col.status %>">See all <%= col.total %> →</a><% } %>
   </section>
   <% } %>
 </div>

@@ -30,7 +30,8 @@ test('no answer keeps the hand-off open and books a retry: 2h, then next day', a
     const owner = await login(ctx.app, 'owner');
     const r = await post(owner, HOT_LEAD, { outcome: 'no_answer' });
     assert.strictEqual(r.status, 302);
-    assert.match(r.headers.location, /ok=Saved.*#outcome$/);
+    assert.match(r.headers.location, /ok=Saved/);
+    assert.doesNotMatch(r.headers.location, /#outcome/); // sheet closes after saving
     assert.strictEqual((await lead(ctx.db, HOT_LEAD)).needs_human, true);
     let fu = await openFollowUps(ctx.db, HOT_LEAD);
     assert.strictEqual(fu.length, 1);

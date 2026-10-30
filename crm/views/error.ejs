@@ -1,7 +1,9 @@
-<% if (user) { %><%- include('partials/header', { title: 'Error' }) %><% } else { %><%- include('partials/head', { title: 'Error' }) %><body><main class="main"><% } %>
-<div class="page-head"><div><div class="eyebrow">Error <%= status %></div><h1><%= status === 404 ? 'Not Found' : status === 403 ? 'Not Allowed' : 'Something Went Wrong' %></h1></div></div>
-<div class="card" style="max-width:560px">
-  <p><%= message %></p>
-  <a class="btn btn-outline btn-sm" href="/">Back to dashboard</a>
-</div>
+<% const heading = status === 404 ? 'Not found' : status === 403 ? 'Not allowed' : 'Something went wrong'; %>
+<% if (user) { %><%- include('partials/header', { title: heading }) %><% } else { %><%- include('partials/head', { title: 'Error' }) %><body class="grid min-h-dvh place-items-center bg-base-200 p-4"><main class="w-full max-w-md"><% } %>
+<section class="max-w-md rounded-box bg-base-100 p-6">
+  <p class="text-sm text-base-content/60">Error <%= status %></p>
+  <h1 class="mb-2 text-2xl font-bold"><%= heading %></h1>
+  <p class="mb-4 text-base-content/80"><%= message %></p>
+  <a class="btn btn-primary" href="/">Back to dashboard</a>
+</section>
 <% if (user) { %><%- include('partials/footer') %><% } else { %></main></body></html><% } %>

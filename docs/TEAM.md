@@ -111,6 +111,7 @@ Next for R5/R6 (analytics): count outcomes per salesperson and per ad (`leads.me
 - **Local dev:** `npm ci`, `cp .env.example .env`, `npm run dev`, then `npm run dev:demo-data` (with the server stopped) for sample leads. CRM at http://crm.localhost:3000, bot at http://localhost:3000.
 - **Docs:** when you change how something works, update the doc in the same PR.
 - **Style:** small files, plain names, comments that explain why. Match the existing code.
+- **UI:** follow [UI_GUIDE.md](UI_GUIDE.md): daisyUI components, phone-first, check in the browser at 375px and desktop before a PR.
 
 ## Using Claude Code on this repo
 

@@ -47,8 +47,9 @@ test('CRM host gets the CRM login page, without the bot CSP or JSON 404', async 
 
   const missing = await request(app).get('/webhook').set('Host', CRM);
   assert.strictEqual(missing.status, 302, 'bot routes are not reachable on the CRM host');
-  const css = await request(app).get('/static/css/crm.css').set('Host', CRM);
-  assert.strictEqual(css.status, 200);
+  // Static files are served on the CRM host (app.css is built at deploy, so check the committed script).
+  const js = await request(app).get('/static/js/app.js').set('Host', CRM);
+  assert.strictEqual(js.status, 200);
 
   const custom = createApp({ crmHosts: ['staff.example.test'] });
   assert.strictEqual((await request(custom).get('/login').set('Host', 'staff.example.test')).status, 200);

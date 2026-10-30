@@ -28,4 +28,5 @@ Read before larger changes: `docs/ARCHITECTURE.md`, `docs/PRODUCT_PLAN.md`, `doc
 - The bot must stay business-scoped (Meta bans general-purpose AI assistants) and must never invent facts beyond the business profile.
 - Bot replies: simple Indian English (or the lead's language), no em dashes, no markdown, at most one question and only when it qualifies the lead.
 - `leads.wa_id` is the lead key: a phone number or Meta's business-scoped user ID (e.g. `IN.1234...`) for users who hide their phone. Never assume it's digits; use `leads.phone` (may be null), `src/services/identity.js` and the CRM's `util.contactLabel` / `util.leadPhone`.
+- CRM UI: follow `docs/UI_GUIDE.md`. Build on daisyUI 5 + Tailwind 4 components (no hand-written CSS), design for 375px first, and check screens in the browser at phone and desktop width before a PR. `npm run build:css` builds `crm/public/css/app.css` (generated, not committed).
 - Update the relevant doc in `docs/` in the same PR when behaviour changes.

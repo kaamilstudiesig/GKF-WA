@@ -1,35 +1,65 @@
 <%- include('partials/header', { title: 'Leads' }) %>
-<div class="page-head">
-  <div><div class="eyebrow"><%= result.total %> lead<%= result.total === 1 ? '' : 's' %></div><h1>Leads</h1></div>
-  <% if (can.exportLeads(user)) { %><a class="btn btn-outline" href="/reports/leads.csv">Export CSV</a><% } %>
+<%
+  const chip = (label, params) => {
+    const qs = new URLSearchParams(params).toString();
+    const active = (!qs && !filters.q && !filters.status && !filters.assignee && !filters.needsHuman)
+      || (params.needs_human && filters.needsHuman && !filters.status)
+      || (params.status && filters.status === params.status)
+      || (params.assignee && String(filters.assignee) === params.assignee);
+    return { label, href: '/leads' + (qs ? '?' + qs : ''), active };
+  };
+  const chips = [chip('All', {}), chip('Needs human', { needs_human: '1' }), chip('Hot', { status: 'hot' }), chip('New', { status: 'new' })];
+  if (user.role !== 'sales') chips.push(chip('Mine', { assignee: 'me' }), chip('Unassigned', { assignee: 'unassigned' }));
+%>
+<div class="mb-4 flex items-center justify-between gap-3">
+  <div><p class="text-sm text-base-content/60"><%= result.total %> lead<%= result.total === 1 ? '' : 's' %></p><h1 class="page-title max-lg:hidden">Leads</h1></div>
+  <% if (can.exportLeads(user)) { %><a class="btn btn-ghost btn-sm" href="/reports/leads.csv"><%- include('partials/icon', { name: 'download', cls: 'size-4' }) %>Export CSV</a><% } %>
 </div>
-<form class="filters card" method="get" action="/leads">
-  <div><label for="q">Search</label><input id="q" name="q" value="<%= filters.q %>" placeholder="Name, number, interest"></div>
-  <div><label for="status">Status</label>
-    <select id="status" name="status"><option value="">All statuses</option>
-      <% for (const s of LEAD_STATUSES) { %><option value="<%= s %>" <%= filters.status === s ? 'selected' : '' %>><%= s %></option><% } %>
-    </select></div>
-  <% if (user.role !== 'sales') { %>
-  <div><label for="assignee">Owner</label>
-    <select id="assignee" name="assignee"><option value="">Anyone</option>
-      <option value="me" <%= filters.assignee === 'me' ? 'selected' : '' %>>Me</option>
-      <option value="unassigned" <%= filters.assignee === 'unassigned' ? 'selected' : '' %>>Unassigned</option>
-      <% for (const s of staff) { if (s.id === user.id) continue; %><option value="<%= s.id %>" <%= String(filters.assignee) === String(s.id) ? 'selected' : '' %>><%= s.name %></option><% } %>
-    </select></div>
-  <% } %>
-  <div><label for="sort">Sort</label>
-    <select id="sort" name="sort">
-      <% for (const [v, t] of [['attention', 'Needs human first'], ['recent', 'Latest message'], ['created', 'Newest leads'], ['oldest', 'Oldest message'], ['followup', 'Next follow-up']]) { %>
-        <option value="<%= v %>" <%= filters.sort === v ? 'selected' : '' %>><%= t %></option><% } %>
-    </select></div>
-  <label class="check"><input type="checkbox" name="needs_human" value="1" <%= filters.needsHuman ? 'checked' : '' %>> Needs human</label>
-  <div style="flex:0 0 auto"><button class="btn" type="submit">Filter</button></div>
+
+<form method="get" action="/leads" class="mb-3">
+  <label class="input w-full">
+    <%- include('partials/icon', { name: 'search', cls: 'size-4 opacity-60' }) %>
+    <input id="q" type="search" name="q" value="<%= filters.q %>" placeholder="Search name, number or interest" class="grow">
+  </label>
 </form>
+
+<div class="-mx-4 mb-3 flex gap-2 overflow-x-auto px-4 pb-1 [scrollbar-width:none]">
+  <% for (const c of chips) { %><a href="<%= c.href %>" class="btn btn-sm shrink-0 rounded-full <%= c.active ? 'btn-primary' : 'btn-ghost bg-base-100' %>"><%= c.label %></a><% } %>
+</div>
+
+<details class="collapse collapse-arrow mb-4 bg-base-100" <%= (filters.sort && filters.sort !== 'attention') ? 'open' : '' %>>
+  <summary class="collapse-title flex items-center gap-2 text-sm font-medium"><%- include('partials/icon', { name: 'filter', cls: 'size-4' }) %>More filters and sort</summary>
+  <form class="collapse-content grid gap-3 sm:grid-cols-2 lg:grid-cols-4" method="get" action="/leads">
+    <input type="hidden" name="q" value="<%= filters.q %>">
+    <fieldset class="fieldset"><legend class="fieldset-legend">Status</legend>
+      <select id="status" name="status" class="select w-full"><option value="">All statuses</option>
+        <% for (const s of LEAD_STATUSES) { %><option value="<%= s %>" <%= filters.status === s ? 'selected' : '' %>><%= s %></option><% } %>
+      </select></fieldset>
+    <% if (user.role !== 'sales') { %>
+    <fieldset class="fieldset"><legend class="fieldset-legend">Owner</legend>
+      <select id="assignee" name="assignee" class="select w-full"><option value="">Anyone</option>
+        <option value="me" <%= filters.assignee === 'me' ? 'selected' : '' %>>Me</option>
+        <option value="unassigned" <%= filters.assignee === 'unassigned' ? 'selected' : '' %>>Unassigned</option>
+        <% for (const s of staff) { if (s.id === user.id) continue; %><option value="<%= s.id %>" <%= String(filters.assignee) === String(s.id) ? 'selected' : '' %>><%= s.name %></option><% } %>
+      </select></fieldset>
+    <% } %>
+    <fieldset class="fieldset"><legend class="fieldset-legend">Sort</legend>
+      <select id="sort" name="sort" class="select w-full">
+        <% for (const [v, t] of [['attention', 'Needs human first'], ['recent', 'Latest message'], ['created', 'Newest leads'], ['oldest', 'Oldest message'], ['followup', 'Next follow-up']]) { %>
+          <option value="<%= v %>" <%= filters.sort === v ? 'selected' : '' %>><%= t %></option><% } %>
+      </select></fieldset>
+    <div class="flex items-end gap-3">
+      <label class="label tap cursor-pointer gap-2"><input type="checkbox" name="needs_human" value="1" class="checkbox checkbox-primary checkbox-sm" <%= filters.needsHuman ? 'checked' : '' %>> Needs human</label>
+      <button class="btn btn-primary ml-auto" type="submit">Apply</button>
+    </div>
+  </form>
+</details>
+
 <%- include('partials/lead-table', { leads: result.leads, emptyText: user.role === 'sales' ? 'No leads match. You only see leads assigned to you.' : 'No leads match these filters.' }) %>
 <% if (result.pages > 1) { const qs = p => new URLSearchParams({ ...query, page: p }).toString(); %>
-<div class="pager">
-  <% if (result.page > 1) { %><a href="/leads?<%= qs(result.page - 1) %>">← Prev</a><% } %>
-  <span class="muted">Page <%= result.page %> of <%= result.pages %></span>
-  <% if (result.page < result.pages) { %><a href="/leads?<%= qs(result.page + 1) %>">Next →</a><% } %>
+<div class="join mt-4 flex justify-center">
+  <% if (result.page > 1) { %><a class="join-item btn btn-sm" href="/leads?<%= qs(result.page - 1) %>">‹ Prev</a><% } %>
+  <span class="join-item btn btn-sm btn-disabled">Page <%= result.page %> of <%= result.pages %></span>
+  <% if (result.page < result.pages) { %><a class="join-item btn btn-sm" href="/leads?<%= qs(result.page + 1) %>">Next ›</a><% } %>
 </div><% } %>
 <%- include('partials/footer') %>

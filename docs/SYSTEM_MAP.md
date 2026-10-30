@@ -204,7 +204,7 @@ Staff log one outcome. The system makes the next task.
 
 ```mermaid
 flowchart TD
-  TGB["Telegram button: Log outcome"] --> LP["Lead page #outcome sheet"]
+  TGB["Telegram button: Log outcome"] --> LP["Lead page: outcome sheet"]
   LP --> O{"Outcome"}
   O -- "Called, spoke" --> R1["Resolve hand-off. Status contacted."]
   O -- "No answer" --> NA["Follow-up ladder"]
@@ -281,7 +281,7 @@ erDiagram
   crm_users ||--o{ crm_lead_outcomes : logs
   webhook_events }o--|| leads : "creates or updates"
   outbound_messages }o--|| leads : "sends to"
-  business_profile ||--|| gymConfig : feeds
+  business_profile ||--o{ leads : "configures bot for"
 ```
 
 ## 14. Build and deploy

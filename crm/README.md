@@ -21,7 +21,7 @@ prefixed `crm_`.
 | Bot handoffs | bot `handoffs` | read, mark assigned / resolved |
 | Staff replies | bot `outbound_messages` | insert (`dedup_key` = `crm:<uuid>`, `metadata` = `{source:'crm', user_id, user_name}`) |
 | AI usage and cost (`cost_usd`) | bot `ai_usage` | read (owner reports, in USD and ₹) |
-| Staff accounts, sessions, assignments, notes, follow-ups, activity | `crm_users`, `crm_sessions`, `crm_lead_assignments`, `crm_lead_notes`, `crm_follow_ups`, `crm_activity_log` | read/write |
+| Staff accounts, sessions, assignments, notes, follow-ups, outcomes, activity | `crm_users`, `crm_sessions`, `crm_lead_assignments`, `crm_lead_notes`, `crm_follow_ups`, `crm_lead_outcomes`, `crm_activity_log` | read/write |
 
 - **Replies**: when staff send a WhatsApp reply, the CRM queues it in
   `outbound_messages`. The bot's outbound worker sends it from the GKF number
@@ -37,6 +37,10 @@ prefixed `crm_`.
   touches `schema_migrations` or `webhook_events`. Its own tables are tracked in
   `crm_migrations`. Before migrating it checks the bot tables and columns it
   needs exist, and stops with a clear error if they don't.
+
+## Logging outcomes
+
+Every lead page starts with **Log outcome** (`#outcome`, also where Telegram's "✅ Log outcome" button lands): one tap for *Called, spoke · No answer · WhatsApp sent · Visited · No-show*, and short forms for *Visit booked* (date/time), *Joined* (plan + ₹ paid) and *Lost* (reason). Each outcome updates the lead's status, resolves the bot's hand-off once someone has actually been in touch, and books the next follow-up automatically (no answer → retry in 2h, next day, 3 days, weekly). The rules are in `docs/TEAM.md` under "Lead outcomes".
 
 ## Roles
 

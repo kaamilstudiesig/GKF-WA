@@ -13,7 +13,7 @@ const { migrateAll } = require('../src/migrate');
 const { TABLES } = require('./backup');
 
 const IDENTITY_TABLES = new Set(['messages', 'handoffs', 'outbound_messages', 'ai_usage', 'webhook_events',
-  'crm_users', 'crm_lead_notes', 'crm_follow_ups', 'crm_activity_log']);
+  'crm_users', 'crm_lead_notes', 'crm_follow_ups', 'crm_lead_outcomes', 'crm_activity_log']);
 const JSON_COLUMNS = new Set(['metadata', 'payload', 'details']);
 
 async function restore(buffer) {

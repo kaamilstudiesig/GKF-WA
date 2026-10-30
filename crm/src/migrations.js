@@ -76,6 +76,31 @@ const CRM_MIGRATIONS = [
       'CREATE INDEX crm_activity_log_lead_idx ON crm_activity_log (wa_id, created_at)',
       'CREATE INDEX crm_activity_log_user_idx ON crm_activity_log (user_id, created_at)'
     ]
+  },
+  {
+    // R1: what happened when staff followed up a lead (sales floor + revenue per ad).
+    id: 2,
+    name: 'lead_outcomes',
+    up: [
+      `CREATE TABLE crm_lead_outcomes (
+        id INTEGER GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+        wa_id TEXT NOT NULL REFERENCES leads (wa_id) ON DELETE CASCADE,
+        user_id INTEGER REFERENCES crm_users (id) ON DELETE SET NULL,
+        outcome TEXT NOT NULL CHECK (outcome IN ('called_connected', 'no_answer', 'whatsapp_sent',
+          'visit_booked', 'visited', 'no_show', 'joined', 'lost')),
+        visit_at TIMESTAMPTZ,
+        plan TEXT,
+        amount_inr INTEGER CHECK (amount_inr IS NULL OR amount_inr >= 0),
+        lost_reason TEXT,
+        note TEXT,
+        sent_to_meta_at TIMESTAMPTZ,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+      )`,
+      'CREATE INDEX crm_lead_outcomes_lead_idx ON crm_lead_outcomes (wa_id, created_at)',
+      'CREATE INDEX crm_lead_outcomes_created_idx ON crm_lead_outcomes (created_at)',
+      // Follow-ups created automatically by an outcome are closed when the next outcome is logged.
+      "ALTER TABLE crm_follow_ups ADD COLUMN source TEXT NOT NULL DEFAULT 'manual'"
+    ]
   }
 ];
 

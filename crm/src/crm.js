@@ -1,7 +1,7 @@
 const crypto = require('crypto');
 const { Params } = require('./util');
 const { leadScope, staffScope, canAssignTo } = require('./permissions');
-const { LEAD_STATUSES, WINDOW_MS } = require('./constants');
+const { LEAD_STATUSES, WINDOW_MS, OUTCOMES, LOST_REASONS } = require('./constants');
 const { localDay } = require('./util');
 
 const MAX_MESSAGE_LENGTH = 4096; // WhatsApp text limit
@@ -294,6 +294,111 @@ class Crm {
       await this.log(user, f.wa_id, 'followup_done', { title: f.title });
     });
     return f;
+  }
+
+  // ---------- outcomes (R1) ----------
+
+  /**
+   * Logs what happened when staff followed up a lead, then:
+   * - moves the lead's status (never undoes "converted" except by Lost/Joined),
+   * - closes the previous automatic follow-up and books the next one,
+   * - resolves the bot's hand-off once a person has actually been in touch.
+   */
+  async logOutcome(user, waId, input = {}) {
+    const outcome = String(input.outcome || '');
+    if (!OUTCOMES[outcome]) throw new HttpError(400, 'Pick an outcome.');
+    const lead = await this.requireLead(user, waId);
+
+    const row = { outcome, visit_at: null, plan: null, amount_inr: null, lost_reason: null };
+    const note = String(input.note || '').trim().slice(0, 500) || null;
+    if (outcome === 'visit_booked') {
+      if (!input.visitAt || isNaN(new Date(input.visitAt).getTime())) throw new HttpError(400, 'Pick the visit date and time.');
+      row.visit_at = input.visitAt;
+    }
+    if (outcome === 'joined') {
+      row.plan = String(input.plan || '').trim().slice(0, 100);
+      if (!row.plan) throw new HttpError(400, 'Which plan did they join?');
+      const amount = Number(String(input.amount ?? '').replace(/[₹,\s]/g, ''));
+      if (!Number.isInteger(amount) || amount <= 0 || amount > 1000000) throw new HttpError(400, 'Enter the amount paid in rupees (whole number).');
+      row.amount_inr = amount;
+    }
+    if (outcome === 'lost') {
+      if (!LOST_REASONS[input.lostReason]) throw new HttpError(400, 'Pick why the lead was lost.');
+      row.lost_reason = input.lostReason;
+    }
+
+    const plan = await this.outcomePlan(waId, lead, row);
+    const followUpOwner = lead.assignee_id || user.id;
+
+    await this.db.tx(async () => {
+      await this.db.query(`INSERT INTO crm_lead_outcomes (wa_id, user_id, outcome, visit_at, plan, amount_inr, lost_reason, note)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+      [waId, user.id, outcome, row.visit_at, row.plan, row.amount_inr, row.lost_reason, note]);
+
+      await this.db.query(`UPDATE crm_follow_ups SET status = 'done', completed_at = now()
+        WHERE wa_id = $1 AND status = 'open' AND ($2::boolean OR source = 'outcome')`, [waId, Boolean(plan.closeAll)]);
+
+      if (plan.followUp) {
+        await this.db.query(`INSERT INTO crm_follow_ups (wa_id, user_id, created_by, title, due_at, status, source)
+          VALUES ($1, $2, $3, $4, $5, 'open', 'outcome')`,
+        [waId, followUpOwner, user.id, plan.followUp.title, plan.followUp.dueAt]);
+      }
+      if (plan.status && plan.status !== lead.status) {
+        await this.db.query('UPDATE leads SET status = $1, updated_at = now() WHERE wa_id = $2', [plan.status, waId]);
+        await this.log(user, waId, 'status_change', { from: lead.status, to: plan.status, auto: true });
+      }
+      if (plan.resolveHandoff && lead.needs_human) {
+        await this.db.query(`UPDATE handoffs SET status = 'resolved', resolved_at = now(), updated_at = now()
+          WHERE wa_id = $1 AND status IN ('pending', 'assigned')`, [waId]);
+        await this.db.query('UPDATE leads SET needs_human = false, handoff_reason = NULL, updated_at = now() WHERE wa_id = $1', [waId]);
+      }
+      await this.log(user, waId, 'outcome', {
+        outcome, plan: row.plan, amount_inr: row.amount_inr, lost_reason: row.lost_reason,
+        next_follow_up: plan.followUp ? plan.followUp.dueAt : null
+      });
+    });
+    return { outcome, nextFollowUp: plan.followUp };
+  }
+
+  /** What an outcome does to the lead: new status, next follow-up, hand-off. */
+  async outcomePlan(waId, lead, row) {
+    const hours = h => new Date(Date.now() + h * 3600 * 1000).toISOString();
+    const keep = s => (lead.status === 'converted' ? null : s); // don't undo a sale by accident
+    const firstTouch = lead.status === 'new' ? 'contacted' : null;
+    switch (row.outcome) {
+      case 'called_connected':
+        return { status: keep(firstTouch), resolveHandoff: true };
+      case 'no_answer': {
+        // Retry ladder: 2 hours, next day, 3 days, then weekly.
+        const tries = (await this.db.one(`SELECT COUNT(*)::int AS n FROM crm_lead_outcomes
+          WHERE wa_id = $1 AND outcome = 'no_answer'`, [waId])).n;
+        const wait = [2, 24, 72][tries] || 168;
+        return { followUp: { title: `Call again (no answer x${tries + 1})`, dueAt: hours(wait) } };
+      }
+      case 'whatsapp_sent':
+        return { status: keep(firstTouch), resolveHandoff: true, followUp: { title: 'Check if they replied', dueAt: hours(24) } };
+      case 'visit_booked': {
+        const after = new Date(new Date(row.visit_at).getTime() + 2 * 3600 * 1000).toISOString();
+        return { status: keep('hot'), resolveHandoff: true, followUp: { title: 'Did they come for the visit?', dueAt: after } };
+      }
+      case 'visited':
+        return { status: keep('hot'), resolveHandoff: true, followUp: { title: 'Follow up after the visit', dueAt: hours(24) } };
+      case 'no_show':
+        return { status: null, resolveHandoff: true, followUp: { title: 'Reschedule the missed visit', dueAt: hours(24) } };
+      case 'joined':
+        return { status: 'converted', resolveHandoff: true, closeAll: true };
+      case 'lost':
+        return { status: 'lost', resolveHandoff: true, closeAll: true };
+      default:
+        return {};
+    }
+  }
+
+  async leadOutcomes(waId, limit = 20) {
+    return this.db.many(`
+      SELECT o.*, u.name AS user_name FROM crm_lead_outcomes o LEFT JOIN crm_users u ON u.id = o.user_id
+      WHERE o.wa_id = $1 ORDER BY o.created_at DESC, o.id DESC LIMIT $2
+    `, [waId, limit]);
   }
 
   // ---------- users ----------

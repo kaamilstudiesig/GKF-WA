@@ -103,7 +103,7 @@ gantt
 | Phase | Ships | Done when |
 | --- | --- | --- |
 | **P0 Foundation** | BSUID-safe lead identity; alert on outbound send failures; token-scope runbook | A username-only test user can chat end to end; a broken token pages us within minutes |
-| **A Sales floor** | Assign + shifts, 5-min timer + escalation, one-tap outcomes incl. Joined ₹, live board, PWA, Telegram/WhatsApp alert buttons | GKF median time-to-first-contact measured before/after |
+| **A Sales floor** | Assign + shifts, 5-min timer + escalation, one-tap outcomes incl. Joined ₹ (**done: R1**), live board, PWA, Telegram alert buttons (**done: K4**) | GKF median time-to-first-contact measured before/after |
 | **B Analytics** | Funnel, speed-to-lead, per-person, per-ad revenue, Meta spend import, nightly digest | Owner can answer "which ad made us money this month" in one screen |
 | **C Meta loop** | Lead Ads webhook + instant WhatsApp, Conversions API (CRM + business messaging) | GKF runs a Conversion Leads campaign fed by our events |
 | **Tech Provider** | Business verification, App Review, privacy policy, data deletion | Meta approves |

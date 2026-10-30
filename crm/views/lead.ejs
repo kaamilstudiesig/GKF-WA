@@ -12,6 +12,67 @@
   <% if (util.leadPhone(lead)) { %><a class="btn btn-outline" href="https://wa.me/<%= util.leadPhone(lead) %>" target="_blank" rel="noopener noreferrer">Open in WhatsApp</a><% } %>
 </div>
 
+<%
+  const last = outcomes[0];
+  const quick = ['called_connected', 'no_answer', 'whatsapp_sent', 'visited', 'no_show'];
+%>
+<section class="card outcome" id="outcome" aria-labelledby="outcome-h">
+  <div class="row" style="justify-content:space-between;align-items:baseline;gap:8px">
+    <h2 id="outcome-h">Log outcome</h2>
+    <% if (last) { %><span class="muted small">Last: <strong><%= OUTCOMES[last.outcome] %></strong> · <%= last.user_name || 'Former staff' %> · <%= util.timeAgo(last.created_at) %></span><% } %>
+  </div>
+  <form method="post" action="/leads/<%= lead.wa_id %>/outcome" class="outcome-quick">
+    <%- include('partials/csrf') %>
+    <% for (const o of quick) { %><button class="btn btn-outline outcome-btn" type="submit" name="outcome" value="<%= o %>"><%= OUTCOMES[o] %></button><% } %>
+  </form>
+  <div class="outcome-more">
+    <details>
+      <summary class="btn btn-outline outcome-btn">Visit booked…</summary>
+      <form method="post" action="/leads/<%= lead.wa_id %>/outcome" class="outcome-form">
+        <%- include('partials/csrf') %>
+        <input type="hidden" name="outcome" value="visit_booked">
+        <div class="field"><label for="visit_at">Visit date and time</label><input id="visit_at" name="visit_at" type="datetime-local" required></div>
+        <button class="btn btn-sm" type="submit">Save visit</button>
+      </form>
+    </details>
+    <details>
+      <summary class="btn outcome-btn outcome-joined">Joined…</summary>
+      <form method="post" action="/leads/<%= lead.wa_id %>/outcome" class="outcome-form">
+        <%- include('partials/csrf') %>
+        <input type="hidden" name="outcome" value="joined">
+        <div class="field"><label for="plan">Plan</label><input id="plan" name="plan" list="plan-options" maxlength="100" required placeholder="Quarterly Elite"></div>
+        <datalist id="plan-options"><% for (const p of PLAN_OPTIONS) { %><option value="<%= p %>"><% } %></datalist>
+        <div class="field"><label for="amount">Amount paid (₹)</label><input id="amount" name="amount" inputmode="numeric" pattern="[0-9,₹ ]+" required placeholder="7080"></div>
+        <button class="btn btn-sm" type="submit">Save joined</button>
+      </form>
+    </details>
+    <details>
+      <summary class="btn btn-outline outcome-btn">Lost…</summary>
+      <form method="post" action="/leads/<%= lead.wa_id %>/outcome" class="outcome-form">
+        <%- include('partials/csrf') %>
+        <input type="hidden" name="outcome" value="lost">
+        <div class="field"><label for="lost_reason">Why?</label>
+          <select id="lost_reason" name="lost_reason" required><option value="">Pick a reason</option>
+            <% for (const [k, label] of Object.entries(LOST_REASONS)) { %><option value="<%= k %>"><%= label %></option><% } %>
+          </select></div>
+        <div class="field"><label for="lost_note">Note (optional)</label><input id="lost_note" name="note" maxlength="500"></div>
+        <button class="btn btn-sm" type="submit">Save lost</button>
+      </form>
+    </details>
+  </div>
+  <% if (outcomes.length) { %>
+  <ul class="list outcome-history">
+    <% for (const o of outcomes.slice(0, 5)) { %>
+    <li><strong><%= OUTCOMES[o.outcome] %></strong>
+      <% if (o.outcome === 'joined') { %> · <%= o.plan %> · ₹<%= Number(o.amount_inr).toLocaleString('en-IN') %><% } %>
+      <% if (o.outcome === 'visit_booked' && o.visit_at) { %> · for <%= util.fmtDate(o.visit_at) %><% } %>
+      <% if (o.outcome === 'lost') { %> · <%= LOST_REASONS[o.lost_reason] || o.lost_reason %><% } %>
+      <div class="meta"><%= o.user_name || 'Former staff' %> · <%= util.fmtDate(o.created_at) %><% if (o.note) { %> · <%= o.note %><% } %></div></li>
+    <% } %>
+  </ul>
+  <% } %>
+</section>
+
 <div class="lead-layout">
   <div>
     <section class="card">

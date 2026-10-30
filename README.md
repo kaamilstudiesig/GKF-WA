@@ -1,5 +1,7 @@
 # Lead Engine
 
+> **System map with diagrams:** see [docs/SYSTEM_MAP.md](docs/SYSTEM_MAP.md).
+
 **Connects digital marketing and sales with AI, on WhatsApp.** Ads bring leads; an AI front desk answers in seconds and qualifies them; the sales team is pushed to follow up fast and log outcomes; owners and agencies see which ads produced paying customers; and those outcomes flow back to Meta so the ads improve.
 
 Built for local businesses in India (gyms first), sold through marketing agencies. *Lead Engine* is a working name.

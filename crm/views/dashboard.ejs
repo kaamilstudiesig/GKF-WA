@@ -1,39 +1,52 @@
 <%- include('partials/header', { title: 'Dashboard' }) %>
-<div class="page-head">
-  <div><div class="eyebrow"><%= user.role === 'sales' ? 'My leads' : user.role === 'manager' ? 'My team' : 'All of GKF' %></div><h1>Dashboard</h1></div>
-  <a class="btn btn-outline" href="/leads">All leads</a>
+<% const nowIso = new Date().toISOString(); %>
+<div class="mb-4">
+  <p class="text-sm text-base-content/60"><%= user.role === 'sales' ? 'My leads' : user.role === 'manager' ? 'My team' : 'All of GKF' %></p>
+  <h1 class="page-title max-lg:hidden">Dashboard</h1>
 </div>
-<div class="kpis">
-  <a class="kpi alert" href="/leads?needs_human=1"><div class="label">Needs human</div><div class="value"><%= d.needsHuman %></div></a>
-  <a class="kpi" href="/leads?status=hot"><div class="label">Hot leads</div><div class="value"><%= d.counts.hot %></div></a>
-  <a class="kpi" href="/leads?sort=created"><div class="label">New this week</div><div class="value"><%= d.newThisWeek %></div></a>
-  <% if (user.role !== 'sales') { %><a class="kpi" href="/leads?assignee=unassigned"><div class="label">Unassigned</div><div class="value"><%= d.unassigned %></div></a><% } %>
-  <a class="kpi <%= d.overdue ? 'alert' : '' %>" href="/followups"><div class="label">Overdue follow-ups</div><div class="value"><%= d.overdue %></div></a>
-  <a class="kpi" href="/leads?status=converted"><div class="label">Converted</div><div class="value"><%= d.counts.converted %></div></a>
+
+<div class="mb-4 grid grid-cols-2 gap-3 lg:grid-cols-6">
+  <% const kpis = [
+       ['/leads?needs_human=1', 'Needs human', d.needsHuman, d.needsHuman ? 'text-primary' : ''],
+       ['/leads?status=hot', 'Hot leads', d.counts.hot, ''],
+       ['/followups', 'Overdue follow-ups', d.overdue, d.overdue ? 'text-error' : ''],
+       ['/leads?sort=created', 'New this week', d.newThisWeek, ''],
+       ['/leads?status=converted', 'Converted', d.counts.converted, 'text-success']
+     ];
+     if (user.role !== 'sales') kpis.splice(3, 0, ['/leads?assignee=unassigned', 'Unassigned', d.unassigned, '']); %>
+  <% for (const [href, label, value, cls] of kpis) { %>
+    <a href="<%= href %>" class="rounded-box bg-base-100 p-4 transition hover:bg-base-300">
+      <div class="text-xs text-base-content/60"><%= label %></div>
+      <div class="mt-1 text-3xl font-bold tabular-nums <%= cls %>"><%= value %></div>
+    </a>
+  <% } %>
 </div>
-<div class="grid grid-2">
-  <section class="card">
-    <h2>Waiting on a human</h2>
+
+<div class="grid gap-4 lg:grid-cols-2">
+  <section>
+    <div class="mb-2 flex items-center justify-between"><h2>Waiting on a human</h2><a href="/leads?needs_human=1" class="link link-hover text-sm text-primary">See all</a></div>
     <%- include('partials/lead-table', { leads: d.attention, emptyText: 'Nobody is waiting. The bot has it covered.' }) %>
   </section>
-  <section class="card">
-    <h2>My follow-ups</h2>
-    <% if (!d.myFollowUps.length) { %><p class="empty">No open follow-ups.</p><% } else { %>
-    <ul class="list">
-      <% for (const f of d.myFollowUps) { const late = f.due_at < new Date().toISOString(); %>
-      <li class="row" style="justify-content:space-between;align-items:center">
-        <div class="grow">
-          <div><%= f.title %></div>
-          <div class="meta"><a href="/leads/<%= f.wa_id %>"><%= util.leadTitle(f) %></a> · <span class="<%= late ? 'overdue' : '' %>">Due <%= util.fmtDate(f.due_at) %></span></div>
+  <section>
+    <div class="mb-2 flex items-center justify-between"><h2>My follow-ups</h2><a href="/followups" class="link link-hover text-sm text-primary">See all</a></div>
+    <% if (!d.myFollowUps.length) { %><p class="rounded-box bg-base-100 py-8 text-center text-sm text-base-content/60">No open follow-ups.</p><% } else { %>
+    <ul class="list rounded-box bg-base-100">
+      <% for (const f of d.myFollowUps) { const late = f.due_at < nowIso; const today = !late && f.due_at.slice(0, 10) === nowIso.slice(0, 10); %>
+      <li class="list-row items-center">
+        <span class="status <%= late ? 'status-error' : today ? 'status-warning' : 'status-success' %>"></span>
+        <div class="min-w-0">
+          <div class="truncate text-sm font-medium"><%= f.title %></div>
+          <div class="text-xs text-base-content/60"><a class="link link-hover" href="/leads/<%= f.wa_id %>"><%= util.leadTitle(f) %></a> · <span class="<%= late ? 'text-error' : '' %>">Due <%= util.fmtDate(f.due_at) %></span></div>
         </div>
-        <form method="post" action="/followups/<%= f.id %>/done"><%- include('partials/csrf') %><button class="btn btn-outline btn-sm">Done</button></form>
+        <form method="post" action="/followups/<%= f.id %>/done"><%- include('partials/csrf') %><button class="btn btn-ghost btn-sm">Done</button></form>
       </li>
       <% } %>
     </ul><% } %>
   </section>
 </div>
-<section class="card" style="margin-top:16px">
-  <h2>Latest WhatsApp activity</h2>
+
+<section class="mt-4">
+  <h2 class="mb-2">Latest WhatsApp activity</h2>
   <%- include('partials/lead-table', { leads: d.recent, emptyText: user.role === 'sales' ? 'No leads are assigned to you yet.' : 'No leads yet.' }) %>
 </section>
 <%- include('partials/footer') %>

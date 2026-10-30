@@ -1,0 +1,73 @@
+/*
+ * GKF CRM styles: Tailwind CSS 4 + daisyUI 5. Build with `npm run build:css`
+ * (output crm/public/css/app.css is generated, not committed). See docs/UI_GUIDE.md.
+ */
+@import "tailwindcss" source(none);
+@source "../views";
+@source "../public/js";
+
+@plugin "daisyui" {
+  themes: false;
+  logs: false;
+}
+
+/* GKF theme: near-black surfaces, gold primary. */
+@plugin "daisyui/theme" {
+  name: "gkf";
+  default: true;
+  prefersdark: true;
+  color-scheme: dark;
+  --color-base-100: #161616;
+  --color-base-200: #0e0e0e;
+  --color-base-300: #070707;
+  --color-base-content: #ececec;
+  --color-primary: #d4af37;
+  --color-primary-content: #141106;
+  --color-secondary: #f3e5ab;
+  --color-secondary-content: #1a1608;
+  --color-accent: #ffd34d;
+  --color-accent-content: #1a1405;
+  --color-neutral: #262626;
+  --color-neutral-content: #e5e5e5;
+  --color-info: #5eb1ef;
+  --color-info-content: #04121d;
+  --color-success: #3ecf8e;
+  --color-success-content: #03170e;
+  --color-warning: #f5a524;
+  --color-warning-content: #1f1302;
+  --color-error: #ef5b5f;
+  --color-error-content: #1f0405;
+  --radius-selector: 1rem;
+  --radius-field: 0.6rem;
+  --radius-box: 0.9rem;
+  --size-selector: 0.25rem;
+  --size-field: 0.25rem;
+  --border: 1px;
+  --depth: 0;
+  --noise: 0;
+}
+
+@theme {
+  --font-sans: "Inter", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-display: "Bebas Neue", "Oswald", Impact, sans-serif;
+}
+
+@layer base {
+  html { -webkit-tap-highlight-color: transparent; }
+  body { @apply bg-base-200 text-base-content font-sans antialiased; }
+  h1.page-title { @apply font-display text-4xl leading-none tracking-wide; }
+  :where(h2) { @apply text-base font-semibold; }
+}
+
+@layer components {
+  /* Space for the fixed bottom bar on phones (dock or lead action bar). */
+  .pb-dock { padding-bottom: calc(5rem + env(safe-area-inset-bottom)); }
+  @media (min-width: 64rem) { .pb-dock { padding-bottom: 2rem; } }
+  .chat-scroll { max-height: 60vh; overflow-y: auto; overscroll-behavior: contain; }
+  .tap { min-height: 2.75rem; }
+}
+
+/* Lead page tabs (phones): app.js marks inactive panels. Desktop always shows every panel. */
+@media (max-width: 63.99rem) {
+  .js [data-panel][data-tab-hidden] { display: none; }
+}

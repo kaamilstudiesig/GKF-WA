@@ -36,6 +36,7 @@ Sales floor → owner analytics → Meta loop (Lead Ads, Conversions API) → mu
 | [docs/ONBOARDING.md](docs/ONBOARDING.md) | How a client goes live (target self-serve flow + today's manual steps) |
 | [docs/OPERATIONS.md](docs/OPERATIONS.md) | Local dev, config vars, tests, deploy, backups, incident runbook |
 | [docs/TEAM.md](docs/TEAM.md) | For collaborators: the idea, who owns what, task list, how we work |
+| [docs/UI_GUIDE.md](docs/UI_GUIDE.md) | CRM design system (daisyUI + Tailwind), mobile-first rules, patterns borrowed from leading CRMs |
 | [crm/README.md](crm/README.md) | CRM internals: roles, tables, pages |
 | [CLAUDE.md](CLAUDE.md) | Rules and commands for Claude Code in this repo |
 

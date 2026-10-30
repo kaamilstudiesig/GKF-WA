@@ -1,23 +1,41 @@
+<%# Leads as list rows on phones, a table from lg up. Same data and links in both. %>
 <% if (!leads.length) { %>
-  <p class="empty"><%= typeof emptyText !== 'undefined' ? emptyText : 'No leads here.' %></p>
-<% } else { %>
-<div class="table-wrap">
-<table>
+  <p class="py-8 text-center text-sm text-base-content/60"><%= typeof emptyText !== 'undefined' ? emptyText : 'No leads here.' %></p>
+<% } else { const nowIso = new Date().toISOString(); const initials = l => (l.display_name || '#').split(' ').map(s => s[0]).join('').slice(0, 2).toUpperCase(); %>
+<ul class="list rounded-box bg-base-100 lg:hidden">
+  <% for (const l of leads) { %>
+  <li class="list-row items-center gap-3 px-3 py-3">
+    <div class="avatar avatar-placeholder"><div class="w-11 rounded-full <%= l.needs_human ? 'bg-primary text-primary-content' : 'bg-neutral text-neutral-content' %>"><span class="text-sm font-semibold"><%= initials(l) %></span></div></div>
+    <a href="/leads/<%= l.wa_id %>" class="list-col-grow min-w-0">
+      <div class="flex items-center gap-2"><span class="truncate font-semibold"><%= util.leadTitle(l) %></span><%- include('status', { status: l.status }) %></div>
+      <div class="truncate text-sm text-base-content/60"><%= l.last_message || util.contactLabel(l) %></div>
+      <div class="mt-1 flex flex-wrap items-center gap-1.5 text-xs text-base-content/50">
+        <% if (l.needs_human) { %><span class="badge badge-primary badge-xs">Needs human</span><% } %>
+        <% if (l.open_followups) { %><span class="<%= l.next_followup_at < nowIso ? 'text-error' : '' %>">Follow-up <%= util.timeAgo(l.next_followup_at) %></span><% } %>
+        <span><%= l.assignee_name || 'Unassigned' %></span>
+      </div>
+    </a>
+    <span class="self-start text-xs text-base-content/50" title="<%= util.fmtDate(l.last_inbound_message_at) %>"><%= util.timeAgo(l.last_inbound_message_at) %></span>
+  </li>
+  <% } %>
+</ul>
+<div class="hidden overflow-x-auto rounded-box bg-base-100 lg:block">
+<table class="table">
   <thead><tr><th>Lead</th><th>Status</th><th>Interest</th><th>Owner</th><th>Last message</th><th>Last seen</th></tr></thead>
   <tbody>
   <% for (const l of leads) { %>
-    <tr>
+    <tr class="hover:bg-base-200">
       <td>
-        <a class="lead-name" href="/leads/<%= l.wa_id %>"><%= util.leadTitle(l) %></a>
-        <div class="muted small"><%= util.contactLabel(l) %></div>
-        <% if (l.needs_human) { %><span class="badge badge-human" title="<%= util.humanize(l.handoff_reason) %>">Needs human</span><% } %>
+        <a class="font-semibold hover:text-primary" href="/leads/<%= l.wa_id %>"><%= util.leadTitle(l) %></a>
+        <div class="text-xs text-base-content/60"><%= util.contactLabel(l) %></div>
+        <% if (l.needs_human) { %><span class="badge badge-primary badge-xs mt-1" title="<%= util.humanize(l.handoff_reason) %>">Needs human</span><% } %>
       </td>
       <td><%- include('status', { status: l.status }) %></td>
-      <td class="small" style="text-transform:capitalize"><%= util.humanize(l.interest) || '—' %></td>
-      <td class="small"><%= l.assignee_name || 'Unassigned' %>
-        <% if (l.open_followups) { %><div class="small <%= l.next_followup_at < new Date().toISOString() ? 'overdue' : 'muted' %>">Follow-up <%= util.timeAgo(l.next_followup_at) %></div><% } %></td>
-      <td><div class="truncate"><%= l.last_message || '' %></div></td>
-      <td class="small muted" title="<%= util.fmtDate(l.last_inbound_message_at) %>"><%= util.timeAgo(l.last_inbound_message_at) %></td>
+      <td class="text-sm capitalize"><%= util.humanize(l.interest) || '—' %></td>
+      <td class="text-sm"><%= l.assignee_name || 'Unassigned' %>
+        <% if (l.open_followups) { %><div class="text-xs <%= l.next_followup_at < nowIso ? 'text-error' : 'text-base-content/60' %>">Follow-up <%= util.timeAgo(l.next_followup_at) %></div><% } %></td>
+      <td class="max-w-xs"><div class="truncate text-sm text-base-content/80"><%= l.last_message || '' %></div></td>
+      <td class="text-xs text-base-content/60" title="<%= util.fmtDate(l.last_inbound_message_at) %>"><%= util.timeAgo(l.last_inbound_message_at) %></td>
     </tr>
   <% } %>
   </tbody>

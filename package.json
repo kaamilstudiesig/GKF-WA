@@ -12,7 +12,10 @@
     "test": "NODE_ENV=test node --test --test-concurrency=4 \"test/**/*.test.js\"",
     "crm:seed": "node crm/scripts/seed.js",
     "dev:demo-data": "node scripts/demo-data.js",
-    "delete-lead": "node scripts/delete-lead.js"
+    "delete-lead": "node scripts/delete-lead.js",
+    "build:css": "tailwindcss -i crm/styles/app.css -o crm/public/css/app.css --minify",
+    "predev": "npm run build:css",
+    "heroku-postbuild": "npm run build:css"
   },
   "keywords": [
     "whatsapp",
@@ -33,7 +36,10 @@
   },
   "devDependencies": {
     "@electric-sql/pglite": "0.5.8",
-    "supertest": "^7.0.0"
+    "@tailwindcss/cli": "4.3.3",
+    "daisyui": "5.7.50",
+    "supertest": "^7.0.0",
+    "tailwindcss": "4.3.3"
   },
   "engines": {
     "node": "24.x"

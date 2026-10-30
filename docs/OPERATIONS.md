@@ -43,6 +43,10 @@ It refuses to run with `NODE_ENV=production`.
 
 Health checks: `GET /health` (process up) and `GET /health/ready` (database reachable) on the bot host; `GET /health` on the CRM host checks the CRM tables.
 
+### CRM styles
+
+The CRM uses Tailwind CSS 4 + daisyUI 5. `npm run dev` builds `crm/public/css/app.css` first (`predev`); Heroku builds it in `heroku-postbuild`. After changing templates or `crm/styles/app.css` while the dev server runs, run `npm run build:css` and refresh. See [UI_GUIDE.md](UI_GUIDE.md).
+
 ## Config vars
 
 All settings are environment variables; `.env.example` lists them with comments.

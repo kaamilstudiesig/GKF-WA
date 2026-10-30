@@ -1,29 +1,25 @@
 <%- include('head') %>
-<body>
-<div class="shell">
-  <aside class="sidebar">
-    <%- include('brand') %>
-    <nav class="nav">
-      <% const nav = [['/', 'Dashboard'], ['/leads', 'Leads'], ['/pipeline', 'Pipeline'], ['/followups', 'Follow-ups']];
-         if (can.viewReports(user)) nav.push(['/reports', 'Reports']);
-         if (can.manageUsers(user)) nav.push(['/users', 'Staff']);
-         for (const [href, label] of nav) {
-           const active = href === '/' ? path === '/' : path.startsWith(href); %>
-        <a href="<%= href %>" class="<%= active ? 'active' : '' %>"><%= label %></a>
-      <% } %>
-    </nav>
-    <div class="me">
-      <strong><%= user.name %></strong>
-      <span class="badge badge-role"><%= ROLE_LABELS[user.role] %></span>
-      <div class="links">
-        <a href="/account/password" class="small">Password</a>
-        <form method="post" action="/logout" class="inline-form">
-          <input type="hidden" name="_csrf" value="<%= csrfToken %>">
-          <button class="linkbtn small" type="submit">Log out</button>
-        </form>
+<%
+  const pageTitle = typeof title !== 'undefined' ? title : 'GKF CRM';
+  const backHref = typeof back !== 'undefined' ? back : null;
+%>
+<body class="min-h-dvh">
+<div class="drawer lg:drawer-open">
+  <input id="nav-drawer" type="checkbox" class="drawer-toggle" aria-label="Open menu">
+  <div class="drawer-content flex min-h-dvh flex-col">
+    <header class="navbar sticky top-0 z-30 min-h-14 gap-1 border-b border-base-300 bg-base-200/90 px-2 backdrop-blur lg:hidden">
+      <div class="navbar-start w-auto">
+        <% if (backHref) { %>
+          <a href="<%= backHref %>" class="btn btn-ghost btn-square" aria-label="Back"><%- include('icon', { name: 'back', cls: 'size-6' }) %></a>
+        <% } else { %>
+          <a href="/" class="grid size-9 place-items-center rounded-lg bg-primary font-display text-xl text-primary-content" aria-label="Dashboard">GK</a>
+        <% } %>
       </div>
-    </div>
-  </aside>
-  <main class="main">
-    <% if (flash) { %><div class="alert alert-ok" role="status"><%= flash %></div><% } %>
-    <% if (error) { %><div class="alert alert-err" role="alert"><%= error %></div><% } %>
+      <div class="navbar-center min-w-0 flex-1 px-1"><span class="truncate font-semibold"><%= pageTitle %></span></div>
+      <div class="navbar-end w-auto">
+        <label for="nav-drawer" class="btn btn-ghost btn-square drawer-button" aria-label="Menu"><%- include('icon', { name: 'menu', cls: 'size-6' }) %></label>
+      </div>
+    </header>
+    <main class="mx-auto w-full max-w-6xl flex-1 px-4 pt-4 pb-dock lg:px-8 lg:pt-8">
+      <% if (flash) { %><div role="status" class="alert alert-success alert-soft mb-4"><%- include('icon', { name: 'check' }) %><span><%= flash %></span></div><% } %>
+      <% if (error) { %><div role="alert" class="alert alert-error alert-soft mb-4"><%- include('icon', { name: 'alert' }) %><span><%= error %></span></div><% } %>

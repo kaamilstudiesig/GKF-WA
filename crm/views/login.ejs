@@ -1,17 +1,15 @@
 <%- include('partials/head', { title: 'Sign in' }) %>
-<body>
-<div class="auth-wrap">
-  <div class="card auth-card">
-    <%- include('partials/brand') %>
-    <h1>Staff Sign In</h1>
-    <p class="muted small" style="text-align:center;margin-top:-4px">WhatsApp leads, follow-ups and reports for the GKF team.</p>
-    <% if (error) { %><div class="alert alert-err" role="alert"><%= error %></div><% } %>
-    <form method="post" action="/login">
-      <div class="field"><label for="email">Email</label><input id="email" name="email" type="email" autocomplete="username" required value="<%= email %>" autofocus></div>
-      <div class="field"><label for="password">Password</label><input id="password" name="password" type="password" autocomplete="current-password" required></div>
-      <button class="btn" type="submit">Sign in</button>
+<body class="grid min-h-dvh place-items-center bg-base-200 p-4">
+  <main class="w-full max-w-sm rounded-box bg-base-100 p-6 shadow-xl">
+    <div class="mb-6"><%- include('partials/brand') %></div>
+    <h1 class="text-2xl font-bold">Sign in</h1>
+    <p class="mb-4 text-sm text-base-content/60">WhatsApp leads, follow-ups and reports for the GKF team.</p>
+    <% if (error) { %><div role="alert" class="alert alert-error alert-soft mb-4 text-sm"><%= error %></div><% } %>
+    <form method="post" action="/login" class="space-y-3">
+      <fieldset class="fieldset py-0"><legend class="fieldset-legend">Email</legend><input id="email" name="email" type="email" autocomplete="username" required value="<%= email %>" autofocus class="input w-full"></fieldset>
+      <fieldset class="fieldset py-0"><legend class="fieldset-legend">Password</legend><input id="password" name="password" type="password" autocomplete="current-password" required class="input w-full"></fieldset>
+      <button class="btn btn-primary w-full" type="submit">Sign in</button>
     </form>
-  </div>
-</div>
+  </main>
 </body>
 </html>

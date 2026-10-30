@@ -5,3 +5,6 @@ coverage/
 logs/
 .DS_Store
 crm/seed/users.json
+
+# Built by npm run build:css (Tailwind + daisyUI)
+crm/public/css/app.css

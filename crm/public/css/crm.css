@@ -262,3 +262,20 @@ details.edit[open] { background: var(--surface); padding: 12px; border-radius: 6
   .bubble { max-width: 92%; }
   .bar-row { grid-template-columns: 100px 1fr 36px; }
 }
+
+/* ---- R1: one-tap outcomes on the lead page ---- */
+.outcome { margin-bottom: 16px; scroll-margin-top: 12px; }
+.outcome-quick, .outcome-more { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
+.outcome-btn { min-height: 44px; padding-inline: 14px; }
+.outcome-more details { flex: 0 1 auto; }
+.outcome-more details[open] { flex-basis: 100%; }
+.outcome-more summary { list-style: none; cursor: pointer; display: inline-flex; align-items: center; }
+.outcome-more summary::-webkit-details-marker { display: none; }
+.outcome-joined { background: var(--gold); color: #000; }
+.outcome-form { margin-top: 10px; padding: 12px; border: 1px solid var(--border-gold); border-radius: var(--radius); background: var(--surface-2); max-width: 420px; }
+.outcome-history { margin-top: 12px; }
+@media (max-width: 600px) {
+  .outcome-quick .outcome-btn, .outcome-more summary { flex: 1 1 calc(50% - 8px); justify-content: center; }
+  .outcome-more details { flex: 1 1 calc(50% - 8px); }
+  .outcome-more details[open] { flex-basis: 100%; }
+}

@@ -14,4 +14,25 @@ const ROLE_LABELS = { owner: 'Owner', manager: 'Manager', sales: 'Sales' };
 // WhatsApp only allows free-form replies within 24h of the lead's last message.
 const WINDOW_MS = 24 * 60 * 60 * 1000;
 
-module.exports = { LEAD_STATUSES, HANDOFF_REASONS, ROLES, ROLE_LABELS, WINDOW_MS };
+// One-tap outcomes staff log after following up a lead (R1). Order = order on screen.
+const OUTCOMES = {
+  called_connected: 'Called, spoke',
+  no_answer: 'No answer',
+  whatsapp_sent: 'WhatsApp sent',
+  visit_booked: 'Visit booked',
+  visited: 'Visited',
+  no_show: 'No-show',
+  joined: 'Joined',
+  lost: 'Lost'
+};
+const LOST_REASONS = {
+  price: 'Price too high',
+  distance: 'Too far',
+  timing: 'Timings don\'t suit',
+  joined_elsewhere: 'Joined another gym',
+  no_response: 'Stopped replying',
+  not_interested: 'Not interested',
+  other: 'Other'
+};
+
+module.exports = { LEAD_STATUSES, HANDOFF_REASONS, ROLES, ROLE_LABELS, WINDOW_MS, OUTCOMES, LOST_REASONS };

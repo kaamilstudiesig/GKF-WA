@@ -5,7 +5,11 @@ const auth = require('./auth');
 const { Crm, HttpError } = require('./crm');
 const { Users } = require('./users');
 const { can } = require('./permissions');
-const { LEAD_STATUSES, ROLE_LABELS, ROLES } = require('./constants');
+const { LEAD_STATUSES, ROLE_LABELS, ROLES, OUTCOMES, LOST_REASONS } = require('./constants');
+
+// Plan names offered when logging "Joined". Read from the bot's business config when it's there.
+let PLAN_OPTIONS = [];
+try { PLAN_OPTIONS = require('../../src/config/gymConfig').pricingTiers.map(t => `${t.name} (${t.price})`); } catch (e) { /* standalone CRM */ }
 const util = require('./util');
 
 /** Express 4 does not catch rejected promises; pass them to the error handler. */
@@ -52,7 +56,7 @@ function createCrmApp({
     req.user = session ? session.user : null;
     req.csrfToken = session ? session.csrfToken : null;
     Object.assign(res.locals, {
-      user: req.user, csrfToken: req.csrfToken, can, util, LEAD_STATUSES, ROLE_LABELS, ROLES,
+      user: req.user, csrfToken: req.csrfToken, can, util, LEAD_STATUSES, ROLE_LABELS, ROLES, OUTCOMES, LOST_REASONS, PLAN_OPTIONS,
       path: req.path, query: req.query, flash: req.query.ok || null, error: req.query.err || null
     });
     next();
@@ -165,6 +169,7 @@ function createCrmApp({
       notes: await crm.notes(waId),
       followUps: await crm.leadFollowUps(waId),
       activity: await crm.leadActivity(waId),
+      outcomes: await crm.leadOutcomes(waId),
       staff: await crm.assignableUsers(req.user)
     });
   }));
@@ -179,6 +184,18 @@ function createCrmApp({
   app.post('/leads/:waId/assign', allow(can.assignLeads), leadAction((req, waId) => crm.assign(req.user, waId, req.body.user_id || null), 'Assignment updated.'));
   app.post('/leads/:waId/notes', leadAction((req, waId) => crm.addNote(req.user, waId, req.body.body), 'Note added.'));
   app.post('/leads/:waId/message', leadAction((req, waId) => crm.queueMessage(req.user, waId, req.body.text), 'Reply queued for WhatsApp.'));
+  app.post('/leads/:waId/outcome', h(async (req, res) => {
+    const waId = util.cleanWaId(req.params.waId);
+    const { outcome } = await crm.logOutcome(req.user, waId, {
+      outcome: req.body.outcome,
+      visitAt: util.localInputToIso(req.body.visit_at),
+      plan: req.body.plan,
+      amount: req.body.amount,
+      lostReason: req.body.lost_reason,
+      note: req.body.note
+    });
+    res.redirect(`${withOk(`/leads/${waId}`, `Saved: ${OUTCOMES[outcome]}.`)}#outcome`);
+  }));
   app.post('/leads/:waId/handoff/resolve', leadAction((req, waId) => crm.resolveHandoff(req.user, waId), 'Handoff resolved.'));
   app.post('/leads/:waId/followups', leadAction((req, waId) => crm.addFollowUp(req.user, waId, {
     title: req.body.title, dueAt: util.localInputToIso(req.body.due_at), assigneeId: req.body.user_id || null

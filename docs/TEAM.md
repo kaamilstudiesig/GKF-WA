@@ -45,7 +45,7 @@ Phases and "done when" are in [PRODUCT_PLAN.md §4](PRODUCT_PLAN.md#4-roadmap).
 | K1 | **BSUID-safe lead identity.** Store Meta's `user_id`, match by BSUID then phone, send via `recipient` when the phone is hidden, follow ID changes | Kaamil | Done (live 30 Oct). See [META_PLATFORM.md §5](META_PLATFORM.md#5-usernames-and-bsuid-identity-change) |
 | K2 | Alert on outbound send failures (Telegram + Sentry) and on `account_update` webhooks | Kaamil | In review (PR). After the 30 Oct token incident |
 | K3 | Tech Provider: business verification (approved), App Review submission, privacy/terms/data-deletion pages + delete-lead script | Kaamil | Pages in PR; App Review steps in [META_APP_REVIEW.md](META_APP_REVIEW.md) |
-| R1 | **Outcomes:** `crm_lead_outcomes` table + one-tap outcome UI on the lead page (incl. Joined: plan + ₹, Lost: reason list) + automatic next follow-up | Krishna | Agree the table in a small PR first (contract below) |
+| R1 | **Outcomes:** `crm_lead_outcomes` table + one-tap outcome UI on the lead page (incl. Joined: plan + ₹, Lost: reason list) + automatic next follow-up | Kaamil (Krishna busy) | In review. Built as described in "Lead outcomes" below |
 | R2 | **Hot-lead queue:** shifts, round-robin auto-assign of new hand-offs, 5-min timer, escalation to manager | Krishna | Uses `handoffs` + `crm_lead_assignments` |
 | R3 | **Live board:** server-sent events endpoint + board page (New hot / Contacting / Visit booked / Joined-Lost), overdue cards red | Krishna | No websockets or extra services |
 | R4 | **PWA:** manifest + service worker so sales installs the CRM on their phone; mobile-first lead page | Krishna | |
@@ -77,27 +77,28 @@ Both: line up 3 pilot gyms through agency friends while Phase D is built.
 
 ## Contract: the outcome link (K4 ↔ R1)
 
-Telegram alerts have a **✅ Log outcome** button that opens `https://<crm host>/leads/<lead key>#outcome`. R1 must put the outcome form on the lead page inside an element with `id="outcome"` (for example `<section id="outcome">`), near the top on phones, so that tap lands staff straight on the one-tap outcome buttons. Until R1 ships, the link simply opens the lead page.
+Telegram alerts have a **✅ Log outcome** button that opens `https://<crm host>/leads/<lead key>#outcome`. The lead page's outcome section is `<section id="outcome">`, placed above everything else so on a phone the tap lands straight on the outcome buttons. Keep that id if you redesign the page.
 
-## Contract: lead outcomes (proposal for R1)
+## Lead outcomes (R1, built)
 
-```sql
-CREATE TABLE crm_lead_outcomes (
-  id INTEGER GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
-  wa_id TEXT NOT NULL REFERENCES leads (wa_id) ON DELETE CASCADE, -- lead key: phone or BSUID
-  user_id INTEGER REFERENCES crm_users (id) ON DELETE SET NULL,
-  outcome TEXT NOT NULL CHECK (outcome IN ('called_connected','no_answer','whatsapp_sent',
-    'visit_booked','visited','no_show','joined','lost')),
-  visit_at TIMESTAMPTZ,          -- visit_booked
-  plan TEXT, amount_inr INTEGER, -- joined
-  lost_reason TEXT,              -- lost: price, distance, timing, joined_elsewhere, no_response, other
-  note TEXT,
-  sent_to_meta_at TIMESTAMPTZ,   -- filled by K7
-  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
-);
-```
+Table `crm_lead_outcomes` (CRM migration 2) stores one row per outcome: `wa_id`, `user_id`, `outcome`, `visit_at`, `plan`, `amount_inr`, `lost_reason`, `note`, `sent_to_meta_at` (filled later by K7), `created_at`. `crm_follow_ups` got a `source` column (`manual` or `outcome`).
 
-After K1, `wa_id` is the lead's key: a phone number or, for WhatsApp username users, Meta's business-scoped user ID like `IN.1234...`. Don't assume it's digits; use `util.contactLabel(lead)` / `util.leadPhone(lead)` in the CRM to show a number.
+What each tap does (`Crm.logOutcome` / `outcomePlan` in `crm/src/crm.js`):
+
+| Outcome | Lead status | Bot hand-off | Next follow-up (for the lead's owner, else whoever logged it) |
+| --- | --- | --- | --- |
+| Called, spoke | new → contacted | resolved | none |
+| No answer | unchanged | stays open | retry in 2h, then next day, 3 days, weekly |
+| WhatsApp sent | new → contacted | resolved | check reply in 24h |
+| Visit booked (date/time) | hot | resolved | "Did they come?" 2h after the visit |
+| Visited | hot | resolved | follow up in 24h |
+| No-show | unchanged | resolved | reschedule in 24h |
+| Joined (plan + ₹) | converted | resolved | closes all open follow-ups |
+| Lost (reason) | lost | resolved | closes all open follow-ups |
+
+Each new outcome closes the previous automatic follow-up. A converted lead is never moved back to hot by a later outcome. Lost reasons: price, distance, timing, joined_elsewhere, no_response, not_interested, other. Plan names are suggested from the business config.
+
+Next for R5/R6 (analytics): count outcomes per salesperson and per ad (`leads.metadata.referral.source_id`), revenue = `SUM(amount_inr)` of `joined` outcomes.
 
 ## How we work
 

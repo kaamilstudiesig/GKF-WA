@@ -153,6 +153,8 @@ erDiagram
   leads ||--o| crm_lead_assignments : "assigned via"
   leads ||--o{ crm_lead_notes : has
   leads ||--o{ crm_follow_ups : has
+  leads ||--o{ crm_lead_outcomes : has
+  crm_users ||--o{ crm_lead_outcomes : logs
   crm_users ||--o{ crm_lead_assignments : owns
   crm_users ||--o{ crm_follow_ups : does
   crm_users ||--o{ crm_sessions : "logs in"
@@ -198,6 +200,13 @@ erDiagram
     text model
     float cost_usd
     int input_tokens
+  }
+  crm_lead_outcomes {
+    int id PK
+    text outcome "called..joined/lost"
+    int amount_inr "when joined"
+    text lost_reason
+    timestamptz visit_at
   }
   crm_users {
     int id PK
@@ -289,8 +298,7 @@ Ordered by risk; owners and timing are in [PRODUCT_PLAN.md](PRODUCT_PLAN.md) and
 | Gap | Why it matters |
 | --- | --- |
 | Single tenant (GKF facts in code, one number) | Can't onboard client #2 without code changes. |
-| No "joined + ₹" outcome | No revenue per ad, which is the core promise to agencies. |
-| No speed-to-lead timer, outcome logging or live board | Hot leads can sit unanswered unnoticed. |
+| No speed-to-lead timer or live board (outcomes are logged since R1) | Hot leads can sit unanswered unnoticed. |
 | No templates for leads outside the 24h window | Can't win back no-shows and quiet leads. |
 | No Lead Ads webhook / Conversions API | Missing the strongest Meta optimisation loop. |
 | One dyno in the EU, student credits | Not suitable for paying clients' data or uptime. |

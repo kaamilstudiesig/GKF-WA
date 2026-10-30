@@ -6,6 +6,7 @@ const gymConfig = require('./config/gymConfig');
 const { verifyWebhookSignature } = require('./middleware/webhookSecurity');
 const { webhookRateLimiter } = require('./middleware/rateLimiter');
 const webhookController = require('./controllers/webhookController');
+const { legalRouter } = require('./routes/legal');
 const logger = require('./utils/logger');
 const { captureException } = require('./utils/sentry');
 const { createCrmApp } = require('../crm/src');
@@ -87,6 +88,9 @@ function createApp({
       res.status(503).json({ status: 'not_ready', database: 'disconnected' });
     }
   });
+
+  // Public privacy policy, terms and data-deletion pages (Meta App Review).
+  app.use(legalRouter());
 
   app.get('/webhook', webhookController.verifyWebhook);
   app.post('/webhook', webhookRateLimiter, verifyWebhookSignature, webhookController.handleIncoming);

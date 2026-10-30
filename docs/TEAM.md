@@ -44,7 +44,7 @@ Phases and "done when" are in [PRODUCT_PLAN.md §4](PRODUCT_PLAN.md#4-roadmap).
 | --- | --- | --- | --- |
 | K1 | **BSUID-safe lead identity.** Store Meta's `user_id`, match by BSUID then phone, send via `recipient` when the phone is hidden, follow ID changes | Kaamil | Done (live 30 Oct). See [META_PLATFORM.md §5](META_PLATFORM.md#5-usernames-and-bsuid-identity-change) |
 | K2 | Alert on outbound send failures (Telegram + Sentry) and on `account_update` webhooks | Kaamil | In review (PR). After the 30 Oct token incident |
-| K3 | Apply for Meta business verification + Tech Provider; draft privacy policy + data deletion endpoint | Kaamil | Takes weeks; start now |
+| K3 | Tech Provider: business verification (approved), App Review submission, privacy/terms/data-deletion pages + delete-lead script | Kaamil | Pages in PR; App Review steps in [META_APP_REVIEW.md](META_APP_REVIEW.md) |
 | R1 | **Outcomes:** `crm_lead_outcomes` table + one-tap outcome UI on the lead page (incl. Joined: plan + ₹, Lost: reason list) + automatic next follow-up | Krishna | Agree the table in a small PR first (contract below) |
 | R2 | **Hot-lead queue:** shifts, round-robin auto-assign of new hand-offs, 5-min timer, escalation to manager | Krishna | Uses `handoffs` + `crm_lead_assignments` |
 | R3 | **Live board:** server-sent events endpoint + board page (New hot / Contacting / Visit booked / Joined-Lost), overdue cards red | Krishna | No websockets or extra services |

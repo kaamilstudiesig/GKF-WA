@@ -62,6 +62,7 @@ All settings are environment variables; `.env.example` lists them with comments.
 | `GYM_LATITUDE`, `GYM_LONGITUDE` | Map pin sent after the location answer. Leave empty to send the address only. |
 | `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID` | Staff alerts and daily backups. |
 | `TELEGRAM_OPS_CHAT_ID` | Optional separate Telegram group for technical alerts (failed sends, account warnings). Defaults to `TELEGRAM_CHAT_ID`. |
+| `LEGAL_CONTACT_EMAIL`, `LEGAL_CONTACT_PHONE` | Contact shown on the public `/privacy`, `/terms` and `/data-deletion` pages (optional; without them the pages point to the WhatsApp number). |
 | `OPS_ALERT_COOLDOWN_MINUTES` | Minutes before the same technical alert repeats (default 30). |
 | `CRM_BASE_URL` | CRM address for "Open in CRM" links in Telegram alerts: `https://crm.goldkraftfitness.com`. |
 | `CRM_HOSTS` | Hostnames served by the CRM, comma-separated, matched without the port. Default `crm.goldkraftfitness.com,crm.localhost`. |
@@ -150,6 +151,16 @@ One Basic dyno ($7/month) and Heroku Postgres Essential-0 ($5/month), about $12/
 10. Check `https://wa.goldkraftfitness.com/health`, then in the Meta app dashboard (**WhatsApp → Configuration**) change the webhook URL to `https://wa.goldkraftfitness.com/webhook` with the same verify token. Send a test message.
 
 11. Retire Render: once Heroku has handled real messages, delete the Render service and remove `render.yaml` from the repo.
+
+## Data deletion requests
+
+Leads can send "DELETE MY DATA" (or see `/data-deletion`). The bot confirms and opens a hand-off marked *DATA DELETION REQUEST*. Delete within 30 days:
+
+```bash
+heroku run "npm run delete-lead -- <lead key>" -a gkf-wa
+```
+
+That's a dry run showing what would go; add `--confirm` to delete. The lead key is the part after `/leads/` in the CRM URL. Then tell the lead on WhatsApp it's done (the reply must go out before deleting, or within their 24h window).
 
 ## Incident runbook
 

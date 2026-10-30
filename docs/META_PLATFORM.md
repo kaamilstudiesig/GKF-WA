@@ -100,7 +100,7 @@ Not done yet: asking a username user for their phone (`REQUEST_CONTACT_INFO` but
 Rules:
 
 - Any token for a system user must include **all** of: `whatsapp_business_messaging`, `whatsapp_business_management`, `catalog_management` (plus `business_management` if needed).
-- Alert on send failures: a burst of outbound failures should page us (Telegram/Sentry), not wait for a client to notice.
+- Send failures now page us (Telegram ops group + Sentry, `src/services/opsAlerts.js`): account-level Meta errors alert immediately with the fix, unexplained failures alert after 3 in 10 minutes.
 - With Embedded Signup, each client gets its own business token, which removes this shared-token risk.
 
 ## 7. Features that fit the product

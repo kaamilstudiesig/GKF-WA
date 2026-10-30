@@ -61,6 +61,8 @@ All settings are environment variables; `.env.example` lists them with comments.
 | `BOT_PAUSE_HOURS_AFTER_STAFF_REPLY` | Hours the bot stays quiet after a staff reply from the CRM (default 12). New messages from that lead are alerted to Telegram. `0` turns the pause off. |
 | `GYM_LATITUDE`, `GYM_LONGITUDE` | Map pin sent after the location answer. Leave empty to send the address only. |
 | `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID` | Staff alerts and daily backups. |
+| `TELEGRAM_OPS_CHAT_ID` | Optional separate Telegram group for technical alerts (failed sends, account warnings). Defaults to `TELEGRAM_CHAT_ID`. |
+| `OPS_ALERT_COOLDOWN_MINUTES` | Minutes before the same technical alert repeats (default 30). |
 | `CRM_BASE_URL` | CRM address for "Open in CRM" links in Telegram alerts: `https://crm.goldkraftfitness.com`. |
 | `CRM_HOSTS` | Hostnames served by the CRM, comma-separated, matched without the port. Default `crm.goldkraftfitness.com,crm.localhost`. |
 | `SESSION_TTL_HOURS` | How long a CRM login lasts (default 12). |
@@ -150,6 +152,15 @@ One Basic dyno ($7/month) and Heroku Postgres Essential-0 ($5/month), about $12/
 11. Retire Render: once Heroku has handled real messages, delete the Render service and remove `render.yaml` from the repo.
 
 ## Incident runbook
+
+**Automatic alerts** (Telegram ops group + Sentry, at most once per problem every 30 minutes):
+
+- *WhatsApp replies are failing*: a send failed for an account reason (token lost permissions or expired, payment problem, account locked or blocked, number not registered). The alert names the Meta error code and the fix.
+- *WhatsApp is throttling our messages*: rate or spam limits.
+- *Several WhatsApp sends failed*: 3 unexplained failures within 10 minutes.
+- *WhatsApp account needs attention / account update*: Meta's `account_update`, `phone_number_quality_update`, `account_alerts`, `account_review_update` and `business_capability_update` webhooks. These only arrive if the fields are ticked in the Meta app: **WhatsApp → Configuration → Webhook fields**.
+
+Per-message failures (for example the 24h window closed for one lead) are logged, not alerted.
 
 **Bot gets messages but nobody receives replies**
 1. `heroku logs -n 300 -a gkf-wa | grep -i "send failed"`.

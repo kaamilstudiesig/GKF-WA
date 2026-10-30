@@ -120,7 +120,7 @@ class AIPolicy {
 
       return {
         isMedicalQuery: true,
-        disclaimerText: "Because your health and safety are our top priority, we do not diagnose injuries or provide medical advice over WhatsApp. We recommend consulting your physician, and our senior coaching team will contact you directly to discuss how we can safely tailor training around your recovery.",
+        disclaimerText: "Thanks for telling us. We do not diagnose injuries or give medical advice on WhatsApp, so please check with your doctor first. One of our senior coaches will call you to talk about training safely around it.",
         handoffReason: 'injury_question'
       };
     }

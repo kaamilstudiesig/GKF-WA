@@ -134,9 +134,42 @@ describe('AI replies', () => {
   });
 
   test('replies are stripped of JSON and fall back to a safe default when empty', () => {
-    assert.strictEqual(aiService.sanitizeReply('Hi {"name": "x"} there'), 'Hi  there');
+    assert.strictEqual(aiService.sanitizeReply('Hi {"name": "x"} there'), 'Hi there');
     assert.match(aiService.sanitizeReply('', { needs_human: true }), /coach .* will reach out/);
     const leaked = 'Great goal!\n<parameter name="notes">Beginner, lose 8 kg</parameter>\n<parameter name="name">Live';
     assert.strictEqual(aiService.sanitizeReply(leaked), 'Great goal!');
+  });
+});
+
+describe('one-call JSON replies', () => {
+  test('reply, lead details and hand-off come back in one call without tools', async () => {
+    const calls = script({ message: { content: JSON.stringify({
+      reply: 'Perfect, Saturday morning it is. A coach will message you shortly.',
+      lead: { interest: 'fat loss', status: 'hot', notes: 'Wants Sat morning' },
+      notify_staff: { handoff_reason: 'ready_to_book', summary: 'Trial Sat morning' }
+    }) } });
+    const lead = await newLead('919833333320');
+    const out = await aiService.reply(lead, 'saturday morning works');
+    assert.strictEqual(calls.length, 1);
+    assert.strictEqual(calls[0].tools, undefined);
+    assert.strictEqual(out.replyText, 'Perfect, Saturday morning it is. A coach will message you shortly.');
+    const l = await leadRepository.findByWaId(lead.wa_id);
+    assert.strictEqual(l.interest, 'fat loss');
+    assert.strictEqual(l.needs_human, true);
+    assert.strictEqual(l.handoff_reason, 'ready_to_book');
+  });
+
+  test('JSON wrapped in a code fence still works; plain text is used as the reply', () => {
+    const fenced = aiService.parseStructured('```json\n{"reply": "Hi!", "lead": {}, "notify_staff": null}\n```');
+    assert.deepStrictEqual(fenced, { reply: 'Hi!', updates: {} });
+    assert.strictEqual(aiService.parseStructured('Just a normal sentence.'), null);
+    assert.strictEqual(aiService.parseStructured('{"lead": {}}'), null);
+  });
+
+  test('em dashes and markdown never reach the lead', () => {
+    assert.strictEqual(aiService.sanitizeReply('Great choice — see you soon.'), 'Great choice, see you soon.');
+    assert.strictEqual(aiService.sanitizeReply('Open 5 AM–10 PM'), 'Open 5 AM to 10 PM');
+    assert.strictEqual(aiService.sanitizeReply('**Monthly** is ₹4,040'), '*Monthly* is ₹4,040');
+    assert.strictEqual(aiService.sanitizeReply('Line one\n\nLine two'), 'Line one\n\nLine two');
   });
 });

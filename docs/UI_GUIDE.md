@@ -8,6 +8,8 @@ How the staff CRM looks and behaves, and the rules for adding screens. Most staf
 - Source: `crm/styles/app.css` (theme + a few component tweaks). Build: `npm run build:css` → `crm/public/css/app.css` (git-ignored; Heroku builds it in `heroku-postbuild`, `npm run dev` builds it first).
 - Theme `gkf`: near-black surfaces, GKF gold as the primary colour, Inter for all text, Bebas Neue only for page titles and the logo. **No all-caps buttons or labels**: sentence case reads faster.
 - Icons: [Lucide](https://lucide.dev/) (ISC licence), inlined via `crm/views/partials/icon.ejs`.
+- Drag and drop: [SortableJS](https://github.com/SortableJS/Sortable) 1.15.7 (MIT), served from `node_modules` at `/static/vendor/sortable.min.js`. Emil Kowalski's `pick-ui-library` prefers dnd kit, but its framework-free package (`@dnd-kit/dom`) is pre-1.0 and needs a bundler; revisit when it's stable.
+- Craft rules come from [Emil Kowalski's skills](https://github.com/emilkowalski/skills) (MIT), installed in `~/.claude/skills` (`emil-design-eng`, `mobile-native`, `apple-design`, `break-ui`, `review-animations`, …). Ask Claude to run `review-animations` or `break-ui` on new screens.
 
 ## What we copied from leading CRMs
 
@@ -21,6 +23,7 @@ How the staff CRM looks and behaves, and the rules for adding screens. Most staf
 | Colour-coded task urgency | Kommo (green today, red overdue) | Follow-ups: red overdue, amber due today |
 | List rows, not tables, on phones | All mobile CRMs | Leads as list rows (initials, name, last message, time, status); table from `lg` up |
 | Quick filters as chips | Mobile inbox apps | Chips: All · Needs human · Hot · New · Mine; full filters in a bottom sheet |
+| Pipeline as a kanban board | Pipedrive, HubSpot boards, Kommo; Zoho Bigin / SmartSuite on mobile | Columns are the sales journey (**New → Contacted → Visit booked → Visited → Joined → Lost**, from status + latest visit outcome). Desktop: drag-and-drop (SortableJS, pointer-based). Phone: swipe between columns, **Move** opens a bottom sheet. Moving into Visit booked / Joined / Lost asks for the time / plan + ₹ / reason and logs the outcome; cancelling snaps the card back |
 
 ## Rules for new screens
 
@@ -35,5 +38,7 @@ How the staff CRM looks and behaves, and the rules for adding screens. Most staf
 9. No scroll areas inside the page on phones (they trap the thumb); let the page scroll.
 10. CSS/JS links carry `?v=<hash>` (`app.locals.assetV`) so phones load new files after each deploy. Keep it on any new asset link.
 11. Custom CSS that must beat daisyUI component styles goes **outside** `@layer` in `crm/styles/app.css` (daisyUI's layer wins over ours otherwise).
+12. Motion: only on occasional things (sheets, drag, toasts), never on frequent or keyboard actions; under 300ms; `--ease-out` (`cubic-bezier(0.23, 1, 0.32, 1)`) for enter/press, never `ease-in`; `transform`/`opacity` only; respect `prefers-reduced-motion`.
+13. Phones: inputs at 16px (iOS zoom), `touch-action: manipulation` on controls, no text selection on controls, press feedback on `:active` (`scale: 0.97`). Test on a real phone before calling it done; desktop emulation doesn't show these bugs.
 
 Sources: [mobile navigation patterns](https://www.designstudiouiux.com/blog/mobile-navigation-ux/), [CRM UX practices](https://www.designstudiouiux.com/blog/crm-ux-design-best-practices/), [HubSpot record layout](https://knowledge.hubspot.com/records/understand-the-default-record-layout), [Pipedrive deal detail view](https://support.pipedrive.com/en/article/deal-detail-view), [Kommo WhatsApp for teams](https://www.kommo.com/whatsapp/whatsapp-for-teams/).

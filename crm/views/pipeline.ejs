@@ -1,31 +1,117 @@
 <%- include('partials/header', { title: 'Pipeline' }) %>
-<div class="mb-4">
-  <p class="text-sm text-base-content/60">Move leads through the funnel</p>
-  <h1 class="page-title max-lg:hidden">Pipeline</h1>
+<%
+  const stageTone = { new: 'border-info', contacted: 'border-base-content/30', visit_booked: 'border-warning', visited: 'border-secondary', joined: 'border-success', lost: 'border-error' };
+  const needsDetails = ['visit_booked', 'joined', 'lost'];
+  const totalLeads = columns.reduce((s, c) => s + c.total, 0);
+  const revenue = columns.find(c => c.stage === 'joined').revenue;
+  const initials = l => (l.display_name || '#').split(' ').map(s => s[0]).join('').slice(0, 2).toUpperCase();
+  const cap = s => (s ? s[0].toUpperCase() + s.slice(1) : s);
+%>
+<div class="mb-4 flex flex-wrap items-end justify-between gap-3">
+  <div>
+    <p class="text-sm text-base-content/60"><%= totalLeads %> leads<% if (revenue) { %> · <span class="text-success">₹<%= revenue.toLocaleString('en-IN') %> joined</span><% } %></p>
+    <h1 class="page-title max-lg:hidden">Pipeline</h1>
+  </div>
+  <p class="text-xs text-base-content/50"><span class="max-lg:hidden">Drag a card to another stage.</span><span class="lg:hidden">Swipe across stages · tap Move to change a lead's stage.</span></p>
 </div>
-<div class="-mx-4 flex snap-x snap-mandatory gap-3 overflow-x-auto px-4 pb-4 lg:mx-0 lg:px-0">
+
+<div class="kanban -mx-4 flex snap-x snap-mandatory gap-3 overflow-x-auto px-4 pb-6 lg:mx-0 lg:snap-none lg:px-0" data-kanban>
   <% for (const col of columns) { %>
-  <section class="w-[82vw] max-w-xs shrink-0 snap-start rounded-box bg-base-100 p-3 lg:w-72">
-    <div class="mb-3 flex items-center justify-between"><%- include('partials/status', { status: col.status }) %><span class="text-sm text-base-content/60"><%= col.total %></span></div>
-    <% if (!col.leads.length) { %><p class="py-4 text-center text-xs text-base-content/50">Empty</p><% } %>
-    <div class="space-y-2">
-    <% for (const l of col.leads) { %>
-    <div class="rounded-field bg-base-200 p-3">
-      <a class="font-semibold hover:text-primary" href="/leads/<%= l.wa_id %>"><%= util.leadTitle(l) %></a>
-      <div class="text-xs text-base-content/60"><span class="capitalize"><%= util.humanize(l.interest) || 'No interest yet' %></span> · <%= util.timeAgo(l.last_inbound_message_at) %></div>
-      <div class="text-xs text-base-content/60"><%= l.assignee_name || 'Unassigned' %><% if (l.needs_human) { %> · <span class="text-primary">needs human</span><% } %></div>
-      <form method="post" action="/leads/<%= l.wa_id %>/status" class="mt-2 flex gap-2">
-        <%- include('partials/csrf') %>
-        <select name="status" data-autosubmit aria-label="Move <%= l.display_name || l.wa_id %> to status" class="select select-sm flex-1 capitalize">
-          <% for (const s of LEAD_STATUSES) { %><option value="<%= s %>" <%= s === l.status ? 'selected' : '' %>><%= s %></option><% } %>
-        </select>
-        <button class="btn btn-sm js-hide" type="submit">Move</button>
-      </form>
+  <section class="flex w-[84vw] max-w-[19rem] shrink-0 snap-start flex-col rounded-box border-t-2 bg-base-100 <%= stageTone[col.stage] %> lg:w-64" aria-label="<%= col.label %>">
+    <header class="flex items-center justify-between px-3 pt-3 pb-2">
+      <h2 class="text-sm font-semibold"><%= col.label %></h2>
+      <span class="badge badge-ghost badge-sm tabular-nums" data-count><%= col.total %></span>
+    </header>
+    <% if (col.stage === 'joined' && col.revenue) { %><p class="-mt-1 px-3 pb-2 text-xs text-success">₹<%= col.revenue.toLocaleString('en-IN') %></p><% } %>
+    <div class="kanban-list flex min-h-24 flex-1 flex-col gap-2 px-2 pb-3" data-stage="<%= col.stage %>">
+      <% for (const l of col.leads) { %>
+      <article class="kanban-card group rounded-field border border-base-300 bg-base-200 p-3" data-wa="<%= l.wa_id %>" data-name="<%= util.leadTitle(l) %>">
+        <div class="flex items-start gap-2">
+          <div class="avatar avatar-placeholder"><div class="w-8 rounded-full <%= l.needs_human ? 'bg-primary text-primary-content' : 'bg-neutral text-neutral-content' %>"><span class="text-[11px] font-semibold"><%= initials(l) %></span></div></div>
+          <div class="min-w-0 flex-1">
+            <a class="block truncate text-sm font-semibold hover:text-primary" href="/leads/<%= l.wa_id %>"><%= util.leadTitle(l) %></a>
+            <div class="truncate text-xs text-base-content/60"><%= cap(util.humanize(l.interest)) || 'No interest yet' %> · <%= util.timeAgo(l.last_inbound_message_at) %></div>
+          </div>
+        </div>
+        <div class="mt-2 flex flex-wrap items-center gap-1">
+          <% if (l.needs_human) { %><span class="badge badge-primary badge-xs">Needs human</span><% } %>
+          <% if (l.visit_outcome === 'no_show') { %><span class="badge badge-warning badge-soft badge-xs">No-show</span><% } %>
+          <% if (col.stage === 'visit_booked' && l.visit_at) { %><span class="badge badge-ghost badge-xs"><%= util.fmtDate(l.visit_at) %></span><% } %>
+          <% if (col.stage === 'joined' && l.joined_amount) { %><span class="badge badge-success badge-soft badge-xs">₹<%= Number(l.joined_amount).toLocaleString('en-IN') %></span><% } %>
+          <% if (l.ad) { %><span class="badge badge-ghost badge-xs"><%= cap(l.ad.platform || 'meta') %> ad</span><% } %>
+          <span class="ml-auto text-[11px] text-base-content/50"><%= l.assignee_name || 'Unassigned' %></span>
+        </div>
+        <%# Move menu: the phone way to change stage (desktop drags). Works without JS. %>
+        <details class="dropdown dropdown-end mt-2 w-full lg:hidden">
+          <summary class="btn btn-ghost btn-sm w-full justify-between border-base-300" data-move-open data-stage="<%= col.stage %>">Move<span class="opacity-60">›</span></summary>
+          <ul class="dropdown-content menu z-20 mt-1 w-56 rounded-box bg-base-300 p-1 shadow-xl">
+            <% for (const [stage, label] of Object.entries(STAGES)) { if (stage === col.stage) continue; %>
+            <li>
+              <% if (needsDetails.includes(stage)) { %>
+                <a href="/leads/<%= l.wa_id %>#outcome" class="tap" data-move="<%= stage %>"><%= label %>…</a>
+              <% } else { %>
+                <form method="post" action="/leads/<%= l.wa_id %>/stage"><%- include('partials/csrf') %><input type="hidden" name="stage" value="<%= stage %>"><button class="w-full text-left" data-move="<%= stage %>"><%= label %></button></form>
+              <% } %>
+            </li>
+            <% } %>
+          </ul>
+        </details>
+      </article>
+      <% } %>
+      <% if (!col.leads.length) { %><p class="kanban-empty py-6 text-center text-xs text-base-content/40">No leads</p><% } %>
     </div>
-    <% } %>
-    </div>
-    <% if (col.total > col.leads.length) { %><a class="link link-hover mt-2 block text-sm text-primary" href="/leads?status=<%= col.status %>">See all <%= col.total %> →</a><% } %>
+    <% if (col.total > col.leads.length) { %><p class="px-3 pb-3 text-xs text-base-content/50">Showing <%= col.leads.length %> of <%= col.total %></p><% } %>
   </section>
   <% } %>
 </div>
+
+<%# Move sheet on phones (JS). Big targets, one tap per stage. %>
+<dialog id="move-sheet" class="modal modal-bottom">
+  <div class="modal-box pb-[calc(1.25rem+env(safe-area-inset-bottom))]">
+    <div class="mb-1 flex items-center justify-between">
+      <h2 class="text-lg font-semibold">Move to…</h2>
+      <form method="dialog"><button class="btn btn-ghost btn-sm btn-circle" aria-label="Close"><%- include('partials/icon', { name: 'x' }) %></button></form>
+    </div>
+    <p class="mb-3 text-sm text-base-content/60" data-move-lead></p>
+    <form method="post" action="" class="grid grid-cols-2 gap-2" data-move-form>
+      <%- include('partials/csrf') %>
+      <% for (const [stage, label] of Object.entries(STAGES)) { %>
+        <button class="btn h-auto min-h-14 border-base-300 bg-base-200 py-3 font-medium" type="submit" name="stage" value="<%= stage %>" data-sheet-stage="<%= stage %>"><%= label %><%= needsDetails.includes(stage) ? '…' : '' %></button>
+      <% } %>
+    </form>
+  </div>
+  <form method="dialog" class="modal-backdrop"><button>Close</button></form>
+</dialog>
+
+<%# Details for stages that need them (opened by drag-and-drop or Move on phones). %>
+<dialog id="stage-dialog" class="modal modal-bottom sm:modal-middle">
+  <div class="modal-box pb-[calc(1.25rem+env(safe-area-inset-bottom))]">
+    <form method="post" action="" class="space-y-3" data-stage-form>
+      <%- include('partials/csrf') %>
+      <input type="hidden" name="stage" value="">
+      <div class="flex items-center justify-between">
+        <h2 class="text-lg font-semibold" data-stage-title>Move lead</h2>
+        <button type="button" class="btn btn-ghost btn-sm btn-circle" data-stage-cancel aria-label="Cancel"><%- include('partials/icon', { name: 'x' }) %></button>
+      </div>
+      <p class="text-sm text-base-content/60" data-stage-lead></p>
+      <fieldset class="fieldset py-0" data-for="visit_booked"><legend class="fieldset-legend">Visit date and time</legend><input name="visit_at" type="datetime-local" class="input w-full"></fieldset>
+      <div class="space-y-2" data-for="joined">
+        <fieldset class="fieldset py-0"><legend class="fieldset-legend">Plan</legend><input name="plan" list="board-plan-options" maxlength="100" placeholder="Quarterly Elite" class="input w-full">
+          <datalist id="board-plan-options"><% for (const p of PLAN_OPTIONS) { %><option value="<%= p %>"><% } %></datalist></fieldset>
+        <fieldset class="fieldset py-0"><legend class="fieldset-legend">Amount paid (₹)</legend><input name="amount" inputmode="numeric" pattern="[0-9,₹ ]+" placeholder="7080" class="input w-full"></fieldset>
+      </div>
+      <div class="space-y-2" data-for="lost">
+        <fieldset class="fieldset py-0"><legend class="fieldset-legend">Why?</legend>
+          <select name="lost_reason" class="select w-full"><option value="">Pick a reason</option><% for (const [k, label] of Object.entries(LOST_REASONS)) { %><option value="<%= k %>"><%= label %></option><% } %></select></fieldset>
+        <fieldset class="fieldset py-0"><legend class="fieldset-legend">Note (optional)</legend><input name="note" maxlength="500" class="input w-full"></fieldset>
+      </div>
+      <button class="btn btn-primary w-full" type="submit">Save</button>
+    </form>
+  </div>
+  <form method="dialog" class="modal-backdrop"><button data-stage-cancel>Close</button></form>
+</dialog>
+<div class="toast toast-top toast-center z-50" data-toasts></div>
+
+<script src="/static/vendor/sortable.min.js?v=1.15.7" defer></script>
+<script src="/static/js/pipeline.js?v=<%= typeof assetV !== 'undefined' ? assetV : '' %>" defer></script>
 <%- include('partials/footer') %>

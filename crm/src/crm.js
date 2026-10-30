@@ -1,7 +1,7 @@
 const crypto = require('crypto');
 const { Params } = require('./util');
 const { leadScope, staffScope, canAssignTo } = require('./permissions');
-const { LEAD_STATUSES, WINDOW_MS, OUTCOMES, LOST_REASONS } = require('./constants');
+const { LEAD_STATUSES, WINDOW_MS, OUTCOMES, LOST_REASONS, STAGES } = require('./constants');
 const { localDay } = require('./util');
 
 const MAX_MESSAGE_LENGTH = 4096; // WhatsApp text limit
@@ -399,6 +399,65 @@ class Crm {
       SELECT o.*, u.name AS user_name FROM crm_lead_outcomes o LEFT JOIN crm_users u ON u.id = o.user_id
       WHERE o.wa_id = $1 ORDER BY o.created_at DESC, o.id DESC LIMIT $2
     `, [waId, limit]);
+  }
+
+  // ---------- pipeline board ----------
+
+  /**
+   * Leads grouped into journey stages for the kanban board:
+   * converted → Joined, lost → Lost, latest visit outcome → Visited / Visit booked,
+   * status new → New, everything else (incl. a no-show) → Contacted.
+   */
+  async pipelineBoard(user, { perStage = 60 } = {}) {
+    const q = new Params();
+    const rows = await this.db.many(`
+      SELECT x.*, CASE
+          WHEN x.status = 'converted' THEN 'joined'
+          WHEN x.status = 'lost' THEN 'lost'
+          WHEN x.visit_outcome = 'visited' THEN 'visited'
+          WHEN x.visit_outcome = 'visit_booked' THEN 'visit_booked'
+          WHEN x.status = 'new' THEN 'new'
+          ELSE 'contacted' END AS stage
+      FROM (
+        SELECT l.*, a.user_id AS assignee_id, u.name AS assignee_name,
+          (SELECT o.outcome FROM crm_lead_outcomes o WHERE o.wa_id = l.wa_id
+             AND o.outcome IN ('visit_booked', 'visited', 'no_show') ORDER BY o.created_at DESC, o.id DESC LIMIT 1) AS visit_outcome,
+          (SELECT o.visit_at FROM crm_lead_outcomes o WHERE o.wa_id = l.wa_id
+             AND o.outcome = 'visit_booked' ORDER BY o.created_at DESC, o.id DESC LIMIT 1) AS visit_at,
+          (SELECT o.amount_inr FROM crm_lead_outcomes o WHERE o.wa_id = l.wa_id
+             AND o.outcome = 'joined' ORDER BY o.created_at DESC, o.id DESC LIMIT 1) AS joined_amount
+        FROM leads l
+        ${ASSIGN_JOIN}
+        LEFT JOIN crm_users u ON u.id = a.user_id
+        WHERE ${leadScope(user, q)}
+      ) x
+      ORDER BY x.needs_human DESC, x.last_inbound_message_at DESC
+    `, q.values);
+    const columns = Object.entries(STAGES).map(([stage, label]) => ({ stage, label, total: 0, revenue: 0, leads: [] }));
+    const byStage = Object.fromEntries(columns.map(c => [c.stage, c]));
+    for (const r of rows) {
+      const col = byStage[r.stage];
+      col.total += 1;
+      if (r.joined_amount) col.revenue += r.joined_amount;
+      if (col.leads.length < perStage) col.leads.push(this.formatLead(r));
+    }
+    return columns;
+  }
+
+  /**
+   * Moves a lead to a board stage by doing what that stage means: a status change
+   * for New/Contacted, or a logged outcome (with its follow-ups) for the rest.
+   */
+  async moveToStage(user, waId, stage, input = {}) {
+    if (!STAGES[stage]) throw new HttpError(400, 'Unknown stage.');
+    const lead = await this.requireLead(user, waId);
+    if (stage === 'new' || stage === 'contacted') return this.setStatus(user, waId, stage);
+    // Re-opening a closed lead into the visit stages: make it active again first.
+    if ((stage === 'visit_booked' || stage === 'visited') && ['converted', 'lost'].includes(lead.status)) {
+      await this.setStatus(user, waId, 'hot');
+    }
+    const outcome = { visit_booked: 'visit_booked', visited: 'visited', joined: 'joined', lost: 'lost' }[stage];
+    return this.logOutcome(user, waId, { ...input, outcome });
   }
 
   // ---------- users ----------

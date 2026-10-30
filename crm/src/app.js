@@ -16,7 +16,7 @@ const auth = require('./auth');
 const { Crm, HttpError } = require('./crm');
 const { Users } = require('./users');
 const { can } = require('./permissions');
-const { LEAD_STATUSES, ROLE_LABELS, ROLES, OUTCOMES, LOST_REASONS } = require('./constants');
+const { LEAD_STATUSES, ROLE_LABELS, ROLES, OUTCOMES, LOST_REASONS, STAGES } = require('./constants');
 
 // Plan names offered when logging "Joined". Read from the bot's business config when it's there.
 let PLAN_OPTIONS = [];
@@ -68,7 +68,7 @@ function createCrmApp({
     req.user = session ? session.user : null;
     req.csrfToken = session ? session.csrfToken : null;
     Object.assign(res.locals, {
-      user: req.user, csrfToken: req.csrfToken, can, util, LEAD_STATUSES, ROLE_LABELS, ROLES, OUTCOMES, LOST_REASONS, PLAN_OPTIONS,
+      user: req.user, csrfToken: req.csrfToken, can, util, LEAD_STATUSES, ROLE_LABELS, ROLES, OUTCOMES, LOST_REASONS, PLAN_OPTIONS, STAGES,
       path: req.path, query: req.query, flash: req.query.ok || null, error: req.query.err || null
     });
     next();
@@ -164,10 +164,32 @@ function createCrmApp({
   }));
 
   app.get('/pipeline', h(async (req, res) => {
-    const columns = [];
-    for (const status of LEAD_STATUSES) columns.push({ status, ...await crm.listLeads(req.user, { status, sort: 'recent', pageSize: 50 }) });
-    res.render('pipeline', { columns });
+    res.render('pipeline', { columns: await crm.pipelineBoard(req.user) });
   }));
+
+  // Kanban move. JSON for drag-and-drop (fetch), redirect for plain forms.
+  app.post('/leads/:waId/stage', h(async (req, res) => {
+    const waId = util.cleanWaId(req.params.waId);
+    const wantsJson = (req.get('accept') || '').includes('application/json');
+    const input = {
+      visitAt: util.localInputToIso(req.body.visit_at), plan: req.body.plan, amount: req.body.amount,
+      lostReason: req.body.lost_reason, note: req.body.note
+    };
+    try {
+      await crm.moveToStage(req.user, waId, req.body.stage, input);
+    } catch (err) {
+      if (wantsJson && err instanceof HttpError) return res.status(err.status).json({ ok: false, error: err.message });
+      throw err;
+    }
+    if (wantsJson) return res.json({ ok: true, stage: req.body.stage });
+    res.redirect(withOk('/pipeline', `Moved to ${STAGES[req.body.stage]}.`));
+  }));
+
+  // SortableJS (MIT) for drag-and-drop, served from node_modules (CSP allows only same-origin scripts).
+  app.get('/static/vendor/sortable.min.js', (req, res) => {
+    res.set('Cache-Control', config.isProd ? 'public, max-age=86400' : 'no-cache');
+    res.sendFile(path.join(path.dirname(require.resolve('sortablejs/package.json')), 'Sortable.min.js'));
+  });
 
   app.get('/leads/:waId', h(async (req, res) => {
     const waId = util.cleanWaId(req.params.waId);

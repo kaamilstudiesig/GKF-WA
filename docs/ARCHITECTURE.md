@@ -16,7 +16,7 @@ How the system works today, and the architecture we are moving to. **Lead Engine
 
 ## 1. The idea in one picture
 
-Marketing agencies run Meta ads for local businesses (gyms first). Leads come in on WhatsApp or through lead forms. An AI answers in seconds and qualifies them. Hot leads go to a salesperson with a timer. Every outcome (contacted, visited, joined + ₹) is recorded and sent back to Meta so the ads learn who actually buys.
+Marketing agencies run Meta ads for businesses of any kind. Leads come in on WhatsApp or through lead forms. An AI answers in seconds, qualifies them and scores how likely they are to buy. Hot leads go to a salesperson with a timer. The real sale is captured (payment link, AI-suggested outcome or one tap). A high score sends Meta an early qualified event within minutes, and every real outcome (visited, won + ₹) follows, so the ads learn who actually buys. Why this loop, not the chatbot, is the product: [PRODUCT_PLAN.md §3](PRODUCT_PLAN.md#3-where-we-win-the-moat).
 
 ```mermaid
 flowchart LR
@@ -25,8 +25,9 @@ flowchart LR
     A2[Lead Ads forms]
   end
   subgraph Engine["Lead Engine"]
-    B[AI front desk<br/>answers in seconds, qualifies]
+    B[AI front desk<br/>answers in seconds, qualifies, scores]
     C[Sales floor<br/>assign, 5-min timer, outcomes]
+    P[Proof of sale<br/>payment links, AI-suggested outcomes]
     D[(Lead + outcome data)]
     E[Owner & agency analytics]
   end
@@ -40,8 +41,10 @@ flowchart LR
   B -->|hot lead| C
   B --> D
   C --> D
+  P --> D
   D --> E
-  D -->|lead / visit / purchase events| M2
+  B -->|early qualified event| M2
+  D -->|visit / purchase events, real ₹| M2
   M3 -->|ad spend| E
   M2 -.->|better targeting| A2
 ```
@@ -222,7 +225,8 @@ src/
   app.js                 Express app; Host router (bot vs CRM), https redirect
   server.js              boot: migrations, workers, graceful shutdown
   config/env.js          every setting, from environment variables
-  config/gymConfig.js    GKF facts + AI system prompt (per-client data later)
+  config/gymConfig.js    live view of the business profile + AI system prompt
+  config/verticals.js    business-type presets (selling method, stages)
   controllers/           webhook verify + receive
   middleware/            signature check, rate limit
   workers/               queueWorker base, inbound (webhookWorker), outbound
@@ -286,7 +290,8 @@ Key decisions:
 - **Tenant = one business.** Every table gets `tenant_id`; Postgres row-level security makes cross-tenant leaks impossible even with a buggy query.
 - **Routing by `phone_number_id`.** All clients' WhatsApp numbers point at one webhook; the payload's `metadata.phone_number_id` picks the tenant.
 - **Secrets per tenant**, encrypted in the database (business tokens from Embedded Signup), never in environment variables.
-- **Business profile in the database** replaces `gymConfig.js`. The prompt and fixed answers are generated from it. Vertical packs (gym, clinic, salon, coaching, real estate) give defaults.
+- **Business profile in the database** (done, K10). The prompt and fixed answers are generated from it. Business-type presets give defaults; the product stays industry-agnostic, so a new kind of business is data, never a code fork.
+- **The bot is optional.** A client may use Meta Business Agent for first replies on a Cloud API number; we still ingest the conversation and run everything after it (sales floor, proof of sale, reports, Conversions API).
 - **Lead identity:** matched by BSUID first, then phone; send to the phone when known, else to the BSUID (done, see [META_PLATFORM.md](META_PLATFORM.md#5-usernames-and-bsuid-identity-change)). With tenants, BSUIDs are per business portfolio, so the lookup is per tenant.
 - **Fair queues.** One client's ad spike must not delay others: claim work round-robin across tenants, and keep per-tenant AI budgets and caps.
 - **Same stack until ~50 clients.** One app, one Postgres, more dynos. Move hosting to an India region when the first paying non-GKF client signs.
@@ -300,5 +305,6 @@ Ordered by risk; owners and timing are in [PRODUCT_PLAN.md](PRODUCT_PLAN.md) and
 | Single tenant (one profile row, one number) | Business facts are now data (K10), but one deployment still serves one business until K8 adds tenants. |
 | No speed-to-lead timer or live board (outcomes are logged since R1) | Hot leads can sit unanswered unnoticed. |
 | No templates for leads outside the 24h window | Can't win back no-shows and quiet leads. |
-| No Lead Ads webhook / Conversions API | Missing the strongest Meta optimisation loop. |
+| Conversions API built (K7) but only for click-to-WhatsApp, and only on real outcomes | No early signal from the chat score yet (K12); no Lead Ads webhook or Conversion Leads stages (K6). |
+| Sales are only recorded when staff tap an outcome | The whole loop depends on proof of sale; payment links and AI-suggested outcomes (K11) aren't built. |
 | One dyno in the EU, student credits | Not suitable for paying clients' data or uptime. |

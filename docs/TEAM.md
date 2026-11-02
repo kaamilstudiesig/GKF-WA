@@ -4,16 +4,19 @@ Krishna: start here. This page explains the idea, how we work, and who builds wh
 
 ## The idea in 60 seconds
 
-Local businesses (gyms first) pay agencies to run Instagram/Facebook ads. The leads land on WhatsApp, and then most of them die: replies are slow, sales forgets to call, and nobody knows which ad produced paying customers.
+Businesses of every kind pay agencies to run Facebook/Instagram ads for leads. The leads land on WhatsApp or in lead forms, and then most of them die: replies are slow, sales forgets to follow up, and nobody knows which ad produced paying customers. Meta can't see the sale either, so it keeps finding people who enquire but never buy.
 
-We fix the whole path:
+We fix the whole path from ad to sale, for any business that runs Meta ads (we're not tied to an industry):
 
-1. **AI front desk:** replies on WhatsApp in seconds, in English, Hinglish or Kannada, answers from the business's real facts, and qualifies (goal → experience → timing → visit).
-2. **Sales floor:** hot leads go to a salesperson with a 5-minute timer, escalation, and one-tap outcome logging (called, visited, joined + ₹, lost + reason).
-3. **Analytics:** the owner and agency see the funnel, speed to lead, and **revenue and cost per member for each ad**.
-4. **Meta loop:** outcomes go back to Meta (Conversions API), so ads get shown to people who actually join.
+1. **Capture:** an AI front desk replies on WhatsApp in seconds, in the lead's language, answers from the business's real facts, qualifies and scores the lead.
+2. **Convert:** hot leads go to a salesperson with a 5-minute timer, escalation and one-tap outcomes.
+3. **Prove the sale:** the real sale (won + ₹) is captured with as little staff effort as possible: payment links, AI-suggested outcomes, one tap from alerts.
+4. **Prove the ads:** the owner and agency see revenue and cost per customer for each ad.
+5. **Signal:** a high chat score sends Meta an early qualified event within minutes, and the real outcome follows (Conversions API), so ads find people who actually buy.
 
-We sell it through marketing agencies as a monthly product. Goldkraft Fitness (GKF) in J.P. Nagar, Bengaluru is the live pilot. The bot and CRM have been running in production since 29 Oct 2026.
+**Our edge isn't the chatbot.** Meta now ships its own AI agent for WhatsApp businesses, and other WhatsApp platforms already send chat-based conversion events. Our edge is what happens after the chat: real sales outcomes, an early signal trained on them across all clients, and a record the agency and client both trust. Details: [PRODUCT_PLAN.md §3](PRODUCT_PLAN.md#3-where-we-win-the-moat).
+
+We sell it mainly through marketing agencies as a monthly product. Goldkraft Fitness (GKF), a gym in J.P. Nagar, Bengaluru, is the live pilot because it was the first business we had access to; gyms aren't the target market. The bot and CRM have been running in production since 29 Oct 2026.
 
 Read next, in order:
 
@@ -34,46 +37,70 @@ We split by **area of the code**, so we rarely edit the same files.
 
 Shared contracts (agree in a PR before building on them): new tables both sides use, and the events the CRM emits that the bot side sends to Meta.
 
-## Work split by phase
+## Work split by stage
 
-Phases and "done when" are in [PRODUCT_PLAN.md §4](PRODUCT_PLAN.md#4-roadmap).
+No dates: we move as fast as we can, and a stage is done when its "done when" in [PRODUCT_PLAN.md §6](PRODUCT_PLAN.md#6-order-of-work) is true. Tasks within a stage can run in parallel.
 
-### Now: P0 + Phase A (first ~3 weeks)
+### Done
 
 | # | Task | Owner | Notes |
 | --- | --- | --- | --- |
-| K1 | **BSUID-safe lead identity.** Store Meta's `user_id`, match by BSUID then phone, send via `recipient` when the phone is hidden, follow ID changes | Kaamil | Done (live 30 Oct). See [META_PLATFORM.md §5](META_PLATFORM.md#5-usernames-and-bsuid-identity-change) |
-| K2 | Alert on outbound send failures (Telegram + Sentry) and on `account_update` webhooks | Kaamil | In review (PR). After the 30 Oct token incident |
-| K3 | Tech Provider: business verification (approved), App Review submission, privacy/terms/data-deletion pages + delete-lead script | Kaamil | Pages in PR; App Review steps in [META_APP_REVIEW.md](META_APP_REVIEW.md) |
-| R1 | **Outcomes:** `crm_lead_outcomes` table + one-tap outcome UI on the lead page (incl. Joined: plan + ₹, Lost: reason list) + automatic next follow-up | Kaamil (Krishna busy) | In review. Built as described in "Lead outcomes" below |
-| R2 | **Hot-lead queue:** shifts, round-robin auto-assign of new hand-offs, 5-min timer, escalation to manager | Krishna | Uses `handoffs` + `crm_lead_assignments` |
-| R3 | **Live board:** server-sent events so the kanban pipeline (built by Kaamil: journey stages, drag-and-drop, Move sheet) updates for everyone in real time; overdue cards red | Krishna | No websockets or extra services |
-| R4 | **PWA:** manifest + service worker so sales installs the CRM on their phone; mobile-first lead page | Krishna | |
-| K4 | Alert buttons: Telegram hand-off alerts get tap buttons (✅ Log outcome → `/leads/<key>#outcome`, 📋 Open lead, 💬 WhatsApp) | Kaamil | In review. Needs R1 to add `id="outcome"` (contract below) |
+| K1 | **BSUID-safe lead identity.** Store Meta's `user_id`, match by BSUID then phone, send via `recipient` when the phone is hidden, follow ID changes | Kaamil | Live 30 Oct. See [META_PLATFORM.md §5](META_PLATFORM.md#5-usernames-and-bsuid-identity-change) |
+| K3 | Tech Provider: business verification (approved), privacy/terms/data-deletion pages + delete-lead script | Kaamil | App Review steps in [META_APP_REVIEW.md](META_APP_REVIEW.md) |
+| R1 | **Outcomes:** `crm_lead_outcomes` table + one-tap outcome UI + automatic next follow-up | Kaamil | See "Lead outcomes" below |
+| K4 | Alert buttons: Telegram hand-off alerts get tap buttons (✅ Log outcome, 📋 Open lead, 💬 WhatsApp) | Kaamil | Contract below |
+| K7 | Conversions API sender: Visit booked → QualifiedLead, Joined → Purchase (₹), matched by `ctwa_clid` or hashed phone + Page ID; each outcome sent once | Kaamil | On when `META_DATASET_ID` is set |
+| K10 | Business profile in DB → generated prompt + fixed answers; business-type presets; owner's Business settings page | Kaamil | |
 
-### Next: Phase B + C
+### 1. Prove the loop on GKF
+
+| # | Task | Owner | Notes |
+| --- | --- | --- | --- |
+| K2 | Alert on outbound send failures (Telegram + Sentry) and on `account_update` webhooks | Kaamil | After the 30 Oct token incident |
+| K7b | Turn on the Conversions API in production (dataset, `whatsapp_business_manage_events`), verify events in Events Manager | Kaamil | |
+| R5 | Analytics: funnel, speed to lead, **logging rate**, per salesperson, lost reasons | Krishna | Baseline numbers for the GKF case study |
+
+### 2. Proof of sale
+
+| # | Task | Owner | Notes |
+| --- | --- | --- | --- |
+| K11 | **Payment links:** staff send a Razorpay/UPI link from the CRM; the `payment_link.paid` webhook logs Won + ₹ on the lead and triggers the Conversions API event | Kaamil | The lead key goes in the link's `reference_id`/`notes` |
+| K13 | **AI-suggested outcomes:** the reply call also returns a suggested outcome ("paid", "visit booked Sat 7am"); staff confirm with one tap. The AI never logs a sale on its own | Kaamil | Still one AI call per reply |
+| R2 | **Hot-lead queue:** shifts, round-robin auto-assign of new hand-offs, 5-min timer, escalation to manager | Krishna | Uses `handoffs` + `crm_lead_assignments` |
+| R3 | **Live board:** server-sent events so the kanban pipeline updates for everyone in real time; overdue cards red | Krishna | No websockets or extra services |
+| R4 | **PWA:** manifest + service worker so sales installs the CRM on their phone | Krishna | |
+| R11 | Unlogged-lead nudges: daily list per salesperson of hot leads with no outcome | Krishna | |
+
+### 3. Revenue per ad
 
 | # | Task | Owner |
 | --- | --- | --- |
-| R5 | Analytics pages: funnel, speed to lead, per salesperson, lost reasons | Krishna |
-| R6 | Per-ad report: leads, joins, ₹, cost per member, ROAS (uses K5 data) | Krishna |
 | K5 | Marketing API spend import per ad (daily job) | Kaamil |
-| K6 | Lead Ads `leadgen` webhook → create lead → instant WhatsApp | Kaamil |
-| K7 | Conversions API sender: Visit booked → QualifiedLead, Joined → Purchase (₹), matched by `ctwa_clid` or hashed phone + Page ID; each outcome sent once (`crm_lead_outcomes.meta_status`) | Kaamil (in review) |
-| R7 | Nightly digest content + weekly agency report page | Krishna |
+| R6 | Per-ad report: leads, qualified, customers, ₹, cost per customer, ROAS, lead-quality grade per creative | Krishna |
+| R7 | Nightly digest + weekly agency report page | Krishna |
 
-### Later: Phase D (platform)
+### 4. Early signal
+
+| # | Task | Owner |
+| --- | --- | --- |
+| K12 | **Lead score from the chat** (intent, budget, timing, visit booked) stored on the lead; above a tuned threshold, send an early `QualifiedLead` event within minutes; track how many scored leads actually buy | Kaamil |
+| K6 | Lead Ads `leadgen` webhook → create lead → instant WhatsApp; send Conversion Leads stages daily | Kaamil |
+
+### 5–6. First paying agency, then platform
 
 | # | Task | Owner |
 | --- | --- | --- |
 | K8 | Tenants: `tenant_id` everywhere, row-level security, webhook routing by `phone_number_id`, per-tenant budgets and fair queues | Kaamil |
 | K9 | Embedded Signup v4 backend: code → token exchange, number registration, coexistence states | Kaamil |
-| K10 | Business profile in DB → generated prompt + fixed answers; vertical packs; owner's Business settings page | Kaamil (in review) |
-| R8 | Onboarding wizard UI (profile, preview chat, team, test checklist) | Krishna |
+| R8 | Onboarding wizard UI (profile, business-type preset, preview chat, team, dataset check, test checklist) | Krishna |
 | R9 | Agency dashboard + white-label (logo, domain) | Krishna |
 | R10 | Billing UI (Razorpay subscriptions) | Krishna |
 
-Both: line up 3 pilot gyms through agency friends while Phase D is built.
+Both: line up a partner agency with a few paying clients (any industry) while this is built.
+
+### 7. Compounding
+
+Cross-client benchmarks, score trained on every client's outcomes, outcome-based pricing pilot, win-back templates, Instagram capture (comment/DM → WhatsApp). Owners decided when we get there.
 
 ## Contract: the outcome link (K4 ↔ R1)
 
@@ -98,7 +125,7 @@ What each tap does (`Crm.logOutcome` / `outcomePlan` in `crm/src/crm.js`):
 
 Each new outcome closes the previous automatic follow-up. A converted lead is never moved back to hot by a later outcome. Lost reasons: price, distance, timing, joined_elsewhere, no_response, not_interested, other. Plan names are suggested from the business config.
 
-Next for R5/R6 (analytics): count outcomes per salesperson and per ad (`leads.metadata.referral.source_id`), revenue = `SUM(amount_inr)` of `joined` outcomes.
+For R5/R6 (analytics): count outcomes per salesperson and per ad (`leads.metadata.referral.source_id`), revenue = `SUM(amount_inr)` of `joined` outcomes. "Joined" is GKF's label for a won sale; other business types may name it differently through their preset.
 
 ## How we work
 

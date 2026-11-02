@@ -1,18 +1,21 @@
 # Lead Engine
 
-**Connects digital marketing and sales with AI, on WhatsApp.** Ads bring leads; an AI front desk answers in seconds and qualifies them; the sales team is pushed to follow up fast and log outcomes; owners and agencies see which ads produced paying customers; and those outcomes flow back to Meta so the ads improve.
+**The revenue layer between Meta ads and sales.** For any business that runs Meta ads to get leads, it proves which ad made money and tells Meta who is likely to buy before they pay.
 
-Built for local businesses in India (gyms first), sold through marketing agencies. *Lead Engine* is a working name.
+Ads bring leads; an AI front desk answers on WhatsApp in seconds and qualifies them; the sales team is pushed to follow up and the sale is captured; owners and agencies see ₹ revenue and cost per customer per ad; and an early buying signal plus the real outcome flow back to Meta so the ads find buyers, not just leads.
 
-**Status:** live pilot with Goldkraft Fitness, Bengaluru, since 29 Oct 2026. Bot at `wa.goldkraftfitness.com`, staff CRM at `crm.goldkraftfitness.com`.
+Not tied to any industry: sold mainly through marketing agencies, for all their lead-ad clients. *Lead Engine* is a working name. Why this is the edge (and why the chatbot alone isn't): [PRODUCT_PLAN.md §3](docs/PRODUCT_PLAN.md#3-where-we-win-the-moat).
+
+**Status:** live pilot with Goldkraft Fitness (a gym in Bengaluru, our first client, not our target market) since 29 Oct 2026. Bot at `wa.goldkraftfitness.com`, staff CRM at `crm.goldkraftfitness.com`.
 
 ```mermaid
 flowchart LR
-  Ads[Meta ads<br/>click-to-WhatsApp, lead forms] --> Bot[AI front desk<br/>seconds, 3 languages]
-  Bot -->|hot lead| Sales[Sales floor<br/>5-min timer, one-tap outcomes]
-  Bot & Sales --> Data[(Leads + outcomes)]
-  Data --> Reports[Owner & agency analytics<br/>₹ per ad]
-  Data -->|Conversions API| Ads
+  Ads[Meta ads<br/>click-to-WhatsApp, lead forms] --> Bot[AI front desk<br/>seconds, lead score]
+  Bot -->|hot lead| Sales[Sales floor<br/>timer, one-tap outcomes]
+  Sales --> Proof[Proof of sale<br/>payment links, ₹]
+  Bot & Sales & Proof --> Data[(Leads + outcomes)]
+  Data --> Reports[Owner & agency analytics<br/>₹ and cost per customer per ad]
+  Data -->|early signal + real outcome<br/>Conversions API| Ads
 ```
 
 ## What works today
@@ -23,15 +26,15 @@ flowchart LR
 
 ## What's next
 
-Sales floor → owner analytics → Meta loop (Lead Ads, Conversions API) → multi-client platform with self-serve onboarding. See the [roadmap](docs/PRODUCT_PLAN.md#4-roadmap).
+Prove the loop on GKF → proof of sale (payment links, AI-suggested outcomes) → revenue per ad → early buying signal to Meta → first paying agency → multi-client platform. See the [order of work](docs/PRODUCT_PLAN.md#6-order-of-work).
 
 ## Docs
 
 | Doc | Read it for |
 | --- | --- |
 | [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | How it works, with diagrams: message flow, reply logic, data model, code map, target multi-client design |
-| [docs/PRODUCT_PLAN.md](docs/PRODUCT_PLAN.md) | Market, features, roadmap, cost plan, pricing, risks, metrics |
-| [docs/META_PLATFORM.md](docs/META_PLATFORM.md) | Meta facts that constrain us: onboarding, pricing, limits, AI policy, BSUID, APIs we'll use |
+| [docs/PRODUCT_PLAN.md](docs/PRODUCT_PLAN.md) | Vision, moat, competition, features, order of work, cost plan, pricing, risks, metrics |
+| [docs/META_PLATFORM.md](docs/META_PLATFORM.md) | Meta facts that constrain us: onboarding, pricing, limits, AI policy, BSUID, Meta's own AI agent, Conversions API requirements, data restrictions, Instagram rules |
 | [docs/META_APP_REVIEW.md](docs/META_APP_REVIEW.md) | Becoming a Meta Tech Provider: App Review settings, videos, permission texts |
 | [docs/ONBOARDING.md](docs/ONBOARDING.md) | How a client goes live (target self-serve flow + today's manual steps) |
 | [docs/OPERATIONS.md](docs/OPERATIONS.md) | Local dev, config vars, tests, deploy, backups, incident runbook |

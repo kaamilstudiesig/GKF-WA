@@ -1,16 +1,16 @@
 # Client onboarding
 
-How a new business goes live: the target self-serve flow (Phase D) and the manual flow we use until then.
+How a new business goes live: the target self-serve flow (the Platform stage in [PRODUCT_PLAN.md](PRODUCT_PLAN.md#6-order-of-work)) and the manual flow we use until then. Any business that runs Meta ads for leads can be onboarded; the business type only picks a preset.
 
 ## Target flow (under an hour)
 
 ```mermaid
 flowchart LR
-  S1[Agency creates client<br/>picks vertical pack] --> S2[Client connects WhatsApp<br/>Embedded Signup v4<br/>new number or coexistence]
+  S1[Agency creates client<br/>picks business-type preset] --> S2[Client connects WhatsApp<br/>Embedded Signup v4<br/>new number or coexistence]
   S2 --> S3[Business profile wizard<br/>hours, prices, location,<br/>FAQs, languages, tone]
   S3 --> S4[Preview chat<br/>see how the bot answers]
   S4 --> S5[Team: owner, managers,<br/>sales + shifts]
-  S5 --> S6[Connect Page + ad account<br/>Lead Ads, spend, Conversions API]
+  S5 --> S6[Connect Page + ad account<br/>Lead Ads, spend, Conversions API,<br/>dataset restriction check]
   S6 --> S7[Test checklist<br/>10 scripted messages pass]
   S7 --> S8[Go live<br/>agency launches ads]
   S8 --> S9[Week-1 review<br/>auto report]
@@ -18,15 +18,15 @@ flowchart LR
 
 | Step | Who | What happens in the system |
 | --- | --- | --- |
-| 1. Create client | Agency | New tenant with defaults from the vertical pack |
+| 1. Create client | Agency | New tenant with defaults from the business-type preset |
 | 2. Connect WhatsApp | Client (Facebook login) | Embedded Signup v4 returns a code → we exchange it for a business token (encrypted per tenant), register the number (within 14 days), subscribe the app to the WABA webhooks. Coexistence: number shows "syncing" up to 24h |
 | 3. Business profile | Client or agency | Stored in the database; generates the AI prompt and fixed answers |
 | 4. Preview | Client | Runs the real prompt in a sandbox chat (counts against our AI budget, capped) |
 | 5. Team | Owner | Invites by email; first login forces a password change |
-| 6. Ads | Agency | Page subscribed to `leadgen`; ad account read access for spend; dataset for Conversions API |
-| 7. Test | Us / agency | Price, trial, Hinglish, regional language, injury, discount, "call me", unknown facility, "ok thanks", image |
+| 6. Ads | Agency | Page subscribed to `leadgen`; ad account read access for spend; dataset for Conversions API; check the dataset isn't restricted (health and wellness, Special Ad Categories, see [META_PLATFORM.md §9](META_PLATFORM.md#9-data-restrictions-by-advertiser-category)) and tell the client what that means |
+| 7. Test | Us / agency | Price, trial or demo, Hinglish, regional language, sensitive topic, discount, "call me", unknown fact, "ok thanks", image |
 | 8. Live | Agency | Click-to-WhatsApp and/or Lead Ads campaigns pointed at the number |
-| 9. Review | Us + owner | Speed to lead, funnel, best ad, bot hand-off reasons |
+| 9. Review | Us + owner | Speed to lead, logging rate, funnel, best ad by cost per customer, bot hand-off reasons |
 
 ## Manual flow (today, until Embedded Signup)
 
@@ -41,4 +41,4 @@ This is how GKF was set up. It takes a few hours and needs access to the client'
 7. Ice breakers (Conversational Automation API) and catalog, if used.
 8. Run the test checklist above from a phone that has never chatted with the number.
 
-Today this setup serves one business per deployment. Multi-client support is Phase D in [PRODUCT_PLAN.md](PRODUCT_PLAN.md).
+Today this setup serves one business per deployment. Multi-client support is the Platform stage in [PRODUCT_PLAN.md](PRODUCT_PLAN.md#6-order-of-work). Until then, a paying agency's first clients can each get a separate deployment.

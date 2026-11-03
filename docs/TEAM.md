@@ -41,6 +41,23 @@ Shared contracts (agree in a PR before building on them): new tables both sides 
 
 No dates: we move as fast as we can, and a stage is done when its "done when" in [PRODUCT_PLAN.md §6](PRODUCT_PLAN.md#6-order-of-work) is true. Tasks within a stage can run in parallel.
 
+### 0. Next client fast-track (do this first)
+
+A possible large client wants the chatbot soon. Until this stage is done, it comes before every other task. We do **not** wait for full multi-tenancy (K8). Each new client gets its **own deployment** (own Heroku app and Postgres) from the same code. K8 comes later and moves these clients into one app.
+
+| # | Task | Owner | Done when |
+| --- | --- | --- | --- |
+| K14 | **Remove GKF hard-coding from the bot.** Business name, legal pages, default replies and env defaults come from the business profile or config. GKF stays only as seed data | Kaamil | `grep -ri "goldkraft\|gkf" src` finds only seed and test data |
+| K15 | **New-client script** (`scripts/new-client.js`): create the Heroku app + Postgres, set config vars from a checklist file, run migrations, create the owner login, print the webhook URL and verify token | Kaamil | A second app goes live from one command and one config file |
+| K16 | **General business-type preset** in `verticals.js` (services / appointments / retail) plus the client's own type, so the AI sells correctly for a non-gym business | Kaamil | Prompt preview in Business settings reads right for the client's business |
+| K17 | **Per-client safety:** AI budget caps, client name in every ops alert and Sentry event, separate Telegram groups | Kaamil | An alert always says which client it is about |
+| K18 | **Meta access path:** written steps to get WhatsApp access for a business that is not ours, before App Review approval (partner access to their WABA, or a system-user token from their own Business Manager). Check the 250 / 1K message tier and display-name approval early | Kaamil | Steps tested once on a test business |
+| R12 | **White-label CRM:** brand name, logo and colour from the business profile (login, header, page titles, reports text). Remove "GKF" and "Goldkraft" from all views; make the theme name generic | Krishna | No GKF text in `crm/views`; GKF still looks the same |
+| R13 | **Team setup for a big client:** bulk-add staff (CSV or a multi-row form), managers with teams, first-login password change | Krishna | Owner adds 20 staff in a few minutes |
+| R2 | Hot-lead queue (moved up from stage 2): a big team needs auto-assign and the 5-minute timer from day one | Krishna | Hand-offs reach a salesperson with no manual assigning |
+
+Order: K14 + R12 first (no GKF name in front of the new client), then K15, K16, R13, R2, then K17/K18 in parallel. Ask the client early: business type, number of staff, existing WhatsApp number or new one, who owns their Meta Business Manager.
+
 ### Done
 
 | # | Task | Owner | Notes |
@@ -66,7 +83,6 @@ No dates: we move as fast as we can, and a stage is done when its "done when" in
 | --- | --- | --- | --- |
 | K11 | **Payment links:** staff send a Razorpay/UPI link from the CRM; the `payment_link.paid` webhook logs Won + ₹ on the lead and triggers the Conversions API event | Kaamil | The lead key goes in the link's `reference_id`/`notes` |
 | K13 | **AI-suggested outcomes:** the reply call also returns a suggested outcome ("paid", "visit booked Sat 7am"); staff confirm with one tap. The AI never logs a sale on its own | Kaamil | Still one AI call per reply |
-| R2 | **Hot-lead queue:** shifts, round-robin auto-assign of new hand-offs, 5-min timer, escalation to manager | Krishna | Uses `handoffs` + `crm_lead_assignments` |
 | R3 | **Live board:** server-sent events so the kanban pipeline updates for everyone in real time; overdue cards red | Krishna | No websockets or extra services |
 | R4 | **PWA:** manifest + service worker so sales installs the CRM on their phone | Krishna | |
 | R11 | Unlogged-lead nudges: daily list per salesperson of hot leads with no outcome | Krishna | |

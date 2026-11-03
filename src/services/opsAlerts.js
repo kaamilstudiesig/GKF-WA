@@ -1,6 +1,7 @@
 const notifyService = require('./notifyService');
 const { classify } = require('./metaErrors');
 const logger = require('../utils/logger');
+const env = require('../config/env');
 const { captureMessage } = require('../utils/sentry');
 
 const escapeHtml = s => String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
@@ -78,7 +79,7 @@ class OpsAlerts {
       if (this.unknownFailures.length >= 3) {
         return this.alert('meta:burst', 'Several WhatsApp sends failed', [
           `${this.unknownFailures.length} failures in 10 minutes. Last: ${codeText}${c.title ? `: ${c.title}` : ''}`,
-          'Check the logs: heroku logs -a gkf-wa | grep "send failed"'
+          `Check the logs: heroku logs -a ${env.herokuApp} | grep "send failed"`
         ]);
       }
     }

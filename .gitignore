@@ -8,3 +8,7 @@ crm/seed/users.json
 
 # Built by npm run build:css (Tailwind + daisyUI)
 crm/public/css/app.css
+
+# Client deployment files hold secrets. Only the example is committed.
+clients/*.json
+!clients/example.json

@@ -187,7 +187,8 @@ function initSentry() {
     SentryLib.init({
       dsn,
       environment: env.nodeEnv || 'development',
-      release: 'gkf-wa@1.0.0',
+      release: `${env.clientId}@${process.env.HEROKU_RELEASE_VERSION || 'dev'}`,
+      initialScope: { tags: { client: env.clientId } },
       tracesSampleRate: env.nodeEnv === 'production' ? 0.2 : 1.0,
       beforeSend: sanitizeSentryEvent
     });
@@ -195,7 +196,7 @@ function initSentry() {
     isInitialized = true;
     logger.info('Sentry crash & performance monitoring successfully initialized', {
       environment: env.nodeEnv,
-      release: 'gkf-wa@1.0.0'
+      client: env.clientId
     });
     return true;
   } catch (err) {

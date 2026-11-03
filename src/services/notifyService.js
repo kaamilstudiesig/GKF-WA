@@ -1,5 +1,6 @@
 const axios = require('axios');
 const logger = require('../utils/logger');
+const gymConfig = require('../config/gymConfig');
 
 const REASON_LABELS = {
   ready_to_book: 'Ready to book a trial',
@@ -72,6 +73,8 @@ class NotifyService {
   async send(text, { ops = false, buttons = [] } = {}) {
     if (this.sendOverride) return this.sendOverride(text, { ops, buttons });
     const { token, chatId, opsChatId } = this.config;
+    // Ops groups can be shared by several client deployments: say which client it is.
+    if (ops) text = `<b>[${escapeHtml(gymConfig.gymName)}]</b> ${text}`;
     const body = { chat_id: ops ? opsChatId : chatId, text, parse_mode: 'HTML', disable_web_page_preview: true };
     if (buttons.length) body.reply_markup = { inline_keyboard: buttons };
     await axios.post(`https://api.telegram.org/bot${token}/sendMessage`, body, { timeout: 5000 });

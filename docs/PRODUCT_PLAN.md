@@ -153,10 +153,11 @@ When we add Instagram, it's a narrow capture feature: a comment or DM gets one p
 
 ## 6. Order of work
 
-There are no dates. Each stage ships on GKF first and moves on when its "done when" is true. Owners and task IDs are in [TEAM.md](TEAM.md).
+Stage 0 comes first and pauses the other stages until it is done. After that there are no dates. Each stage ships on GKF first and moves on when its "done when" is true. Owners and task IDs are in [TEAM.md](TEAM.md).
 
 | # | Stage | Ships | Done when |
 | --- | --- | --- | --- |
+| 0 | **Next client fast-track (top priority, Nov 2026)** | A large client wants the bot soon. GKF-specific text removed from code and CRM, a one-command new-client deployment, a general business-type preset, per-client cost caps and alerts, a written Meta access path. See [ONBOARDING.md](ONBOARDING.md#fast-track-the-next-client-now) | The new client is live on its own deployment in one day, with no code changes for their business |
 | 1 | **Prove the loop on GKF** | Conversions API on in production (K7), baseline metrics, logging-rate tracking | We have before/after speed to lead, logging rate and cost per customer for GKF |
 | 2 | **Proof of sale** | Payment links → automatic Won + ₹ (K11), AI-suggested outcomes, unlogged-lead nudges, sales-floor timer and escalation (R2) | 80%+ of sales recorded without chasing staff |
 | 3 | **Revenue per ad** | Marketing API spend import (K5), per-ad revenue and cost-per-customer report (R6), lead-quality grade per creative | An owner or agency answers "which ad made us money" on one screen |

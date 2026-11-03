@@ -2,6 +2,29 @@
 
 How a new business goes live: the target self-serve flow (the Platform stage in [PRODUCT_PLAN.md](PRODUCT_PLAN.md#6-order-of-work)) and the manual flow we use until then. Any business that runs Meta ads for leads can be onboarded; the business type only picks a preset.
 
+## Fast-track the next client (now)
+
+Until the Platform stage exists, each new client runs on **its own deployment** of this code. This keeps their data apart and needs no multi-tenant work. Tasks K14–K18 and R12–R13 in [TEAM.md](TEAM.md#0-next-client-fast-track-do-this-first) make it fast.
+
+**Ask the client first:**
+
+1. What is the business type, and what do customers buy or book?
+2. Which WhatsApp number? A new number is fastest. A number in the WhatsApp Business app needs coexistence.
+3. Who owns the Meta Business Manager and the ad account? Is the business verified?
+4. How many staff use the CRM? Who are the managers?
+5. Which languages do customers write in?
+6. Their facts: address, hours, prices, policies, FAQs, tone.
+
+**Then, per client:**
+
+1. Run `scripts/new-client.js` (K15) with the client config file: new Heroku app, Postgres, config vars, migrations, owner login.
+2. Connect WhatsApp by the Meta access path (K18) and the manual steps below (steps 1–4).
+3. Fill **Business settings** with the client's facts and business type. Read the prompt preview.
+4. Add staff (R13). Make a Telegram group for their alerts.
+5. Run the test checklist from a fresh phone. Then the client goes live.
+
+Costs: each extra deployment adds about $12/month (dyno + Postgres) and its own AI spend. Set the AI budget caps before go-live.
+
 ## Target flow (under an hour)
 
 ```mermaid

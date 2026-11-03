@@ -20,6 +20,19 @@ const gym = {
     'Visit (which day they can come for the trial)'
   ],
   goalQuestion: 'fat loss ya muscle',
+  // Words for the fixed (free) replies in src/services/deterministicRouter.js.
+  words: {
+    visit: { enA: 'a trial', hi: 'trial', kn: 'ಟ್ರಯಲ್' },
+    staff: { en: 'a coach', hi: 'coach', hiWill: 'dega', kn: 'ಕೋಚ್' },
+    plans: { en: 'membership plans', hi: 'membership plans', kn: 'ಸದಸ್ಯತ್ವ ಯೋಜನೆಗಳು' },
+    pricesAsk: {
+      en: "Longer plans work out cheaper per month. What's your main goal, fat loss or muscle? I'll tell you which plan fits.",
+      hi: 'Lamba plan per month sasta padta hai. Aapka main goal kya hai, fat loss ya muscle?',
+      kn: 'ದೀರ್ಘ ಯೋಜನೆ ತಿಂಗಳಿಗೆ ಕಡಿಮೆ ಬೀಳುತ್ತದೆ. ನಿಮ್ಮ ಮುಖ್ಯ ಗುರಿ ಏನು, ತೂಕ ಇಳಿಕೆಯೋ ಮಸಲ್ ಬೆಳವಣಿಗೆಯೋ?'
+    },
+    bookButton: 'Book a trial',
+    staffButton: 'Talk to a coach'
+  },
   examples(profile) {
     const [a, b] = profile.plans;
     const plansLine = a && b
@@ -36,6 +49,49 @@ const gym = {
   }
 };
 
-const VERTICALS = { gym };
+/**
+ * General preset for any business where people book a visit, call or appointment
+ * (clinics, salons, coaching, real estate, services). Used until a business type
+ * gets its own pack.
+ */
+const services = {
+  type: 'services',
+  label: 'Other business (services, appointments)',
+  noun: 'business',
+  visit: 'visit',
+  staff: 'team member',
+  unknownTopics: 'offers, discounts, staff names, exact availability, anything not listed in the facts',
+  qualify: [
+    'Need (what they want and why now)',
+    'Fit (which plan, service or option matches them)',
+    'Timing (when they want to start or buy)',
+    'Visit (which day they can come in or take a call)'
+  ],
+  goalQuestion: 'aapko kis cheez ki zaroorat hai',
+  words: {
+    visit: { enA: 'a visit', hi: 'visit', kn: 'ಭೇಟಿ' },
+    staff: { en: 'someone from our team', hi: 'humari team', hiWill: 'denge', kn: 'ನಮ್ಮ ತಂಡ' },
+    plans: { en: 'plans and prices', hi: 'plans aur prices', kn: 'ಯೋಜನೆಗಳು ಮತ್ತು ಬೆಲೆಗಳು' },
+    pricesAsk: {
+      en: 'What are you looking for exactly? I will tell you which option fits.',
+      hi: 'Aapko exactly kya chahiye? Main bata dunga kaunsa option sahi rahega.',
+      kn: 'ನಿಮಗೆ ನಿಖರವಾಗಿ ಏನು ಬೇಕು? ಯಾವ ಆಯ್ಕೆ ಸೂಕ್ತ ಎಂದು ತಿಳಿಸುತ್ತೇನೆ.'
+    },
+    bookButton: 'Book a visit',
+    staffButton: 'Talk to us'
+  },
+  examples(profile) {
+    const [a] = profile.plans;
+    const priceLine = a ? `${a.name} is ${a.price}.` : 'Someone from our team will share the prices with you.';
+    return [
+      ['price kya hai?', { reply: `${priceLine} Aapko exactly kis cheez ki zaroorat hai?`, lead: { status: 'contacted', interest: 'price' }, notify_staff: null }],
+      ['I need this soon, maybe this week', { reply: 'That works. What day suits you to come in or take a quick call?', lead: { status: 'qualified', notes: 'Wants it this week' }, notify_staff: null }],
+      ['thursday evening', { reply: 'Done, Thursday evening. Someone from our team will message you shortly to confirm the time.', lead: { status: 'hot', notes: 'Visit Thursday evening' }, notify_staff: { handoff_reason: 'ready_to_book', summary: 'Wants a visit Thursday evening' } }],
+      ['ok thanks', { reply: 'Anytime! Just message here when you are ready.', lead: {}, notify_staff: null }]
+    ];
+  }
+};
+
+const VERTICALS = { gym, services };
 
 module.exports = { VERTICALS, verticalFor: type => VERTICALS[type] || gym };

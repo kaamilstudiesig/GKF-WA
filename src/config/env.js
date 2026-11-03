@@ -46,6 +46,10 @@ const env = {
   gymLongitude: num(process.env.GYM_LONGITUDE, NaN),
 
   // Hostnames that get the staff CRM instead of the bot (comma list, matched without the port).
+  // Short id for this client's deployment (tags alerts, Sentry, backups). One deployment per client until K8.
+  clientId: process.env.CLIENT_ID || 'gkf',
+  // Heroku app name, for commands in alerts. Heroku sets HEROKU_APP_NAME when dyno metadata is on.
+  herokuApp: process.env.HEROKU_APP_NAME || 'gkf-wa',
   crmHosts: (process.env.CRM_HOSTS || 'crm.goldkraftfitness.com,crm.localhost')
     .split(',').map(h => h.trim().toLowerCase()).filter(Boolean),
 

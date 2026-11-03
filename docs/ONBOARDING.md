@@ -15,10 +15,20 @@ Until the Platform stage exists, each new client runs on **its own deployment** 
 5. Which languages do customers write in?
 6. Their facts: address, hours, prices, policies, FAQs, tone.
 
+**Get WhatsApp access (K18).** Our Meta app has not passed App Review yet, so Embedded Signup (K9) is not available. Use one of these paths, in this order:
+
+| Path | How | When |
+| --- | --- | --- |
+| A. Client's own Meta app (recommended now) | In the client's Meta Business: create a Meta app (type Business), add the WhatsApp product, link their WABA and number. Create a system user, give it the WABA (full control) and generate a never-expiring token with all three scopes (`whatsapp_business_messaging`, `whatsapp_business_management`, `catalog_management`). Set the webhook to our `/webhook` URL. They send us the token, app secret and IDs through a password manager, never chat or email | Works today. No App Review needed, because the app and the WABA belong to the same business |
+| B. Partner access to their WABA | Client: Business settings → Accounts → WhatsApp accounts → Assign partner → our business ID. We use our own app and system user | Test once on a test business first. Before App Review, our app may not get access to assets of other businesses |
+| C. Embedded Signup | Client clicks "Connect WhatsApp" and logs in to Facebook | After App Review approval (K9) |
+
+Check early: business verification (a new number can message only 250 people a day until the business is verified), the display name approval, and the message quality rating. A large client often already has a verified business and a higher tier.
+
 **Then, per client:**
 
-1. Run `scripts/new-client.js` (K15) with the client config file: new Heroku app, Postgres, config vars, migrations, owner login.
-2. Connect WhatsApp by the Meta access path (K18) and the manual steps below (steps 1–4).
+1. Copy `clients/example.json` to `clients/<client>.json` and fill it in (the file is git-ignored). Run `npm run new-client -- clients/<client>.json` to see the steps, then add `--run` to do them: Heroku app, Postgres, config vars, CRM domain, deploy. It prints the remaining manual steps.
+2. Connect WhatsApp by path A, B or C above.
 3. Fill **Business settings** with the client's facts and business type. Read the prompt preview.
 4. Add staff (R13). Make a Telegram group for their alerts.
 5. Run the test checklist from a fresh phone. Then the client goes live.

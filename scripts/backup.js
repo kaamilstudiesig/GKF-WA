@@ -33,7 +33,7 @@ async function sendToTelegram(buffer, filename) {
   if (!token || !chatId) throw new Error('TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID must be set (or use --out <file>).');
   const form = new FormData();
   form.append('chat_id', chatId);
-  form.append('caption', `GKF WhatsApp bot backup ${filename}`);
+  form.append('caption', `${process.env.CLIENT_ID || 'gkf'} WhatsApp bot backup ${filename}`);
   form.append('document', new Blob([buffer], { type: 'application/gzip' }), filename);
   const res = await fetch(`https://api.telegram.org/bot${token}/sendDocument`, { method: 'POST', body: form });
   if (!res.ok) throw new Error(`Telegram upload failed: HTTP ${res.status}`);
@@ -42,7 +42,7 @@ async function sendToTelegram(buffer, filename) {
 async function main() {
   const outIdx = process.argv.indexOf('--out');
   const buffer = await createBackup();
-  const filename = `gkf-wa-${new Date().toISOString().replace(/[:.]/g, '-')}.json.gz`;
+  const filename = `${process.env.CLIENT_ID || 'gkf'}-wa-${new Date().toISOString().replace(/[:.]/g, '-')}.json.gz`;
   if (outIdx !== -1) {
     const file = process.argv[outIdx + 1] || filename;
     fs.writeFileSync(file, buffer);

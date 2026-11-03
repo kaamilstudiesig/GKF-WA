@@ -3,18 +3,23 @@
  * Creates a WhatsApp message template through the Cloud API (Meta App Review video 2).
  *   node scripts/create-template.js [trial_confirmation|trial_reminder]
  *   node scripts/create-template.js --dry-run  # prints the request only
- * Reads META_ACCESS_TOKEN from .env and never prints it.
+ * Reads META_ACCESS_TOKEN, META_WABA_ID and BUSINESS_NAME from .env and never prints the token.
  */
 require('dotenv').config({ quiet: true });
 const axios = require('axios');
 
-const WABA_ID = process.env.META_WABA_ID || '1126778653019949';
+const WABA_ID = process.env.META_WABA_ID;
+const BUSINESS = process.env.BUSINESS_NAME;
+if (!WABA_ID || !BUSINESS) {
+  console.error('Set META_WABA_ID and BUSINESS_NAME (for example in .env) first.');
+  process.exit(1);
+}
 const VERSION = process.env.META_GRAPH_API_VERSION || 'v23.0';
 const url = `https://graph.facebook.com/${VERSION}/${WABA_ID}/message_templates`;
 
 const TEMPLATES = {
-  trial_confirmation: 'Hi {{1}}, your trial at Goldkraft Fitness is booked for {{2}}. Reply here if you need to change the time.',
-  trial_reminder: 'Hi {{1}}, a quick reminder that your trial at Goldkraft Fitness is on {{2}}. Reply here if you need to change the time.'
+  trial_confirmation: `Hi {{1}}, your visit at ${BUSINESS} is booked for {{2}}. Reply here if you need to change the time.`,
+  trial_reminder: `Hi {{1}}, a quick reminder that your visit at ${BUSINESS} is on {{2}}. Reply here if you need to change the time.`
 };
 const name = process.argv.slice(2).find(a => !a.startsWith('--')) || 'trial_confirmation';
 if (!TEMPLATES[name]) {

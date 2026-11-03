@@ -101,7 +101,7 @@ class AIService {
             Authorization: `Bearer ${env.openRouterApiKey}`,
             'Content-Type': 'application/json',
             'HTTP-Referer': 'https://goldkraftfitness.com',
-            'X-Title': 'Goldkraft WhatsApp AI'
+            'X-Title': `Lead Engine (${env.clientId})`
           },
           timeout: timeoutMs
         })).data;

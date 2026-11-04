@@ -304,6 +304,13 @@ class Crm {
    * - closes the previous automatic follow-up and books the next one,
    * - resolves the bot's hand-off once a person has actually been in touch.
    */
+  /** K13: staff dismiss the outcome the AI suggested from the chat. */
+  async dismissSuggestion(user, waId) {
+    await this.requireLead(user, waId);
+    await this.db.query(`UPDATE leads SET metadata = metadata - 'suggested_outcome' WHERE wa_id = $1`, [waId]);
+    await this.log(user, waId, 'suggestion_dismissed', {});
+  }
+
   async logOutcome(user, waId, input = {}) {
     const outcome = String(input.outcome || '');
     if (!OUTCOMES[outcome]) throw new HttpError(400, 'Pick an outcome.');
@@ -331,6 +338,8 @@ class Crm {
     const followUpOwner = lead.assignee_id || user.id;
 
     await this.db.tx(async () => {
+      // Any logged outcome replaces the AI's suggestion (K13).
+      await this.db.query(`UPDATE leads SET metadata = metadata - 'suggested_outcome' WHERE wa_id = $1`, [waId]);
       await this.db.query(`INSERT INTO crm_lead_outcomes (wa_id, user_id, outcome, visit_at, plan, amount_inr, lost_reason, note)
         VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
       [waId, user.id, outcome, row.visit_at, row.plan, row.amount_inr, row.lost_reason, note]);

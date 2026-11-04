@@ -36,6 +36,7 @@
 
 <%# ---------- Tabs (phones only; desktop shows two columns) ---------- %>
 <div class="sticky top-14 z-20 -mx-4 border-b border-base-300 bg-base-200 px-4 py-2 lg:hidden">
+<%- include('partials/suggested-outcome', { lead }) %>
 <div role="tablist" class="tabs tabs-box tabs-sm" data-tabs>
   <% for (const [key, label] of [['chat', 'Chat'], ['details', 'Details'], ['tasks', 'Tasks'], ['history', 'History']]) { %>
     <button type="button" role="tab" class="tab flex-1" data-tab="<%= key %>"><%= label %></button>

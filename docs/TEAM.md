@@ -82,7 +82,7 @@ Status: K14–K17 are built and K18 is written (PR `k14-k18-new-client`). GKF na
 | # | Task | Owner | Notes |
 | --- | --- | --- | --- |
 | K11 | **Payment links:** staff send a Razorpay/UPI link from the CRM; the `payment_link.paid` webhook logs Won + ₹ on the lead and triggers the Conversions API event | Kaamil | The lead key goes in the link's `reference_id`/`notes` |
-| K13 | **AI-suggested outcomes:** the reply call also returns a suggested outcome ("paid", "visit booked Sat 7am"); staff confirm with one tap. The AI never logs a sale on its own | Kaamil | Still one AI call per reply |
+| K13 | ✅ **AI-suggested outcomes:** the reply call also returns a suggested outcome ("paid", "visit booked Sat 7am"); staff confirm with one tap. The AI never logs a sale on its own | Kaamil | Still one AI call per reply |
 | R3 | **Live board:** server-sent events so the kanban pipeline updates for everyone in real time; overdue cards red | Krishna | No websockets or extra services |
 | R4 | **PWA:** manifest + service worker so sales installs the CRM on their phone | Krishna | |
 | R11 | Unlogged-lead nudges: daily list per salesperson of hot leads with no outcome | Krishna | |
@@ -142,6 +142,10 @@ What each tap does (`Crm.logOutcome` / `outcomePlan` in `crm/src/crm.js`):
 Each new outcome closes the previous automatic follow-up. A converted lead is never moved back to hot by a later outcome. Lost reasons: price, distance, timing, joined_elsewhere, no_response, not_interested, other. Plan names are suggested from the business config.
 
 For R5/R6 (analytics): count outcomes per salesperson and per ad (`leads.metadata.referral.source_id`), revenue = `SUM(amount_inr)` of `joined` outcomes. "Joined" is GKF's label for a won sale; other business types may name it differently through their preset.
+
+## AI-suggested outcomes (K13, built)
+
+The AI's JSON answer has an optional `outcome` field (`visit_booked`, `visited`, `joined`, `lost`) for things the lead says already happened. `src/services/suggestedOutcome.js` cleans it, saves it on the lead as `leads.metadata.suggested_outcome` and sends one Telegram alert. The lead page shows it above the tabs (`crm/views/partials/suggested-outcome.ejs`): **Confirm** logs it in one tap when the details are known (visited, lost, joined with plan + ₹); otherwise **Add details** opens the outcome sheet. **Dismiss** removes it. Logging any outcome clears it. It never logs anything without a person. No extra AI call.
 
 ## How we work
 

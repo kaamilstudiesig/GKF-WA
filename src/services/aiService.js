@@ -2,6 +2,7 @@ const crypto = require('crypto');
 const axios = require('axios');
 const env = require('../config/env');
 const gymConfig = require('../config/gymConfig');
+const suggestedOutcome = require('./suggestedOutcome');
 const leadRepository = require('../db/leadRepository');
 const aiCostTracker = require('./aiCostTracker');
 const { applyLeadUpdates } = require('./leadUpdates');
@@ -134,7 +135,7 @@ class AIService {
   }
 
   /**
-   * Reads the one-call JSON answer: {"reply", "lead", "notify_staff"}.
+   * Reads the one-call JSON answer: {"reply", "lead", "notify_staff", "outcome"}.
    * Returns null when the model answered in plain text instead.
    */
   parseStructured(content) {
@@ -154,7 +155,7 @@ class AIService {
     if (notify && typeof notify === 'object' && notify.handoff_reason) {
       Object.assign(updates, { needs_human: true, handoff_reason: notify.handoff_reason, summary: notify.summary });
     }
-    return { reply: data.reply, updates };
+    return { reply: data.reply, updates, suggestion: suggestedOutcome.normalize(data.outcome) };
   }
 
   /** Turns the model's tool calls (and any legacy <<<LEAD_UPDATE>>> block) into lead updates. */
@@ -272,8 +273,12 @@ class AIService {
       }
     }
 
-    await applyLeadUpdates(lead, updates);
-    return { replyText: this.sanitizeReply(text, updates), updates };
+    const updated = await applyLeadUpdates(lead, updates);
+    if (structured?.suggestion) {
+      await suggestedOutcome.save({ ...lead, ...(updated || {}) }, structured.suggestion)
+        .catch(err => logger.warn('Could not save suggested outcome', { error: err.message }));
+    }
+    return { replyText: this.sanitizeReply(text, updates), updates, suggestion: structured?.suggestion || null };
   }
 
   /** Offline replies used when no OpenRouter key is set (local dev and tests). */

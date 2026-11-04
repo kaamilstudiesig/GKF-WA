@@ -4,6 +4,7 @@ const { leadScope, staffScope, canAssignTo } = require('./permissions');
 const { LEAD_STATUSES, WINDOW_MS, OUTCOMES, LOST_REASONS, STAGES } = require('./constants');
 const { localDay, leadPhone } = require('./util');
 const razorpay = require('../../src/services/razorpay');
+const signals = require('../../src/workers/signals');
 
 const MAX_MESSAGE_LENGTH = 4096; // WhatsApp text limit
 const PAGE_SIZE = 25;
@@ -220,6 +221,7 @@ class Crm {
       }
       await this.log(user, waId, 'message_queued', { preview: body.slice(0, 80) });
     });
+    signals.emit('outbound'); // send now, not at the next poll
   }
 
   // ---------- notes ----------
@@ -352,6 +354,14 @@ class Crm {
     const actor = { id: row.user_id, name: staff ? staff.name : 'Razorpay', role: 'owner' };
     await this.logOutcome(actor, row.wa_id, { outcome: 'joined', plan: row.plan, amount, note: `Paid via Razorpay link${paymentId ? ` (${paymentId})` : ''}` });
     return { waId: row.wa_id, plan: row.plan, amount };
+  }
+
+  /** Ends the pause after a staff reply: the AI answers this lead's next message again. */
+  async resumeBot(user, waId) {
+    await this.requireLead(user, waId);
+    await this.db.query(`UPDATE leads SET metadata = COALESCE(metadata, '{}'::jsonb) || jsonb_build_object('bot_resumed_at', now()::text),
+      updated_at = now() WHERE wa_id = $1`, [waId]);
+    await this.log(user, waId, 'bot_resumed', {});
   }
 
   /** K13: staff dismiss the outcome the AI suggested from the chat. */

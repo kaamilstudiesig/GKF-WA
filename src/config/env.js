@@ -46,6 +46,10 @@ const env = {
   gymLongitude: num(process.env.GYM_LONGITUDE, NaN),
 
   // Hostnames that get the staff CRM instead of the bot (comma list, matched without the port).
+  // Backup poll for the queues (new work wakes the workers directly). Retries wait at least 5s anyway.
+  queuePollMs: num(process.env.QUEUE_POLL_MS, 10000),
+  // Wait this long before answering a text, so a burst of quick messages gets one reply.
+  burstSettleMs: num(process.env.BURST_SETTLE_MS, process.env.NODE_ENV === 'test' ? 0 : 2000),
   // Short id for this client's deployment (tags alerts, Sentry, backups). One deployment per client until K8.
   clientId: process.env.CLIENT_ID || 'gkf',
   // Heroku app name, for commands in alerts. Heroku sets HEROKU_APP_NAME when dyno metadata is on.

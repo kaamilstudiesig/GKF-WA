@@ -9,12 +9,12 @@ const STALE_SECONDS = 120;
  */
 const eventRepository = {
   /** Stores an event once. Returns its id, or null if it was already stored. */
-  async record({ eventKey, waId = null, messageId = null, payload, maxAttempts = 5 }) {
+  async record({ eventKey, waId = null, messageId = null, payload, maxAttempts = 5, delayMs = 0 }) {
     const row = await db.one(`
-      INSERT INTO webhook_events (event_key, wa_id, message_id, payload, max_attempts)
-      VALUES ($1, $2, $3, $4::jsonb, $5)
+      INSERT INTO webhook_events (event_key, wa_id, message_id, payload, max_attempts, available_at)
+      VALUES ($1, $2, $3, $4::jsonb, $5, now() + make_interval(secs => $6::float8 / 1000))
       ON CONFLICT (event_key) DO NOTHING
-      RETURNING id`, [eventKey, waId, messageId, JSON.stringify(payload), maxAttempts]);
+      RETURNING id`, [eventKey, waId, messageId, JSON.stringify(payload), maxAttempts, delayMs]);
     return row ? row.id : null;
   },
 
@@ -40,6 +40,14 @@ const eventRepository = {
         FOR UPDATE SKIP LOCKED
         LIMIT 1)
       RETURNING e.*`, [staleSeconds]);
+  },
+
+  /** True when the same lead already sent a newer text that is waiting: that one will answer both. */
+  async hasNewerText(waId, id) {
+    const row = await db.one(`SELECT 1 AS yes FROM webhook_events
+      WHERE wa_id = $1 AND id > $2 AND status = 'pending'
+        AND payload->'msg'->>'type' IN ('text', 'button', 'interactive') LIMIT 1`, [waId, id]);
+    return Boolean(row);
   },
 
   async complete(id) {

@@ -6,6 +6,9 @@ const opsAlerts = require('../services/opsAlerts');
 const webhookWorker = require('../workers/webhookWorker');
 const logger = require('../utils/logger');
 
+// Messages that can be part of a burst of typing (answered once, after a short wait).
+const TEXT_TYPES = new Set(['text', 'button', 'interactive']);
+
 /** GET /webhook: Meta's one-time verification handshake. */
 function verifyWebhook(req, res) {
   const mode = req.query['hub.mode'];
@@ -85,13 +88,17 @@ async function handleIncoming(req, res) {
           if (await leadRepository.hasMessage(msg.id)) continue; // Meta re-delivery
           const waId = await leadRepository.resolveKey(ids);
           const id = await eventRepository.record({
-            eventKey: `msg:${msg.id}`, waId, messageId: msg.id, payload: { msg, contact, ids }
+            eventKey: `msg:${msg.id}`, waId, messageId: msg.id, payload: { msg, contact, ids },
+            delayMs: TEXT_TYPES.has(msg.type) ? env.burstSettleMs : 0 // let a burst of texts arrive first
           });
           if (id) queued++;
         }
       }
     }
-    if (queued && webhookWorker.running) webhookWorker.kick();
+    if (queued && webhookWorker.running) {
+      webhookWorker.kick();
+      if (env.burstSettleMs > 0) setTimeout(() => webhookWorker.kick(), env.burstSettleMs + 50).unref();
+    }
     return res.status(200).json({ status: 'success' });
   } catch (err) {
     logger.error('Failed to store incoming webhook', { error: err.message });

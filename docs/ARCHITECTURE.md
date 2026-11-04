@@ -256,6 +256,10 @@ docs/                    you are here
 5. **The AI proposes, policy decides.** The model can suggest lead updates; `aiPolicy` decides what's allowed (it can't mark a lead converted or clear a hand-off).
 6. **Never invent facts.** The prompt only knows the business profile. Anything else gets "a coach will confirm".
 7. **Tests never touch real services.** In-memory PGlite and fake transports. Paid model checks are opt-in scripts.
+8. **Per-lead ordering, both ways.** Inbound events and outbound replies are claimed one per lead at a time, oldest first (`NOT EXISTS` an older or in-flight row for the same `wa_id`, plus `FOR UPDATE SKIP LOCKED`). Different leads run in parallel. Replies never cross or arrive swapped.
+9. **One reply per burst (debounce).** Texts wait `BURST_SETTLE_MS` (2s) before processing. If the same lead sent a newer text meanwhile, the older one is saved but not answered; the newest one answers with the whole burst in the AI's history (and skips fixed answers, since the lead asked several things). Fewer AI calls, more human replies.
+10. **Wake on write, poll as backup.** Whoever adds work wakes the worker at once (webhook → inbound worker, inbound worker and CRM → outbound worker via `src/workers/signals.js`). Polling every `QUEUE_POLL_MS` (10s) only catches retries and crashed jobs. With more than one dyno, replace `signals` with Postgres `LISTEN/NOTIFY`.
+11. **Staff own the conversation, but can hand it back.** A CRM reply pauses the bot for that lead (`BOT_PAUSE_HOURS_AFTER_STAFF_REPLY`, 12h). The lead page shows "AI is paused until …" with **Turn AI back on**, which stores `leads.metadata.bot_resumed_at`; `botGuard` ignores staff replies older than that. The next staff reply pauses it again.
 
 ## 8. Target architecture (multi-client)
 

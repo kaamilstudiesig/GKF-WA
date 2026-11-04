@@ -54,7 +54,8 @@ if (run) {
 
 console.log(`
 Then, by hand:
-1. Owner login: heroku run npm run crm:seed -a ${app} (then change the password at first login).
+1. Owner login: heroku run npm run crm:owner -- "Owner Name" owner@client.com -a ${app}
+   (prints a one-time password; never run crm:seed here, its passwords are public).
 2. Webhook: get the URL with "heroku apps:info -a ${app}", add /webhook, and set it in the Meta app
    with the META_WEBHOOK_VERIFY_TOKEN. Subscribe the client's WABA to the app (see docs/ONBOARDING.md).
 3. DNS: point ${c.crmHost} at the DNS target from "heroku domains -a ${app}".

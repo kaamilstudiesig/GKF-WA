@@ -15,6 +15,7 @@ const config = require('./config');
 const auth = require('./auth');
 const { Crm, HttpError } = require('./crm');
 const { Users } = require('./users');
+const { Branding } = require('./branding');
 const { can } = require('./permissions');
 const { LEAD_STATUSES, ROLE_LABELS, ROLES, OUTCOMES, LOST_REASONS, STAGES } = require('./constants');
 
@@ -62,12 +63,15 @@ function createCrmApp({
   const crm = new Crm(db);
   const users = new Users(db);
   const throttle = new auth.LoginThrottle();
+  const branding = new Branding(db, () => (gymConfig ? gymConfig.gymName : ''));
 
   app.set('view engine', 'ejs');
   app.set('views', path.join(__dirname, '..', 'views'));
   app.set('trust proxy', 1);
   app.disable('x-powered-by');
   app.locals.crm = crm;
+  // Used if a page renders before the session middleware has loaded the real branding (early errors).
+  app.locals.brand = { name: 'Staff CRM', first: 'Staff CRM', last: '', mark: 'CR', color: '#d4af37', contentColor: '#141106', style: '', logoUrl: null, fileSlug: 'crm' };
 
   app.use((req, res, next) => {
     res.setHeader('X-Content-Type-Options', 'nosniff');
@@ -89,7 +93,8 @@ function createCrmApp({
     req.csrfToken = session ? session.csrfToken : null;
     Object.assign(res.locals, {
       user: req.user, csrfToken: req.csrfToken, can, util, LEAD_STATUSES, ROLE_LABELS, ROLES, OUTCOMES, LOST_REASONS, PLAN_OPTIONS: planOptions(), STAGES,
-      path: req.path, query: req.query, flash: req.query.ok || null, error: req.query.err || null
+      path: req.path, query: req.query, flash: req.query.ok || null, error: req.query.err || null,
+      brand: await branding.get()
     });
     next();
   }));
@@ -123,6 +128,15 @@ function createCrmApp({
     return fallback;
   };
   const withOk = (url, msg) => `${url.split('?')[0]}?${new URLSearchParams({ ...Object.fromEntries(new URLSearchParams(url.split('?')[1] || '')), ok: msg })}`;
+
+  // Logo image (R12). Public: the login page shows it. Versioned URL, so it can be cached.
+  app.get('/brand/logo', h(async (req, res) => {
+    const logo = await branding.logo();
+    if (!logo) return res.status(404).end();
+    res.set('Content-Type', logo.type);
+    res.set('Cache-Control', req.query.v ? 'public, max-age=31536000, immutable' : 'no-cache');
+    res.send(logo.data);
+  }));
 
   // ---- auth ----
   app.get('/login', (req, res) => (req.user ? res.redirect('/') : res.render('login', { email: '' })));
@@ -282,7 +296,7 @@ function createCrmApp({
     };
     const lines = [cols.join(','), ...(await crm.exportLeads(req.user)).map(l => cols.map(c => esc(l[c])).join(','))];
     res.setHeader('Content-Type', 'text/csv; charset=utf-8');
-    res.setHeader('Content-Disposition', `attachment; filename="gkf-leads-${util.localDay(new Date().toISOString())}.csv"`);
+    res.setHeader('Content-Disposition', `attachment; filename="${res.locals.brand.fileSlug}-leads-${util.localDay(new Date().toISOString())}.csv"`);
     res.send(lines.join('\n'));
   }));
 
@@ -293,7 +307,7 @@ function createCrmApp({
     const { VERTICALS } = require('../../src/config/verticals');
     res.render('settings', {
       profile: gymConfig.profile, meta: await businessProfile.meta(), verticals: VERTICALS,
-      prompt: gymConfig.getSystemPrompt(), limits: businessProfile.LIMITS, ...extra
+      prompt: gymConfig.getSystemPrompt(), limits: businessProfile.LIMITS, brandForm: null, ...extra
     });
   };
   app.get('/settings', allow(can.manageBusiness), h(async (req, res) => {
@@ -311,6 +325,20 @@ function createCrmApp({
     }
     await crm.log(req.user, null, 'business_profile_updated');
     res.redirect(withOk('/settings', 'Saved. The WhatsApp assistant uses the new details from its next reply.'));
+  }));
+
+  // Branding (R12): logo letters, colour and logo image, on the Business settings page.
+  app.post('/settings/brand', allow(can.manageBusiness), h(async (req, res) => {
+    if (!businessProfile) return res.status(404).render('error', { status: 404, message: 'Business settings need the WhatsApp bot.' });
+    try {
+      await branding.save(req.body, req.user.email);
+    } catch (err) {
+      if (!(err instanceof HttpError)) throw err;
+      res.status(err.status);
+      return settingsPage(res, { error: err.message, brandForm: { mark: req.body.mark, color: req.body.color } });
+    }
+    await crm.log(req.user, null, 'branding_updated');
+    res.redirect(withOk('/settings', 'Branding saved.') + '#brand');
   }));
 
   app.get('/users', allow(can.manageUsers), h((req, res) => usersPage(res)));

@@ -1,7 +1,7 @@
 <%- include('partials/header', { title: 'Dashboard' }) %>
 <% const nowIso = new Date().toISOString(); %>
 <div class="mb-4">
-  <p class="text-sm text-base-content/60"><%= user.role === 'sales' ? 'My leads' : user.role === 'manager' ? 'My team' : 'All of GKF' %></p>
+  <p class="text-sm text-base-content/60"><%= user.role === 'sales' ? 'My leads' : user.role === 'manager' ? 'My team' : 'All of ' + brand.name %></p>
   <h1 class="page-title max-lg:hidden">Dashboard</h1>
 </div>
 

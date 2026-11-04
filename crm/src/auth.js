@@ -1,7 +1,7 @@
 const crypto = require('crypto');
 
 const SCRYPT = { N: 16384, r: 8, p: 1, keylen: 64 };
-const SESSION_COOKIE = 'gkf_crm_session';
+const SESSION_COOKIE = 'crm_session';
 const MIN_PASSWORD_LENGTH = 10;
 
 /** Hashes a password with scrypt. Format: scrypt$N$r$p$salt$hash (base64). */

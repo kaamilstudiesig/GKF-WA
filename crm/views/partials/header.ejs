@@ -1,6 +1,6 @@
 <%- include('head') %>
 <%
-  const pageTitle = typeof title !== 'undefined' ? title : 'GKF CRM';
+  const pageTitle = typeof title !== 'undefined' ? title : brand.name;
   const backHref = typeof back !== 'undefined' ? back : null;
 %>
 <body class="min-h-dvh">
@@ -15,7 +15,7 @@
         <% if (backHref) { %>
           <a href="<%= backHref %>" class="btn btn-ghost btn-square" aria-label="Back"><%- include('icon', { name: 'back', cls: 'size-6' }) %></a>
         <% } else { %>
-          <a href="/" class="grid size-9 place-items-center rounded-lg bg-primary font-display text-xl text-primary-content" aria-label="Dashboard">GK</a>
+          <a href="/" aria-label="Dashboard"><%- include('logo-mark', { size: 'size-9' }) %></a>
         <% } %>
       </div>
       <div class="navbar-center min-w-0 flex-1 px-1"><span class="truncate font-semibold"><%= pageTitle %></span></div>

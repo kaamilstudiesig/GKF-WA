@@ -61,7 +61,7 @@
             <div class="chat-footer text-[11px] <%= q.status === 'failed' ? 'text-error' : 'text-[#8696a0]' %>"><%= q.metadata.user_name || 'Staff' %> · <%= q.status === 'failed' ? 'Failed: ' + (q.last_error || 'unknown error') : 'Queued, waiting for the WhatsApp bot to send' %></div>
           </div>
         <% } %>
-        <% if (!lead.window_open) { %><p class="wa-system mx-auto mt-3">The 24-hour reply window is closed. The lead has to message GKF first.</p><% } %>
+        <% if (!lead.window_open) { %><p class="wa-system mx-auto mt-3">The 24-hour reply window is closed. The lead has to send a new message first.</p><% } %>
       </div>
       <form class="wa-composer sticky bottom-0 flex items-end gap-2 px-2 pt-2 pb-[calc(0.5rem+env(safe-area-inset-bottom))]" method="post" action="/leads/<%= lead.wa_id %>/message">
         <%- include('partials/csrf') %>

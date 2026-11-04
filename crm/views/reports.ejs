@@ -4,7 +4,7 @@
   const bar = (label, value, max) => ({ label, value, pct: max ? (value / max * 100).toFixed(1) : 0 });
 %>
 <div class="mb-4 flex flex-wrap items-end justify-between gap-3">
-  <div><p class="text-sm text-base-content/60"><%= user.role === 'owner' ? 'All of GKF' : 'My team and unassigned leads' %></p><h1 class="page-title max-lg:hidden">Reports</h1></div>
+  <div><p class="text-sm text-base-content/60"><%= user.role === 'owner' ? 'All of ' + brand.name : 'My team and unassigned leads' %></p><h1 class="page-title max-lg:hidden">Reports</h1></div>
   <div class="flex items-center gap-2">
     <div role="tablist" class="tabs tabs-box tabs-sm">
       <% for (const d of [7, 30, 90]) { %><a role="tab" href="/reports?days=<%= d %>" class="tab <%= r.days === d ? 'tab-active' : '' %>"><%= d %>d</a><% } %>

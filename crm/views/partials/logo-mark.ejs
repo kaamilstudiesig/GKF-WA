@@ -1,0 +1,2 @@
+<%# Square logo: the uploaded image, else the logo letters on the brand colour (R12). -%>
+<% if (brand.logoUrl) { %><img src="<%= brand.logoUrl %>" alt="" class="<%= size %> shrink-0 rounded-lg object-contain"><% } else { %><span class="grid <%= size %> shrink-0 place-items-center rounded-lg bg-primary font-display text-xl text-primary-content"><%= brand.mark %></span><% } %>

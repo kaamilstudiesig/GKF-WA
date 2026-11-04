@@ -12,6 +12,36 @@ document.addEventListener('DOMContentLoaded', () => {
     if (btn) btn.hidden = true;
   });
 
+  // Business settings, Brand (R12): keep the colour picker and hex box in sync,
+  // and turn the chosen logo file into a data URL for the hidden "logo" field.
+  const brandForm = document.querySelector('[data-brand-form]');
+  if (brandForm) {
+    const pick = brandForm.querySelector('[data-color-pick]');
+    const text = brandForm.querySelector('[data-color-text]');
+    pick.addEventListener('input', () => { text.value = pick.value; });
+    text.addEventListener('input', () => { if (/^#[0-9a-f]{6}$/i.test(text.value)) pick.value = text.value; });
+    const file = brandForm.querySelector('[data-logo-file]');
+    const data = brandForm.querySelector('[data-logo-data]');
+    const hint = brandForm.querySelector('[data-logo-hint]');
+    const hintText = hint.textContent;
+    file.addEventListener('change', () => {
+      data.value = '';
+      hint.textContent = hintText;
+      hint.classList.remove('text-error');
+      const f = file.files[0];
+      if (!f) return;
+      if (f.size > 40 * 1024) {
+        hint.textContent = 'That image is ' + Math.round(f.size / 1024) + ' KB. Use one under 40 KB.';
+        hint.classList.add('text-error');
+        file.value = '';
+        return;
+      }
+      const reader = new FileReader();
+      reader.onload = () => { data.value = reader.result; };
+      reader.readAsDataURL(f);
+    });
+  }
+
   // Character counter for the WhatsApp reply box.
   const box = document.querySelector('textarea[data-count]');
   const out = document.querySelector('[data-counter]');

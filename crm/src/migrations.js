@@ -112,6 +112,23 @@ const CRM_MIGRATIONS = [
       'ALTER TABLE crm_lead_outcomes ADD COLUMN meta_attempts INTEGER NOT NULL DEFAULT 0',
       'ALTER TABLE crm_lead_outcomes ADD COLUMN meta_error TEXT'
     ]
+  },
+  {
+    // R12: white-label CRM. One row: logo mark, brand colour and optional logo image.
+    // The business name itself comes from the bot's business profile.
+    id: 4,
+    name: 'branding',
+    up: [
+      `CREATE TABLE crm_branding (
+        id INTEGER PRIMARY KEY CHECK (id = 1),
+        mark TEXT,
+        color TEXT,
+        logo_type TEXT,
+        logo_data BYTEA,
+        updated_by TEXT,
+        updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+      )`
+    ]
   }
 ];
 

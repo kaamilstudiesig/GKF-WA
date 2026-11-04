@@ -13,6 +13,32 @@
   </div>
 </div>
 
+<%
+  const bf = brandForm || { mark: brand.markIsDefault ? '' : brand.mark, color: brand.color };
+%>
+<form method="post" action="/settings/brand" id="brand" class="<%= card %> mb-4 scroll-mt-20" data-brand-form>
+  <%- include('partials/csrf') %>
+  <div class="flex items-center gap-3">
+    <%- include('partials/logo-mark', { size: 'size-12' }) %>
+    <div class="min-w-0"><h2>Brand</h2><p class="text-sm text-base-content/60">How the CRM looks for your team. The name comes from <em>Business name</em> below.</p></div>
+  </div>
+  <div class="grid gap-3 sm:grid-cols-[8rem_12rem_1fr]">
+    <fieldset class="<%= field %>"><legend class="fieldset-legend">Logo letters</legend>
+      <input name="mark" maxlength="3" value="<%= bf.mark %>" placeholder="<%= brand.markIsDefault ? brand.mark : '' %>" autocapitalize="characters" class="input w-full uppercase">
+      <p class="label whitespace-normal">Up to 3. Empty uses initials.</p></fieldset>
+    <fieldset class="<%= field %>"><legend class="fieldset-legend">Brand colour</legend>
+      <label class="input w-full"><input type="color" value="<%= bf.color %>" aria-label="Pick brand colour" class="size-6 shrink-0 cursor-pointer rounded border-0 bg-transparent p-0" data-color-pick><input name="color" required maxlength="7" value="<%= bf.color %>" pattern="#?[0-9a-fA-F]{3}([0-9a-fA-F]{3})?" class="grow" data-color-text></label>
+      <p class="label whitespace-normal">Buttons, highlights, logo.</p></fieldset>
+    <fieldset class="<%= field %> min-w-0"><legend class="fieldset-legend">Logo image (optional)</legend>
+      <input type="file" accept="image/png,image/jpeg,image/webp" class="file-input w-full" data-logo-file aria-label="Logo image">
+      <input type="hidden" name="logo" data-logo-data>
+      <p class="label whitespace-normal" data-logo-hint>Square PNG, JPEG or WebP under 40 KB. Replaces the letters.</p>
+      <% if (brand.logoUrl) { %><label class="label mt-1 cursor-pointer gap-2"><input type="checkbox" name="remove_logo" value="1" class="checkbox checkbox-sm"> Remove the current logo</label><% } %>
+    </fieldset>
+  </div>
+  <button class="btn btn-primary w-full sm:w-auto" type="submit">Save brand</button>
+</form>
+
 <form method="post" action="/settings" class="grid gap-4 lg:grid-cols-2">
   <%- include('partials/csrf') %>
 

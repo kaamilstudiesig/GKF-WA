@@ -18,7 +18,9 @@ test('real estate: site visit wording, buttons that route back, projects in the 
     const prompt = gymConfig.getSystemPrompt();
     assert.match(prompt, /- Projects and properties:/);
     assert.match(prompt, /- Unit types and prices:/);
-    assert.doesNotMatch(prompt, /coach|trial|fat loss/i);
+    // The selling method changes; the business's own facts (here still GKF's) do not.
+    assert.match(prompt, /a real estate team in/);
+    assert.match(prompt, /come in for a site visit\. A property advisor takes over/);
   } finally { gymConfig.resetToDefault(); }
 });
 

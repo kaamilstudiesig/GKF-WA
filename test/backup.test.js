@@ -36,6 +36,7 @@ test('a backup restores into an empty database with identical data', async () =>
 test('brand settings, including the logo image, survive a backup and restore', async () => {
   await db.close();
   await converse('919855555502', 'hello');
+  await require('../src/migrate').migrateAll(); // CRM tables too
   const png = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 1, 2, 3]);
   await db.query(`INSERT INTO crm_branding (id, mark, color, logo_type, logo_data) VALUES (1, 'GK', '#112233', 'image/png', $1)`, [png]);
   const file = await createBackup();

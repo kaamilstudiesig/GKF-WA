@@ -2,7 +2,8 @@ const crypto = require('crypto');
 const { Params } = require('./util');
 const { leadScope, staffScope, canAssignTo } = require('./permissions');
 const { LEAD_STATUSES, WINDOW_MS, OUTCOMES, LOST_REASONS, STAGES } = require('./constants');
-const { localDay } = require('./util');
+const { localDay, leadPhone } = require('./util');
+const razorpay = require('../../src/services/razorpay');
 
 const MAX_MESSAGE_LENGTH = 4096; // WhatsApp text limit
 const PAGE_SIZE = 25;
@@ -304,6 +305,60 @@ class Crm {
    * - closes the previous automatic follow-up and books the next one,
    * - resolves the bot's hand-off once a person has actually been in touch.
    */
+  // ---------- payment links (K11) ----------
+
+  /**
+   * Creates a Razorpay link for a plan and sends it on WhatsApp when the reply
+   * window is open. Payment arrives at /razorpay/webhook (markLinkPaid).
+   * Returns { url, sent }.
+   */
+  async createPaymentLink(user, waId, input = {}) {
+    if (!razorpay.enabled()) throw new HttpError(503, 'Payment links are not set up yet.');
+    const plan = String(input.plan || '').trim().slice(0, 100);
+    if (!plan) throw new HttpError(400, 'Which plan is the link for?');
+    const amount = Number(String(input.amount ?? '').replace(/[₹,\s]/g, ''));
+    if (!Number.isInteger(amount) || amount <= 0 || amount > 1000000) throw new HttpError(400, 'Enter the amount in rupees (whole number).');
+    const lead = await this.requireLead(user, waId);
+
+    const referenceId = `lead-${crypto.randomUUID()}`;
+    const link = await razorpay.createLink({
+      amountInr: amount, description: plan, referenceId, phone: leadPhone(lead),
+      notes: { wa_id: waId, plan, user_id: String(user.id) }
+    });
+    await this.db.query(`INSERT INTO crm_payment_links (wa_id, user_id, reference_id, razorpay_id, plan, amount_inr, short_url)
+      VALUES ($1, $2, $3, $4, $5, $6, $7)`, [waId, user.id, referenceId, link.id, plan, amount, link.short_url]);
+    await this.log(user, waId, 'payment_link_created', { plan, amount_inr: amount });
+
+    if (!lead.window_open) return { url: link.short_url, sent: false };
+    await this.queueMessage(user, waId, `Here is your payment link for ${plan} (₹${amount.toLocaleString('en-IN')}):\n${link.short_url}`);
+    return { url: link.short_url, sent: true };
+  }
+
+  /**
+   * Razorpay said a link was paid: log Joined with the real amount, once.
+   * Logged in the name of the staff member who sent the link. Returns the wa_id, or null.
+   */
+  async markLinkPaid({ linkId, amountPaise, paymentId }) {
+    let row;
+    await this.db.tx(async () => {
+      row = await this.db.one(`UPDATE crm_payment_links SET status = 'paid', paid_at = now(), payment_id = $2
+        WHERE razorpay_id = $1 AND status <> 'paid' RETURNING *`, [linkId, paymentId || null]);
+    });
+    if (!row) return null; // unknown link or already handled (Razorpay retries)
+    const amount = Number.isInteger(amountPaise) && amountPaise > 0 ? Math.round(amountPaise / 100) : row.amount_inr;
+    const staff = await this.db.one('SELECT id, name FROM crm_users WHERE id = $1', [row.user_id]);
+    const actor = { id: row.user_id, name: staff ? staff.name : 'Razorpay', role: 'owner' };
+    await this.logOutcome(actor, row.wa_id, { outcome: 'joined', plan: row.plan, amount, note: `Paid via Razorpay link${paymentId ? ` (${paymentId})` : ''}` });
+    return { waId: row.wa_id, plan: row.plan, amount };
+  }
+
+  /** K13: staff dismiss the outcome the AI suggested from the chat. */
+  async dismissSuggestion(user, waId) {
+    await this.requireLead(user, waId);
+    await this.db.query(`UPDATE leads SET metadata = metadata - 'suggested_outcome' WHERE wa_id = $1`, [waId]);
+    await this.log(user, waId, 'suggestion_dismissed', {});
+  }
+
   async logOutcome(user, waId, input = {}) {
     const outcome = String(input.outcome || '');
     if (!OUTCOMES[outcome]) throw new HttpError(400, 'Pick an outcome.');
@@ -331,6 +386,8 @@ class Crm {
     const followUpOwner = lead.assignee_id || user.id;
 
     await this.db.tx(async () => {
+      // Any logged outcome replaces the AI's suggestion (K13).
+      await this.db.query(`UPDATE leads SET metadata = metadata - 'suggested_outcome' WHERE wa_id = $1`, [waId]);
       await this.db.query(`INSERT INTO crm_lead_outcomes (wa_id, user_id, outcome, visit_at, plan, amount_inr, lost_reason, note)
         VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
       [waId, user.id, outcome, row.visit_at, row.plan, row.amount_inr, row.lost_reason, note]);

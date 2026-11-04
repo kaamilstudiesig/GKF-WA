@@ -1,0 +1,31 @@
+<%# K13: an outcome the AI noticed in the chat. Staff confirm (one tap when the details are known) or dismiss. %>
+<% const sug = lead.metadata && lead.metadata.suggested_outcome; %>
+<% if (sug) {
+  const oneTap = sug.type === 'visited' || sug.type === 'lost' || (sug.type === 'joined' && sug.plan && sug.amount_inr);
+  const details = [sug.plan, sug.amount_inr ? '₹' + Number(sug.amount_inr).toLocaleString('en-IN') : null, sug.when].filter(Boolean).join(' · ');
+%>
+<section class="alert alert-info alert-soft mb-4 flex-col items-stretch gap-2 sm:flex-row sm:items-center" aria-label="Suggested outcome">
+  <div class="min-w-0 flex-1">
+    <p class="font-medium">From the chat: <%= sug.label %><%= details ? ' · ' + details : '' %></p>
+    <% if (sug.evidence) { %><p class="truncate text-sm opacity-70">“<%= sug.evidence %>”</p><% } %>
+  </div>
+  <div class="flex gap-2">
+    <% if (oneTap) { %>
+      <form method="post" action="/leads/<%= lead.wa_id %>/outcome">
+        <%- include('csrf') %>
+        <input type="hidden" name="outcome" value="<%= sug.type %>">
+        <% if (sug.type === 'joined') { %><input type="hidden" name="plan" value="<%= sug.plan %>"><input type="hidden" name="amount" value="<%= sug.amount_inr %>"><% } %>
+        <% if (sug.type === 'lost') { %><input type="hidden" name="lost_reason" value="<%= sug.lost_reason %>"><% } %>
+        <input type="hidden" name="note" value="Confirmed from the chat<%= sug.evidence ? ': ' + sug.evidence : '' %>">
+        <button class="btn btn-primary btn-sm" type="submit">Confirm</button>
+      </form>
+    <% } else { %>
+      <a href="#outcome" class="btn btn-primary btn-sm">Add details</a>
+    <% } %>
+    <form method="post" action="/leads/<%= lead.wa_id %>/suggestion/dismiss">
+      <%- include('csrf') %>
+      <button class="btn btn-ghost btn-sm" type="submit">Dismiss</button>
+    </form>
+  </div>
+</section>
+<% } %>

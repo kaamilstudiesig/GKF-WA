@@ -161,7 +161,7 @@ describe('one-call JSON replies', () => {
 
   test('JSON wrapped in a code fence still works; plain text is used as the reply', () => {
     const fenced = aiService.parseStructured('```json\n{"reply": "Hi!", "lead": {}, "notify_staff": null}\n```');
-    assert.deepStrictEqual(fenced, { reply: 'Hi!', updates: {} });
+    assert.deepStrictEqual(fenced, { reply: 'Hi!', updates: {}, suggestion: null });
     assert.strictEqual(aiService.parseStructured('Just a normal sentence.'), null);
     assert.strictEqual(aiService.parseStructured('{"lead": {}}'), null);
   });

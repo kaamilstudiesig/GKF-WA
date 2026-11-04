@@ -10,6 +10,9 @@ const { legalRouter } = require('./routes/legal');
 const logger = require('./utils/logger');
 const { captureException } = require('./utils/sentry');
 const { createCrmApp } = require('../crm/src');
+const { Crm } = require('../crm/src/crm');
+const razorpay = require('./services/razorpay');
+const notifyService = require('./services/notifyService');
 
 /**
  * One Express app for the whole process. Requests whose Host is in CRM_HOSTS
@@ -45,6 +48,7 @@ function createApp({
   // CRM first, so its pages never get the bot's headers, CSP, JSON parser or JSON 404.
   // Secure cookies: Heroku terminates TLS, and every request to the app is HTTPS.
   const crmApp = createCrmApp({ db, secureCookies });
+  const paymentCrm = new Crm(db);
   const crmHostSet = new Set(crmHosts.map(h => h.toLowerCase()));
   app.locals.crmApp = crmApp;
   app.use((req, res, next) => {
@@ -94,6 +98,28 @@ function createApp({
 
   app.get('/webhook', webhookController.verifyWebhook);
   app.post('/webhook', webhookRateLimiter, verifyWebhookSignature, webhookController.handleIncoming);
+
+  // K11: Razorpay says a payment link was paid -> log Joined + ₹ (and, through K7, tell Meta).
+  app.post('/razorpay/webhook', async (req, res) => {
+    if (!razorpay.enabled()) return res.status(404).json({ error: 'Not found' });
+    if (!razorpay.verifySignature(req.rawBody, req.get('x-razorpay-signature'))) return res.status(401).json({ error: 'Bad signature' });
+    const event = req.body || {};
+    if (event.event !== 'payment_link.paid') return res.json({ ok: true, ignored: event.event || null });
+    try {
+      const link = event.payload?.payment_link?.entity || {};
+      const payment = event.payload?.payment?.entity || {};
+      const paid = await paymentCrm.markLinkPaid({ linkId: link.id, amountPaise: link.amount_paid ?? payment.amount, paymentId: payment.id });
+      if (paid) {
+        notifyService.send(`💰 Paid: ${paid.plan}, ₹${paid.amount.toLocaleString('en-IN')} (logged as Joined)`,
+          { buttons: notifyService.leadLinks(paid.waId, null, { replyLabel: 'Open in CRM' }).buttons }).catch(() => {});
+      }
+      res.json({ ok: true });
+    } catch (err) {
+      captureException(err, { component: 'razorpay_webhook' });
+      logger.error('Razorpay webhook failed', { error: err.message });
+      res.status(500).json({ error: 'Failed' }); // Razorpay retries
+    }
+  });
 
   app.use((req, res) => res.status(404).json({ error: 'Not found' }));
 

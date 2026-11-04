@@ -43,6 +43,7 @@ function profileFromForm(b) {
   };
 }
 const util = require('./util');
+const razorpay = require('../../src/services/razorpay');
 
 /** Express 4 does not catch rejected promises; pass them to the error handler. */
 const h = fn => (req, res, next) => Promise.resolve(fn(req, res, next)).catch(next);
@@ -92,7 +93,7 @@ function createCrmApp({
     req.user = session ? session.user : null;
     req.csrfToken = session ? session.csrfToken : null;
     Object.assign(res.locals, {
-      user: req.user, csrfToken: req.csrfToken, can, util, LEAD_STATUSES, ROLE_LABELS, ROLES, OUTCOMES, LOST_REASONS, PLAN_OPTIONS: planOptions(), STAGES,
+      user: req.user, csrfToken: req.csrfToken, can, util, LEAD_STATUSES, ROLE_LABELS, ROLES, OUTCOMES, LOST_REASONS, PLAN_OPTIONS: planOptions(), STAGES, PAYMENTS_ON: razorpay.enabled(),
       path: req.path, query: req.query, flash: req.query.ok || null, error: req.query.err || null,
       brand: await branding.get()
     });
@@ -265,6 +266,12 @@ function createCrmApp({
     // No #outcome here: the sheet opens on that hash, and after saving it should be closed.
     res.redirect(withOk(`/leads/${waId}`, `Saved: ${OUTCOMES[outcome]}.`));
   }));
+  app.post('/leads/:waId/payment-link', h(async (req, res) => {
+    const waId = util.cleanWaId(req.params.waId);
+    const { url, sent } = await crm.createPaymentLink(req.user, waId, { plan: req.body.plan, amount: req.body.amount });
+    res.redirect(withOk(`/leads/${waId}`, sent ? 'Payment link sent on WhatsApp.' : `Reply window closed. Send this link yourself: ${url}`));
+  }));
+  app.post('/leads/:waId/suggestion/dismiss', leadAction((req, waId) => crm.dismissSuggestion(req.user, waId), 'Suggestion dismissed.'));
   app.post('/leads/:waId/handoff/resolve', leadAction((req, waId) => crm.resolveHandoff(req.user, waId), 'Handoff resolved.'));
   app.post('/leads/:waId/followups', leadAction((req, waId) => crm.addFollowUp(req.user, waId, {
     title: req.body.title, dueAt: util.localInputToIso(req.body.due_at), assigneeId: req.body.user_id || null

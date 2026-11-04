@@ -81,7 +81,7 @@ Status: K14–K17 are built and K18 is written (PR `k14-k18-new-client`). GKF na
 
 | # | Task | Owner | Notes |
 | --- | --- | --- | --- |
-| K11 | **Payment links:** staff send a Razorpay/UPI link from the CRM; the `payment_link.paid` webhook logs Won + ₹ on the lead and triggers the Conversions API event | Kaamil | The lead key goes in the link's `reference_id`/`notes` |
+| K11 | ✅ **Payment links:** staff send a Razorpay/UPI link from the CRM; the `payment_link.paid` webhook logs Won + ₹ on the lead and triggers the Conversions API event | Kaamil | The lead key goes in the link's `reference_id`/`notes` |
 | K13 | ✅ **AI-suggested outcomes:** the reply call also returns a suggested outcome ("paid", "visit booked Sat 7am"); staff confirm with one tap. The AI never logs a sale on its own | Kaamil | Still one AI call per reply |
 | R3 | **Live board:** server-sent events so the kanban pipeline updates for everyone in real time; overdue cards red | Krishna | No websockets or extra services |
 | R4 | **PWA:** manifest + service worker so sales installs the CRM on their phone | Krishna | |
@@ -146,6 +146,10 @@ For R5/R6 (analytics): count outcomes per salesperson and per ad (`leads.metadat
 ## AI-suggested outcomes (K13, built)
 
 The AI's JSON answer has an optional `outcome` field (`visit_booked`, `visited`, `joined`, `lost`) for things the lead says already happened. `src/services/suggestedOutcome.js` cleans it, saves it on the lead as `leads.metadata.suggested_outcome` and sends one Telegram alert. The lead page shows it above the tabs (`crm/views/partials/suggested-outcome.ejs`): **Confirm** logs it in one tap when the details are known (visited, lost, joined with plan + ₹); otherwise **Add details** opens the outcome sheet. **Dismiss** removes it. Logging any outcome clears it. It never logs anything without a person. No extra AI call.
+
+## Payment links (K11, built)
+
+Off until `RAZORPAY_KEY_ID`, `RAZORPAY_KEY_SECRET` and `RAZORPAY_WEBHOOK_SECRET` are set (test-mode keys first). Staff open **Log outcome → Send payment link…** on a lead, enter plan and ₹. `Crm.createPaymentLink` creates the Razorpay link (`src/services/razorpay.js`), stores it in `crm_payment_links` (CRM migration 4) and sends it on WhatsApp if the reply window is open (otherwise it shows the link to send by hand). In the Razorpay dashboard, add a webhook to `https://<bot host>/razorpay/webhook` for `payment_link.paid` with the webhook secret. A signed `payment_link.paid` calls `Crm.markLinkPaid`: it logs **Joined** with the paid amount once (retries are ignored), in the name of the staff member who sent the link, and posts "💰 Paid" in the staff Telegram group. The Joined outcome then goes to Meta through K7 like any other.
 
 ## How we work
 

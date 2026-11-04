@@ -34,8 +34,8 @@ async function restore(buffer) {
         // A manager may have a higher id than their reps: link managers after all users exist.
         const row = table === 'crm_users' ? { ...original, manager_id: null } : original;
         const cols = Object.keys(row);
-        // Binary columns (crm_branding.logo_data) come back from JSON as { type: 'Buffer', data: [...] }.
-        const asValue = v => (v && v.type === 'Buffer' && Array.isArray(v.data) ? Buffer.from(v.data) : v);
+        // Binary columns (crm_branding.logo_data) are saved as { $base64 } by backup.js.
+        const asValue = v => (v && typeof v.$base64 === 'string' ? Buffer.from(v.$base64, 'base64') : v);
         const values = cols.map(c => (JSON_COLUMNS.has(c) ? JSON.stringify(row[c] ?? {}) : asValue(row[c])));
         const overriding = IDENTITY_TABLES.has(table) ? 'OVERRIDING SYSTEM VALUE' : '';
         await db.query(`INSERT INTO ${table} (${cols.join(', ')}) ${overriding} VALUES (${cols.map((_, i) => `$${i + 1}`).join(', ')})`, values);

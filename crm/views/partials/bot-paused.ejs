@@ -1,0 +1,10 @@
+<%# The AI stays quiet after a staff reply (BOT_PAUSE_HOURS_AFTER_STAFF_REPLY). Staff can turn it back on early. %>
+<% if (botPausedUntil) { %>
+<section class="alert alert-warning alert-soft mb-4 flex-col items-stretch gap-2 sm:flex-row sm:items-center" aria-label="AI paused">
+  <p class="min-w-0 flex-1 text-sm">AI is paused for this lead until <strong><%= util.fmtTime(botPausedUntil) %></strong>, because staff replied.</p>
+  <form method="post" action="/leads/<%= lead.wa_id %>/bot/resume">
+    <%- include('csrf') %>
+    <button class="btn btn-warning btn-sm" type="submit">Turn AI back on</button>
+  </form>
+</section>
+<% } %>

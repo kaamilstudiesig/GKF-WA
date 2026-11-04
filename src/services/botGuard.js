@@ -3,10 +3,24 @@ const env = require('../config/env');
 
 /**
  * Decides whether the bot should answer a lead at all:
- * - paused: a staff member replied from the CRM recently, so the bot stays out of their conversation;
+ * - paused: a staff member replied from the CRM recently, so the bot stays out of their conversation
+ *   (staff can end the pause early with "Turn AI back on", stored as leads.metadata.bot_resumed_at);
  * - capped: the lead already got the daily maximum of bot replies (spam or a runaway chat).
  */
+// When staff last turned the AI back on for this lead (or -infinity).
+const RESUMED_AT = `COALESCE((SELECT (l.metadata->>'bot_resumed_at')::timestamptz FROM leads l WHERE l.wa_id = $1), '-infinity'::timestamptz)`;
+
 const botGuard = {
+  /** When the staff pause ends for this lead, or null when the bot is not paused. */
+  async pausedUntil(waId, pauseHours = env.botPauseHoursAfterStaffReply) {
+    if (!(pauseHours > 0)) return null;
+    const row = await db.one(`
+      SELECT MAX(created_at) + ($2::float8 * interval '1 hour') AS until FROM outbound_messages
+      WHERE wa_id = $1 AND metadata->>'source' = 'crm' AND status <> 'failed'
+        AND created_at > GREATEST(now() - ($2::float8 * interval '1 hour'), ${RESUMED_AT})`, [waId, pauseHours]);
+    return row && row.until ? new Date(row.until).toISOString() : null;
+  },
+
   async check(waId, {
     pauseHours = env.botPauseHoursAfterStaffReply,
     dailyCap = env.maxBotRepliesPerLeadPerDay
@@ -14,7 +28,7 @@ const botGuard = {
     const row = await db.one(`
       SELECT
         COUNT(*) FILTER (WHERE metadata->>'source' = 'crm' AND status <> 'failed'
-          AND created_at > now() - ($2::float8 * interval '1 hour'))::int AS staff_recent,
+          AND created_at > GREATEST(now() - ($2::float8 * interval '1 hour'), ${RESUMED_AT}))::int AS staff_recent,
         COUNT(*) FILTER (WHERE COALESCE(metadata->>'source', 'bot') <> 'crm'
           AND created_at > now() - interval '24 hours')::int AS bot_replies_today
       FROM outbound_messages WHERE wa_id = $1`, [waId, pauseHours]);

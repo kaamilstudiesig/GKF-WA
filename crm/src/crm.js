@@ -356,6 +356,14 @@ class Crm {
     return { waId: row.wa_id, plan: row.plan, amount };
   }
 
+  /** Ends the pause after a staff reply: the AI answers this lead's next message again. */
+  async resumeBot(user, waId) {
+    await this.requireLead(user, waId);
+    await this.db.query(`UPDATE leads SET metadata = COALESCE(metadata, '{}'::jsonb) || jsonb_build_object('bot_resumed_at', now()::text),
+      updated_at = now() WHERE wa_id = $1`, [waId]);
+    await this.log(user, waId, 'bot_resumed', {});
+  }
+
   /** K13: staff dismiss the outcome the AI suggested from the chat. */
   async dismissSuggestion(user, waId) {
     await this.requireLead(user, waId);

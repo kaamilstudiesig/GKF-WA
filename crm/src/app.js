@@ -44,6 +44,7 @@ function profileFromForm(b) {
 }
 const util = require('./util');
 const razorpay = require('../../src/services/razorpay');
+const botGuard = require('../../src/services/botGuard');
 const { labelsFor } = require('../../src/config/verticals');
 
 /** Outcome, stage and settings names for the business type (real estate says "Booked", not "Joined"). */
@@ -249,7 +250,8 @@ function createCrmApp({
       followUps: await crm.leadFollowUps(waId),
       activity: await crm.leadActivity(waId),
       outcomes: await crm.leadOutcomes(waId),
-      staff: await crm.assignableUsers(req.user)
+      staff: await crm.assignableUsers(req.user),
+      botPausedUntil: await botGuard.pausedUntil(waId)
     });
   }));
 
@@ -281,6 +283,7 @@ function createCrmApp({
     const { url, sent } = await crm.createPaymentLink(req.user, waId, { plan: req.body.plan, amount: req.body.amount });
     res.redirect(withOk(`/leads/${waId}`, sent ? 'Payment link sent on WhatsApp.' : `Reply window closed. Send this link yourself: ${url}`));
   }));
+  app.post('/leads/:waId/bot/resume', leadAction((req, waId) => crm.resumeBot(req.user, waId), 'AI is back on for this lead. It answers their next message.'));
   app.post('/leads/:waId/suggestion/dismiss', leadAction((req, waId) => crm.dismissSuggestion(req.user, waId), 'Suggestion dismissed.'));
   app.post('/leads/:waId/handoff/resolve', leadAction((req, waId) => crm.resolveHandoff(req.user, waId), 'Handoff resolved.'));
   app.post('/leads/:waId/followups', leadAction((req, waId) => crm.addFollowUp(req.user, waId, {

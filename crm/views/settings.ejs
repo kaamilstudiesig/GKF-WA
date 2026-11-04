@@ -66,7 +66,7 @@
   <section class="<%= card %> min-w-0">
     <h2>Hours and programs</h2>
     <fieldset class="<%= field %>"><legend class="fieldset-legend">Opening hours (one line each)</legend><textarea name="hours" rows="3" required class="textarea w-full"><%= lines(profile.hours) %></textarea></fieldset>
-    <fieldset class="<%= field %>"><legend class="fieldset-legend">Programs and services (one per line)</legend><textarea name="programs" rows="6" class="textarea w-full"><%= lines(profile.programs) %></textarea></fieldset>
+    <fieldset class="<%= field %>"><legend class="fieldset-legend"><%= LABELS.programs %> (one per line)</legend><textarea name="programs" rows="6" class="textarea w-full"><%= lines(profile.programs) %></textarea></fieldset>
   </section>
 
   <section class="<%= card %> min-w-0">
@@ -76,13 +76,13 @@
   </section>
 
   <section class="<%= card %> min-w-0 lg:col-span-2">
-    <h2>Plans and prices</h2>
+    <h2><%= LABELS.plans %></h2>
     <p class="text-sm text-base-content/60">Exactly what the assistant quotes. Leave a row empty to remove it.</p>
     <div class="space-y-2">
       <% plans.forEach((pl, i) => { %>
       <div class="grid gap-2 rounded-field bg-base-200 p-2 sm:grid-cols-[10rem_9rem_1fr]">
-        <input name="plan_name" maxlength="60" value="<%= pl.name || '' %>" placeholder="Plan name" aria-label="Plan <%= i + 1 %> name" class="input w-full">
-        <input name="plan_price" maxlength="60" value="<%= pl.price || '' %>" placeholder="₹4,040/month" aria-label="Plan <%= i + 1 %> price" class="input w-full">
+        <input name="plan_name" maxlength="60" value="<%= pl.name || '' %>" placeholder="<%= LABELS.planName %>" aria-label="Plan <%= i + 1 %> name" class="input w-full">
+        <input name="plan_price" maxlength="60" value="<%= pl.price || '' %>" placeholder="<%= LABELS.planPrice %>" aria-label="Plan <%= i + 1 %> price" class="input w-full">
         <input name="plan_details" maxlength="240" value="<%= pl.details || '' %>" placeholder="What's included" aria-label="Plan <%= i + 1 %> details" class="input w-full">
       </div>
       <% }) %>

@@ -50,13 +50,13 @@ const ROUTES = {
   human: [
     'talk to human', 'speak to a person', 'speak to someone', 'call me', 'customer support', 'human agent',
     'human staff', 'connect to coach', 'speak to manager', 'connect me to', 'real person', 'speak to staff',
-    'talk to a coach', 'talk to coach', 'talk to us', 'talk to the team', 'talk to someone', 'baat karni hai', 'baat karna hai', 'call karo', 'call kariye',
+    'talk to a coach', 'talk to coach', 'talk to us', 'talk to the team', 'talk to advisor', 'property advisor', 'talk to someone', 'baat karni hai', 'baat karna hai', 'call karo', 'call kariye',
     'manager se baat', 'ಕರೆ ಮಾಡಿ', 'call maadi', 'call madi'
   ],
   complaint: ['complaint', 'dirty', 'broken', 'not working', 'unacceptable', 'rude', 'hygiene', 'shikayat', 'ganda'],
   trial: [
     'book a trial', 'book trial', 'trial session', 'free trial', 'try a workout', 'first workout free',
-    'book free trial', 'book a visit', 'book visit', 'book an appointment', 'book appointment', 'trial chahiye', 'trial lena', 'trial book', 'trial beku', 'ಟ್ರಯಲ್'
+    'book free trial', 'book a visit', 'book visit', 'book site visit', 'site visit', 'book an appointment', 'book appointment', 'trial chahiye', 'trial lena', 'trial book', 'trial beku', 'ಟ್ರಯಲ್'
   ],
   hours: [
     'what time do you open', 'opening hours', 'gym timing', 'working hours', 'operating hours', 'close time',

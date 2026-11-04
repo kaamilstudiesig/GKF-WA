@@ -13,7 +13,7 @@ const db = require('../src/db');
 
 // In restore order: parents before the rows that reference them.
 const BOT_TABLES = ['leads', 'messages', 'handoffs', 'outbound_messages', 'ai_usage', 'webhook_events', 'business_profile'];
-const CRM_TABLES = ['crm_users', 'crm_lead_assignments', 'crm_lead_notes', 'crm_follow_ups', 'crm_lead_outcomes', 'crm_payment_links', 'crm_activity_log'];
+const CRM_TABLES = ['crm_users', 'crm_lead_assignments', 'crm_lead_notes', 'crm_follow_ups', 'crm_lead_outcomes', 'crm_payment_links', 'crm_branding', 'crm_activity_log'];
 const TABLES = [...BOT_TABLES, ...CRM_TABLES];
 
 async function createBackup() {
@@ -21,7 +21,10 @@ async function createBackup() {
   for (const t of TABLES) {
     // CRM tables exist once the CRM migrations ran (always, on Heroku).
     if (CRM_TABLES.includes(t) && !(await db.one('SELECT to_regclass($1) AS t', [t])).t) continue;
-    tables[t] = await db.many(`SELECT * FROM ${t} ORDER BY 1`);
+    // Binary values (crm_branding.logo_data) are stored as { $base64 } so JSON keeps them intact.
+    const bin = v => (Buffer.isBuffer(v) || v instanceof Uint8Array ? { $base64: Buffer.from(v).toString('base64') } : v);
+    tables[t] = (await db.many(`SELECT * FROM ${t} ORDER BY 1`))
+      .map(r => Object.fromEntries(Object.entries(r).map(([k, v]) => [k, bin(v)])));
   }
   const doc = { format: 'gkf-wa-backup', version: 1, created_at: new Date().toISOString(), tables };
   return zlib.gzipSync(Buffer.from(JSON.stringify(doc)));

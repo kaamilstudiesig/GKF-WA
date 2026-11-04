@@ -19,7 +19,7 @@ function normalize(raw) {
   if (raw.type === 'joined') {
     s.plan = str(raw.plan, 100);
     const amount = Number(String(raw.amount_inr ?? '').replace(/[₹,\s]/g, ''));
-    s.amount_inr = Number.isInteger(amount) && amount > 0 && amount <= 1000000 ? amount : null;
+    s.amount_inr = Number.isInteger(amount) && amount > 0 && amount <= 100000000 ? amount : null; // up to ₹10 crore (real estate)
   }
   if (raw.type === 'lost') s.lost_reason = LOST_REASONS[raw.lost_reason] ? raw.lost_reason : 'other';
   return s;

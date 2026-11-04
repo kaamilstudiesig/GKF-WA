@@ -4,7 +4,10 @@
 document.addEventListener('DOMContentLoaded', () => {
   const board = document.querySelector('[data-kanban]');
   if (!board) return;
-  const NEEDS_DETAILS = { visit_booked: 'Visit booked', joined: 'Joined', lost: 'Lost' };
+  // Stage names come from the page (they depend on the business type).
+  let names = {};
+  try { names = JSON.parse(board.dataset.labels || '{}'); } catch (e) { /* defaults below */ }
+  const NEEDS_DETAILS = { visit_booked: names.visit_booked || 'Visit booked', joined: names.joined || 'Joined', lost: names.lost || 'Lost' };
   const csrf = document.querySelector('input[name="_csrf"]')?.value || '';
   const dialog = document.getElementById('stage-dialog');
   const form = dialog?.querySelector('[data-stage-form]');

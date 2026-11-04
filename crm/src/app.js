@@ -44,6 +44,14 @@ function profileFromForm(b) {
 }
 const util = require('./util');
 const razorpay = require('../../src/services/razorpay');
+const { labelsFor } = require('../../src/config/verticals');
+
+/** Outcome, stage and settings names for the business type (real estate says "Booked", not "Joined"). */
+function namesFor(type) {
+  const l = labelsFor(type);
+  const pick = base => Object.fromEntries(Object.entries(base).map(([k, v]) => [k, l[k] || v]));
+  return { OUTCOMES: pick(OUTCOMES), STAGES: pick(STAGES), LABELS: l };
+}
 
 /** Express 4 does not catch rejected promises; pass them to the error handler. */
 const h = fn => (req, res, next) => Promise.resolve(fn(req, res, next)).catch(next);
@@ -93,7 +101,8 @@ function createCrmApp({
     req.user = session ? session.user : null;
     req.csrfToken = session ? session.csrfToken : null;
     Object.assign(res.locals, {
-      user: req.user, csrfToken: req.csrfToken, can, util, LEAD_STATUSES, ROLE_LABELS, ROLES, OUTCOMES, LOST_REASONS, PLAN_OPTIONS: planOptions(), STAGES, PAYMENTS_ON: razorpay.enabled(),
+      user: req.user, csrfToken: req.csrfToken, can, util, LEAD_STATUSES, ROLE_LABELS, ROLES, LOST_REASONS, PLAN_OPTIONS: planOptions(), PAYMENTS_ON: razorpay.enabled(),
+      ...namesFor(gymConfig ? gymConfig.profile.type : 'gym'),
       path: req.path, query: req.query, flash: req.query.ok || null, error: req.query.err || null,
       brand: await branding.get()
     });
@@ -199,7 +208,8 @@ function createCrmApp({
   }));
 
   app.get('/pipeline', h(async (req, res) => {
-    res.render('pipeline', { columns: await crm.pipelineBoard(req.user) });
+    const columns = (await crm.pipelineBoard(req.user)).map(c => ({ ...c, label: res.locals.STAGES[c.stage] || c.label }));
+    res.render('pipeline', { columns });
   }));
 
   // Kanban move. JSON for drag-and-drop (fetch), redirect for plain forms.
@@ -217,7 +227,7 @@ function createCrmApp({
       throw err;
     }
     if (wantsJson) return res.json({ ok: true, stage: req.body.stage });
-    res.redirect(withOk('/pipeline', `Moved to ${STAGES[req.body.stage]}.`));
+    res.redirect(withOk('/pipeline', `Moved to ${res.locals.STAGES[req.body.stage]}.`));
   }));
 
   // SortableJS (MIT) for drag-and-drop, served from node_modules (CSP allows only same-origin scripts).
@@ -264,7 +274,7 @@ function createCrmApp({
       note: req.body.note
     });
     // No #outcome here: the sheet opens on that hash, and after saving it should be closed.
-    res.redirect(withOk(`/leads/${waId}`, `Saved: ${OUTCOMES[outcome]}.`));
+    res.redirect(withOk(`/leads/${waId}`, `Saved: ${res.locals.OUTCOMES[outcome]}.`));
   }));
   app.post('/leads/:waId/payment-link', h(async (req, res) => {
     const waId = util.cleanWaId(req.params.waId);

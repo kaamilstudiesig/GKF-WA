@@ -33,6 +33,8 @@ const gym = {
     bookButton: 'Book a trial',
     staffButton: 'Talk to a coach'
   },
+  // Names on the CRM and in the prompt. Missing keys fall back to the defaults in labelsFor().
+  labels: {},
   examples(profile) {
     const [a, b] = profile.plans;
     const plansLine = a && b
@@ -80,6 +82,7 @@ const services = {
     bookButton: 'Book a visit',
     staffButton: 'Talk to us'
   },
+  labels: { programs: 'Services', plans: 'Plans and prices', joined: 'Won' },
   examples(profile) {
     const [a] = profile.plans;
     const priceLine = a ? `${a.name} is ${a.price}.` : 'Someone from our team will share the prices with you.';
@@ -92,6 +95,62 @@ const services = {
   }
 };
 
-const VERTICALS = { gym, services };
+/**
+ * Real estate: builders, brokers and channel partners selling or renting homes.
+ * Plans are unit types with prices ("2 BHK: ₹85L onwards"); programs are projects.
+ */
+const realestate = {
+  type: 'realestate',
+  label: 'Real estate (projects, sales, rentals)',
+  noun: 'real estate team',
+  visit: 'site visit',
+  staff: 'property advisor',
+  unknownTopics: 'exact unit availability, floor or facing, offers, discounts, loan approval, RERA details, possession changes, anything not listed in the facts',
+  qualify: [
+    'Need (buy or rent, which property type and BHK)',
+    'Location (which area or project they prefer)',
+    'Budget (range, and whether they need a home loan)',
+    'Timing (when they want to move in or buy)',
+    'Site visit (which day they can come)'
+  ],
+  goalQuestion: 'kitne BHK aur budget kya hai',
+  words: {
+    visit: { enA: 'a site visit', hi: 'site visit', kn: 'ಸೈಟ್ ಭೇಟಿ' },
+    staff: { en: 'our property advisor', hi: 'humare property advisor', hiWill: 'denge', kn: 'ನಮ್ಮ ಪ್ರಾಪರ್ಟಿ ಸಲಹೆಗಾರರು' },
+    plans: { en: 'price list', hi: 'price list', kn: 'ಬೆಲೆ ಪಟ್ಟಿ' },
+    pricesAsk: {
+      en: 'Which one are you looking at, and what budget do you have in mind? I will tell you what fits.',
+      hi: 'Aap kaunsa dekh rahe ho, aur budget kitna socha hai? Main bata dunga kya fit hoga.',
+      kn: 'ನೀವು ಯಾವುದನ್ನು ನೋಡುತ್ತಿದ್ದೀರಿ, ಬಜೆಟ್ ಎಷ್ಟು? ಯಾವುದು ಸೂಕ್ತ ಎಂದು ತಿಳಿಸುತ್ತೇನೆ.'
+    },
+    bookButton: 'Book site visit',
+    staffButton: 'Talk to advisor'
+  },
+  labels: {
+    programs: 'Projects and properties', plans: 'Unit types and prices', planName: '2 BHK', planPrice: '₹85L onwards',
+    visit_booked: 'Site visit booked', visited: 'Site visited', no_show: 'Missed site visit', joined: 'Booked'
+  },
+  examples(profile) {
+    const [a, b] = profile.plans;
+    const priceLine = a && b ? `${a.name} is ${a.price} and ${b.name} is ${b.price}.` : a ? `${a.name} is ${a.price}.` : 'Our property advisor will share the price list.';
+    const project = profile.programs[0] || 'our project';
+    return [
+      ['2bhk price kya hai?', { reply: `${priceLine} Aapka budget kitna hai, aur home loan lena hai?`, lead: { status: 'contacted', interest: '2 BHK price' }, notify_staff: null, outcome: null }],
+      ['budget around 80L, need loan', { reply: `That works for ${project}. Most banks give loans here, our advisor can help with that too. When are you planning to move?`, lead: { status: 'qualified', interest: '2 BHK, 80L, home loan', notes: 'Needs home loan' }, notify_staff: null, outcome: null }],
+      ['can I see the flat this sunday?', { reply: 'Sure, Sunday works. Our property advisor will message you shortly to fix the time.', lead: { status: 'hot', notes: 'Wants site visit Sunday' }, notify_staff: { handoff_reason: 'ready_to_book', summary: '2 BHK, 80L with loan, site visit Sunday' }, outcome: null }],
+      ['ok thanks', { reply: 'Anytime! Message here whenever you want to visit.', lead: {}, notify_staff: null, outcome: null }]
+    ];
+  }
+};
 
-module.exports = { VERTICALS, verticalFor: type => VERTICALS[type] || gym };
+const VERTICALS = { gym, services, realestate };
+
+const DEFAULT_LABELS = { programs: 'Programs and services', plans: 'Plans and prices', planName: 'Plan name', planPrice: '₹4,040/month' };
+
+/** Display names for a business type: prompt/settings labels and outcome/stage names. */
+function labelsFor(type) {
+  const v = VERTICALS[type] || gym;
+  return { ...DEFAULT_LABELS, ...(v.labels || {}) };
+}
+
+module.exports = { VERTICALS, verticalFor: type => VERTICALS[type] || gym, labelsFor };

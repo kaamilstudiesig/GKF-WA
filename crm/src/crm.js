@@ -8,6 +8,8 @@ const razorpay = require('../../src/services/razorpay');
 const MAX_MESSAGE_LENGTH = 4096; // WhatsApp text limit
 const PAGE_SIZE = 25;
 const MAX_INT = 2147483647;
+// Largest sale we accept: ₹10 crore (real estate). Payment links stay at ₹10 lakh (Razorpay limits).
+const MAX_SALE_INR = 100000000;
 
 class HttpError extends Error {
   constructor(status, message) { super(message); this.status = status; }
@@ -374,7 +376,7 @@ class Crm {
       row.plan = String(input.plan || '').trim().slice(0, 100);
       if (!row.plan) throw new HttpError(400, 'Which plan did they join?');
       const amount = Number(String(input.amount ?? '').replace(/[₹,\s]/g, ''));
-      if (!Number.isInteger(amount) || amount <= 0 || amount > 1000000) throw new HttpError(400, 'Enter the amount paid in rupees (whole number).');
+      if (!Number.isInteger(amount) || amount <= 0 || amount > MAX_SALE_INR) throw new HttpError(400, 'Enter the amount paid in rupees (whole number).');
       row.amount_inr = amount;
     }
     if (outcome === 'lost') {

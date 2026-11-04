@@ -11,7 +11,8 @@ const { Users } = require('../src/users');
 async function createOwner(db, { name, email }) {
   const users = new Users(db);
   if (await users.findByEmail(email)) return null;
-  const password = crypto.randomBytes(12).toString('base64url');
+  // Letters + a digit always (the CRM's password rule), 16+ random characters.
+  const password = `${crypto.randomBytes(12).toString('base64url')}${crypto.randomInt(10)}a`;
   await users.create({ name, email, role: 'owner', managerId: null, password, mustChange: true });
   return password;
 }

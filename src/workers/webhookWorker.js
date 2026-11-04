@@ -3,6 +3,7 @@ const outboundWorker = require('./outboundWorker');
 const eventRepository = require('../db/eventRepository');
 const outboundRepository = require('../db/outboundRepository');
 const leadRepository = require('../db/leadRepository');
+const env = require('../config/env');
 const aiPolicy = require('../services/aiPolicy');
 const deterministicRouter = require('../services/deterministicRouter');
 const aiService = require('../services/aiService');
@@ -30,13 +31,14 @@ function textOf(msg) {
  * Decides the reply to one inbound message: safety check, fixed replies, then AI.
  * Returns { text, buttons?, location? }.
  */
-async function decideReply(lead, text) {
+async function decideReply(lead, text, { burst = false } = {}) {
   const medical = aiPolicy.checkMedicalInjurySafety(text);
   if (medical.isMedicalQuery) {
     await applyLeadUpdates(lead, { needs_human: true, handoff_reason: medical.handoffReason, summary: 'Asked an injury/medical question.' });
     return { text: medical.disclaimerText };
   }
-  const routed = deterministicRouter.routeMessage(text, {}, lead);
+  // After a burst the lead asked several things: the AI answers them together.
+  const routed = burst ? { matched: false } : deterministicRouter.routeMessage(text, {}, lead);
   if (routed.matched) {
     if (routed.updates) await applyLeadUpdates(lead, routed.updates);
     return { text: routed.replyText, buttons: routed.buttons, location: routed.location };
@@ -72,6 +74,13 @@ async function processEvent(event) {
         text: text !== null ? text : `[${String(msg.type || 'unknown').toUpperCase()} message]`
       });
     }
+    // A newer text from the same lead is waiting: let that one answer the whole burst.
+    if (text !== null && await eventRepository.hasNewerText(waId, event.id)) {
+      logger.info('Burst: answering with the next message', { wa_id: waId });
+      await eventRepository.complete(event.id);
+      return;
+    }
+
     const guard = await botGuard.check(waId);
     if (guard.paused || guard.overCap) {
       // Staff are handling this lead (or it hit the daily cap): record the message, don't answer.
@@ -89,7 +98,7 @@ async function processEvent(event) {
       reply = { text: gymConfig.fallbackMessages.systemError };
     } else {
       reply = text !== null && text.trim()
-        ? await decideReply(lead, text)
+        ? await decideReply(lead, text, { burst: await leadRepository.unansweredInboundCount(waId) > 1 })
         : { text: gymConfig.fallbackMessages.nonTextMessage };
     }
 
@@ -109,7 +118,8 @@ async function processEvent(event) {
 const webhookWorker = new QueueWorker('Inbound message worker', {
   claim: () => eventRepository.claimNext(),
   handle: processEvent,
-  concurrency: 3
+  concurrency: 3,
+  intervalMs: env.queuePollMs
 });
 
 module.exports = webhookWorker;

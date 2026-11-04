@@ -3,6 +3,8 @@ const outboundRepository = require('../db/outboundRepository');
 const whatsappService = require('../services/whatsappService');
 const opsAlerts = require('../services/opsAlerts');
 const logger = require('../utils/logger');
+const env = require('../config/env');
+const signals = require('./signals');
 const { captureException } = require('../utils/sentry');
 
 /** Network errors, rate limits and Meta 5xx are worth retrying; 4xx are not. */
@@ -31,8 +33,11 @@ async function sendOne(job) {
 const outboundWorker = new QueueWorker('Outbound WhatsApp worker', {
   claim: () => outboundRepository.claimNext(),
   handle: sendOne,
-  concurrency: 2
+  concurrency: 2,
+  intervalMs: env.queuePollMs
 });
+// The CRM (and anything else) can wake the sender as soon as it queues a message.
+signals.on('outbound', () => { if (outboundWorker.running) outboundWorker.kick(); });
 
 module.exports = outboundWorker;
 module.exports.isRetryable = isRetryable;

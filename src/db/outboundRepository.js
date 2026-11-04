@@ -25,10 +25,16 @@ const outboundRepository = {
       UPDATE outbound_messages o
       SET status = 'sending', locked_at = now(), attempts = o.attempts + 1, updated_at = now()
       WHERE o.id = (
-        SELECT id FROM outbound_messages
-        WHERE (status = 'pending' AND available_at <= now())
-           OR (status = 'sending' AND locked_at <= now() - make_interval(secs => $1))
-        ORDER BY id
+        SELECT c.id FROM outbound_messages c
+        WHERE ((c.status = 'pending' AND c.available_at <= now())
+            OR (c.status = 'sending' AND c.locked_at <= now() - make_interval(secs => $1)))
+          -- One message per lead at a time, oldest first, so they arrive in order.
+          AND NOT EXISTS (
+            SELECT 1 FROM outbound_messages p
+            WHERE p.wa_id = c.wa_id AND p.id <> c.id
+              AND ((p.status = 'sending' AND p.locked_at > now() - make_interval(secs => $1))
+                OR (p.status IN ('pending', 'sending') AND p.id < c.id)))
+        ORDER BY c.id
         FOR UPDATE SKIP LOCKED
         LIMIT 1)
       RETURNING o.*`, [staleSeconds]);

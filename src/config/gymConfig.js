@@ -89,9 +89,9 @@ const gymConfig = {
 
 FACTS (the only facts you may use)
 - ${p.name}: ${p.facility}, ${p.address}. ${p.parking}.
-- Programs: ${p.programs.join(', ')}.
+- ${v.labels?.programs || 'Programs'}: ${p.programs.join(', ')}.
 - Timings: ${p.hours.join('. ')}.
-- Plans:
+- ${v.labels?.plans || 'Plans'}:
 ${plans}
 ${policies}
 If something is not in these facts (${v.unknownTopics}), never say we have it and never say we don't have it. Say a ${v.staff} will confirm it.

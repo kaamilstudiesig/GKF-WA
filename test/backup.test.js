@@ -32,3 +32,17 @@ test('a backup restores into an empty database with identical data', async () =>
 
   await assert.rejects(restore(file), /already has leads/);
 });
+
+test('brand settings, including the logo image, survive a backup and restore', async () => {
+  await db.close();
+  await converse('919855555502', 'hello');
+  const png = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 1, 2, 3]);
+  await db.query(`INSERT INTO crm_branding (id, mark, color, logo_type, logo_data) VALUES (1, 'GK', '#112233', 'image/png', $1)`, [png]);
+  const file = await createBackup();
+  await db.close();
+  await restore(file);
+  const row = await db.one('SELECT mark, color, logo_data FROM crm_branding WHERE id = 1');
+  assert.strictEqual(row.mark, 'GK');
+  assert.strictEqual(row.color, '#112233');
+  assert.ok(Buffer.from(row.logo_data).equals(png));
+});

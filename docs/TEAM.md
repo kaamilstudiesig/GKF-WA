@@ -151,6 +151,10 @@ The AI's JSON answer has an optional `outcome` field (`visit_booked`, `visited`,
 
 Off until `RAZORPAY_KEY_ID`, `RAZORPAY_KEY_SECRET` and `RAZORPAY_WEBHOOK_SECRET` are set (test-mode keys first). Staff open **Log outcome → Send payment link…** on a lead, enter plan and ₹. `Crm.createPaymentLink` creates the Razorpay link (`src/services/razorpay.js`), stores it in `crm_payment_links` (CRM migration 4) and sends it on WhatsApp if the reply window is open (otherwise it shows the link to send by hand). In the Razorpay dashboard, add a webhook to `https://<bot host>/razorpay/webhook` for `payment_link.paid` with the webhook secret. A signed `payment_link.paid` calls `Crm.markLinkPaid`: it logs **Joined** with the paid amount once (retries are ignored), in the name of the staff member who sent the link, and posts "💰 Paid" in the staff Telegram group. The Joined outcome then goes to Meta through K7 like any other.
 
+## Business types (K16 + real estate)
+
+`src/config/verticals.js` has one pack per business type: `gym`, `services` (general), `realestate`. A pack sets how the AI sells (qualify questions, examples), the words in the free fixed replies and buttons (`words`), and display names (`labels`): settings field names, outcome and stage names (real estate: Site visit booked, Site visited, Booked). The CRM reads them per request (`namesFor` in `crm/src/app.js`); internal keys (`joined`, `visit_booked`) never change, so reports, K7 and K11 work the same for every type. Packs hold no personal data: no names, addresses or phone numbers in examples. Sales up to ₹10 crore can be logged (payment links stay at ₹10 lakh).
+
 ## How we work
 
 - **Branches + PRs only.** Never push to `main`. One PR per task, named after the task (`r1-outcomes`, `k1-bsuid`). The other person reviews.

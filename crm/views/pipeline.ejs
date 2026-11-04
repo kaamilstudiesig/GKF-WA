@@ -15,7 +15,7 @@
   <p class="text-xs text-base-content/50"><span class="max-lg:hidden">Drag a card to another stage.</span><span class="lg:hidden">Swipe across stages · tap Move to change a lead's stage.</span></p>
 </div>
 
-<div class="kanban -mx-4 flex snap-x snap-mandatory gap-3 overflow-x-auto px-4 pb-6 lg:mx-0 lg:snap-none lg:px-0" data-kanban>
+<div class="kanban -mx-4 flex snap-x snap-mandatory gap-3 overflow-x-auto px-4 pb-6 lg:mx-0 lg:snap-none lg:px-0" data-kanban data-labels="<%= JSON.stringify(STAGES) %>">
   <% for (const col of columns) { %>
   <section class="flex w-[84vw] max-w-[19rem] shrink-0 snap-start flex-col rounded-box border-t-2 bg-base-100 <%= stageTone[col.stage] %> lg:w-64" aria-label="<%= col.label %>">
     <header class="flex items-center justify-between px-3 pt-3 pb-2">

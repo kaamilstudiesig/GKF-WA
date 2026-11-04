@@ -27,7 +27,9 @@ const cleanName = v => String(v ?? '').replace(/\s+/g, ' ').trim();
 function initials(name) {
   const words = cleanName(name).split(' ').filter(w => /[\p{L}\p{N}]/u.test(w));
   if (!words.length) return 'CR';
-  const letters = words.length === 1 ? [...words[0]].slice(0, 2) : words.slice(0, 2).map(w => [...w][0]);
+  // Letters and digits only, so "(Demo) Realty" gives "DR", not "(R".
+  const alnum = w => [...w].filter(ch => /[\p{L}\p{N}]/u.test(ch));
+  const letters = words.length === 1 ? alnum(words[0]).slice(0, 2) : words.slice(0, 2).map(w => alnum(w)[0]);
   return letters.join('').toUpperCase();
 }
 

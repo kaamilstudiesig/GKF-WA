@@ -5,7 +5,7 @@
   <form method="post" action="/leads/<%= lead.wa_id %>/payment-link" class="collapse-content space-y-2">
     <%- include('csrf') %>
     <fieldset class="fieldset py-0"><legend class="fieldset-legend">Plan</legend>
-      <input name="plan" list="plan-options" maxlength="100" required placeholder="Quarterly Elite" class="input w-full"></fieldset>
+      <input name="plan" list="plan-options" maxlength="100" required placeholder="<%= LABELS.planName %>" class="input w-full"></fieldset>
     <fieldset class="fieldset py-0"><legend class="fieldset-legend">Amount (₹)</legend><input name="amount" inputmode="numeric" pattern="[0-9,₹ ]+" required placeholder="7080" class="input w-full"></fieldset>
     <p class="text-xs text-base-content/60">Sent on WhatsApp. When they pay, the sale is logged automatically.</p>
     <button class="btn btn-primary w-full" type="submit">Send link</button>

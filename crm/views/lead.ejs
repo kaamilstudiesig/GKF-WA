@@ -200,7 +200,7 @@
     </form>
     <div class="mt-3 space-y-2">
       <details class="collapse collapse-arrow bg-base-200">
-        <summary class="collapse-title flex items-center gap-2 text-sm font-medium"><%- include('partials/icon', { name: 'calendar-plus' }) %>Visit booked…</summary>
+        <summary class="collapse-title flex items-center gap-2 text-sm font-medium"><%- include('partials/icon', { name: 'calendar-plus' }) %><%= OUTCOMES.visit_booked %>…</summary>
         <form method="post" action="/leads/<%= lead.wa_id %>/outcome" class="collapse-content space-y-2">
           <%- include('partials/csrf') %>
           <input type="hidden" name="outcome" value="visit_booked">
@@ -209,15 +209,15 @@
         </form>
       </details>
       <details class="collapse collapse-arrow bg-base-200">
-        <summary class="collapse-title flex items-center gap-2 text-sm font-medium text-primary"><%- include('partials/icon', { name: 'rupee' }) %>Joined…</summary>
+        <summary class="collapse-title flex items-center gap-2 text-sm font-medium text-primary"><%- include('partials/icon', { name: 'rupee' }) %><%= OUTCOMES.joined %>…</summary>
         <form method="post" action="/leads/<%= lead.wa_id %>/outcome" class="collapse-content space-y-2">
           <%- include('partials/csrf') %>
           <input type="hidden" name="outcome" value="joined">
           <fieldset class="fieldset py-0"><legend class="fieldset-legend">Plan</legend>
-            <input id="plan" name="plan" list="plan-options" maxlength="100" required placeholder="Quarterly Elite" class="input w-full">
+            <input id="plan" name="plan" list="plan-options" maxlength="100" required placeholder="<%= LABELS.planName %>" class="input w-full">
             <datalist id="plan-options"><% for (const p of PLAN_OPTIONS) { %><option value="<%= p %>"><% } %></datalist></fieldset>
           <fieldset class="fieldset py-0"><legend class="fieldset-legend">Amount paid (₹)</legend><input id="amount" name="amount" inputmode="numeric" pattern="[0-9,₹ ]+" required placeholder="7080" class="input w-full"></fieldset>
-          <button class="btn btn-primary w-full" type="submit">Save joined</button>
+          <button class="btn btn-primary w-full" type="submit">Save <%= OUTCOMES.joined.toLowerCase() %></button>
         </form>
       </details>
       <%- include('partials/payment-link', { lead }) %>

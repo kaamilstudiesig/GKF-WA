@@ -112,6 +112,27 @@ const CRM_MIGRATIONS = [
       'ALTER TABLE crm_lead_outcomes ADD COLUMN meta_attempts INTEGER NOT NULL DEFAULT 0',
       'ALTER TABLE crm_lead_outcomes ADD COLUMN meta_error TEXT'
     ]
+  },
+  {
+    id: 4,
+    name: 'payment_links',
+    up: [
+      `CREATE TABLE crm_payment_links (
+        id INTEGER GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+        wa_id TEXT NOT NULL,
+        user_id INTEGER NOT NULL REFERENCES crm_users(id),
+        reference_id TEXT NOT NULL UNIQUE,
+        razorpay_id TEXT UNIQUE,
+        plan TEXT NOT NULL,
+        amount_inr INTEGER NOT NULL,
+        short_url TEXT,
+        status TEXT NOT NULL DEFAULT 'created', -- created, paid
+        payment_id TEXT,
+        paid_at TIMESTAMPTZ,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+      )`,
+      'CREATE INDEX crm_payment_links_wa_id ON crm_payment_links (wa_id)'
+    ]
   }
 ];
 

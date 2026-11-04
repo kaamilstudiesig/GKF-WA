@@ -1,0 +1,14 @@
+<%# K11: send a Razorpay link. When it is paid, the server logs Joined + ₹ by itself. Hidden until Razorpay keys are set. %>
+<% if (PAYMENTS_ON) { %>
+<details class="collapse collapse-arrow bg-base-200">
+  <summary class="collapse-title flex items-center gap-2 text-sm font-medium"><%- include('icon', { name: 'rupee' }) %>Send payment link…</summary>
+  <form method="post" action="/leads/<%= lead.wa_id %>/payment-link" class="collapse-content space-y-2">
+    <%- include('csrf') %>
+    <fieldset class="fieldset py-0"><legend class="fieldset-legend">Plan</legend>
+      <input name="plan" list="plan-options" maxlength="100" required placeholder="Quarterly Elite" class="input w-full"></fieldset>
+    <fieldset class="fieldset py-0"><legend class="fieldset-legend">Amount (₹)</legend><input name="amount" inputmode="numeric" pattern="[0-9,₹ ]+" required placeholder="7080" class="input w-full"></fieldset>
+    <p class="text-xs text-base-content/60">Sent on WhatsApp. When they pay, the sale is logged automatically.</p>
+    <button class="btn btn-primary w-full" type="submit">Send link</button>
+  </form>
+</details>
+<% } %>

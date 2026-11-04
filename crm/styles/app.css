@@ -1,5 +1,5 @@
 /*
- * GKF CRM styles: Tailwind CSS 4 + daisyUI 5. Build with `npm run build:css`
+ * CRM styles: Tailwind CSS 4 + daisyUI 5. Build with `npm run build:css`
  * (output crm/public/css/app.css is generated, not committed). See docs/UI_GUIDE.md.
  */
 @import "tailwindcss" source(none);
@@ -11,9 +11,10 @@
   logs: false;
 }
 
-/* GKF theme: near-black surfaces, gold primary. */
+/* Brand theme: near-black surfaces, gold primary by default. Each business can set its own
+   primary colour in Business settings (R12); head.ejs overrides --color-primary inline. */
 @plugin "daisyui/theme" {
-  name: "gkf";
+  name: "brand";
   default: true;
   prefersdark: true;
   color-scheme: dark;

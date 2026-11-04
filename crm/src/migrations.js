@@ -133,6 +133,23 @@ const CRM_MIGRATIONS = [
       )`,
       'CREATE INDEX crm_payment_links_wa_id ON crm_payment_links (wa_id)'
     ]
+  },
+  {
+    // R12: white-label CRM. One row: logo mark, brand colour and optional logo image.
+    // The business name itself comes from the bot's business profile.
+    id: 5,
+    name: 'branding',
+    up: [
+      `CREATE TABLE crm_branding (
+        id INTEGER PRIMARY KEY CHECK (id = 1),
+        mark TEXT,
+        color TEXT,
+        logo_type TEXT,
+        logo_data BYTEA,
+        updated_by TEXT,
+        updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+      )`
+    ]
   }
 ];
 

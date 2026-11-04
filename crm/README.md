@@ -1,12 +1,24 @@
-# GKF CRM
+# Staff CRM
 
-Staff CRM for **Gold Kraft Fitness**, served by the GKF WhatsApp bot app on
-`crm.goldkraftfitness.com`. It gives the team one place to work the leads the bot captures:
+Staff CRM served by the WhatsApp bot app on each client's CRM host (GKF's pilot:
+`crm.goldkraftfitness.com`). It gives the team one place to work the leads the bot captures:
 read conversations, reply on WhatsApp, move leads through the pipeline, assign
 them, keep notes and follow-ups, and see reports.
 
-Styled after [new.goldkraftfitness.com](https://new.goldkraftfitness.com): black
-and gold, Bebas Neue headings, Barlow Condensed labels, Inter body text.
+## Branding (white-label, R12)
+
+No business name is written in the views. Every page reads `brand` (set per request
+in `crm/src/app.js` from `crm/src/branding.js`):
+
+| What | Where it comes from |
+| --- | --- |
+| Name (logo text, page titles, login text, "All of …", CSV file name) | Business name in the bot's business profile (Business settings) |
+| Logo letters (default: the name's initials) | `crm_branding.mark`, Business settings → Brand |
+| Brand colour (default: the theme's gold, `#d4af37`) | `crm_branding.color`; a different colour overrides daisyUI's `--color-primary` inline on `<html>`, with dark or white text picked for contrast |
+| Logo image (optional, PNG/JPEG/WebP under 40 KB, no SVG) | `crm_branding.logo_data`, served at `/brand/logo?v=…` (public, so the login page can show it) |
+
+Only the owner can change branding. The theme is called `brand` (`crm/styles/app.css`):
+near-black surfaces, Bebas Neue headings, Inter body text.
 
 ## How it connects to the WhatsApp bot
 

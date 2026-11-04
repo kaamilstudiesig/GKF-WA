@@ -205,7 +205,7 @@ class Crm {
     if (body.length > MAX_MESSAGE_LENGTH) throw new HttpError(400, `Message is longer than ${MAX_MESSAGE_LENGTH} characters.`);
     const lead = await this.requireLead(user, waId);
     if (!lead.window_open) {
-      throw new HttpError(409, 'The 24-hour WhatsApp reply window is closed. The lead has to message GKF again before staff can reply.');
+      throw new HttpError(409, 'The 24-hour WhatsApp reply window is closed. The lead has to send a new message before staff can reply.');
     }
     await this.db.tx(async () => {
       await this.db.query(`

@@ -52,11 +52,11 @@ A possible large client wants the chatbot soon. Until this stage is done, it com
 | K16 | ✅ **General business-type preset** in `verticals.js` (services / appointments / retail) plus the client's own type, so the AI sells correctly for a non-gym business | Kaamil | Prompt preview in Business settings reads right for the client's business |
 | K17 | ✅ **Per-client safety:** AI budget caps, client name in every ops alert and Sentry event, separate Telegram groups | Kaamil | An alert always says which client it is about |
 | K18 | 📝 (written, not yet tested) **Meta access path:** written steps to get WhatsApp access for a business that is not ours, before App Review approval (partner access to their WABA, or a system-user token from their own Business Manager). Check the 250 / 1K message tier and display-name approval early | Kaamil | Steps tested once on a test business |
-| R12 | **White-label CRM:** brand name, logo and colour from the business profile (login, header, page titles, reports text). Remove "GKF" and "Goldkraft" from all views; make the theme name generic | Krishna | No GKF text in `crm/views`; GKF still looks the same |
+| R12 | ✅ **White-label CRM:** brand name, logo and colour from the business profile (login, header, page titles, reports text). Remove "GKF" and "Goldkraft" from all views; make the theme name generic | Krishna | No GKF text in `crm/views`; GKF still looks the same |
 | R13 | **Team setup for a big client:** bulk-add staff (CSV or a multi-row form), managers with teams, first-login password change | Krishna | Owner adds 20 staff in a few minutes |
 | R2 | Hot-lead queue (moved up from stage 2): a big team needs auto-assign and the 5-minute timer from day one | Krishna | Hand-offs reach a salesperson with no manual assigning |
 
-Status: K14–K17 are built and K18 is written (PR `k14-k18-new-client`). GKF names stay only in the default profile (seed data) and the GKF CRM host default. Order: K14 + R12 first (no GKF name in front of the new client), then K15, K16, R13, R2, then K17/K18 in parallel. Ask the client early: business type, number of staff, existing WhatsApp number or new one, who owns their Meta Business Manager.
+Status: K14–K17 are built and K18 is written (PR `k14-k18-new-client`). R12 is built (PR `r12-white-label`): name from the business profile, logo letters, colour and logo image on Business settings → Brand. GKF names stay only in the default profile (seed data) and the GKF CRM host default. Order: K14 + R12 first (no GKF name in front of the new client), then K15, K16, R13, R2, then K17/K18 in parallel. Ask the client early: business type, number of staff, existing WhatsApp number or new one, who owns their Meta Business Manager.
 
 ### Done
 

@@ -152,13 +152,12 @@ const registry = {
     return find() || ((await this.reloadAfterMiss()) ? find() : null);
   },
 
-  /** The tenant whose CRM runs on this hostname, or null. Tenant 1 also owns CRM_HOSTS. */
+  /** The tenant whose CRM runs on this stored hostname, or null. (Tenant 1's CRM_HOSTS are matched by src/app.js.) */
   async byCrmHost(host) {
     const h = String(host || '').toLowerCase();
     if (!h) return null;
     await this.ensureLoaded();
-    const find = () => this.list().find(t => t.crm.host === h)
-      || (env.crmHosts.includes(h) ? this.config(DEFAULT_TENANT_ID) : null);
+    const find = () => this.list().find(t => t.crm.host === h) || null;
     return find() || ((await this.reloadAfterMiss()) ? find() : null);
   },
 

@@ -85,7 +85,7 @@ async function handleChange(change, value) {
  *   Account events carry no number; the WABA id (entry.id) finds the tenant.
  * Tenant 1 with no number configured (local development) takes unmatched traffic.
  */
-async function tenantFor(req, entry, value) {
+async function tenantFor(req, entry, value, isAccountChange = false) {
   const phoneNumberId = value.metadata?.phone_number_id ? String(value.metadata.phone_number_id) : null;
   let tenant = null;
   if (req.tenant) {
@@ -98,7 +98,9 @@ async function tenantFor(req, entry, value) {
   }
   if (!tenant && !req.tenant) {
     const fallback = registry.config(registry.DEFAULT_TENANT_ID);
-    if (fallback && !fallback.whatsapp.phoneNumberId) tenant = fallback; // dev: no number set, take everything
+    // Dev (no number set): tenant 1 takes everything. Account events with no known WABA
+    // (bans, quality, limits) only alert, never store data: tenant 1's ops group gets them.
+    if (fallback && (!fallback.whatsapp.phoneNumberId || (!phoneNumberId && isAccountChange))) tenant = fallback;
   }
   if (!tenant) {
     logger.warn('Ignoring webhook for a WhatsApp number no tenant owns', { phone_number_id: phoneNumberId, waba: entry.id });
@@ -127,7 +129,7 @@ async function handleIncoming(req, res) {
     for (const entry of body.entry || []) {
       for (const change of entry.changes || []) {
         const value = change.value || {};
-        const tenant = await tenantFor(req, entry, value);
+        const tenant = await tenantFor(req, entry, value, opsAlerts.isAccountField(change.field));
         if (!tenant) continue;
         queued += await tenancy.run(tenant.id, () => handleChange(change, value));
       }

@@ -4,6 +4,15 @@ const { HttpError } = require('./crm');
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const isId = id => Number.isInteger(id) && id > 0 && id <= 2147483647;
+const ALERT_MODES = ['off', 'mine', 'all'];
+
+/** "+91 98450-12345" -> "919845012345"; null when empty or not a full international number. */
+function normalizePhone(phone) {
+  const raw = String(phone || '').trim();
+  if (!raw) return null;
+  const digits = raw.replace(/[\s\-().]/g, '').replace(/^\+/, '').replace(/^00/, '');
+  return /^[1-9][0-9]{9,14}$/.test(digits) ? digits : null;
+}
 
 class Users {
   constructor(db) { this.db = db; }
@@ -82,6 +91,24 @@ class Users {
     return this.get(user.id);
   }
 
+  /**
+   * WhatsApp alerts for one staff member. mode: 'off', 'mine' (their leads, and
+   * their team's leads for a manager) or 'all'. The phone needs the country code.
+   */
+  async setAlerts(id, { phone, mode }) {
+    const user = await this.get(id);
+    if (!user) throw new HttpError(404, 'User not found.');
+    if (!ALERT_MODES.includes(mode)) throw new HttpError(400, 'Choose which alerts to send.');
+    const digits = normalizePhone(phone);
+    if (String(phone || '').trim() && !digits) {
+      throw new HttpError(400, 'Enter the WhatsApp number with the country code, for example +91 98450 12345.');
+    }
+    if (mode !== 'off' && !digits) throw new HttpError(400, 'Add a WhatsApp number to turn alerts on.');
+    await this.db.query('UPDATE crm_users SET alert_phone = $1, alert_mode = $2, updated_at = now() WHERE id = $3',
+      [digits, mode, user.id]);
+    return this.get(user.id);
+  }
+
   /** Owner sets a temporary password; the user must change it at next login. */
   async resetPassword(id, password) {
     const user = await this.get(id);
@@ -107,4 +134,4 @@ class Users {
   }
 }
 
-module.exports = { Users };
+module.exports = { Users, normalizePhone, ALERT_MODES };

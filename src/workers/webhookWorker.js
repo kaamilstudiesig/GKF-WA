@@ -11,6 +11,7 @@ const whatsappService = require('../services/whatsappService');
 const botGuard = require('../services/botGuard');
 const identity = require('../services/identity');
 const notifyService = require('../services/notifyService');
+const staffAlerts = require('../services/staffAlerts');
 const { applyLeadUpdates } = require('../services/leadUpdates');
 const { applyReferral } = require('../services/adAttribution');
 const gymConfig = require('../config/gymConfig');
@@ -54,6 +55,13 @@ async function processEvent(event) {
       await eventRepository.failPermanent(event.id, 'Event is missing the message or sender');
       return;
     }
+    // Staff numbers get WhatsApp alerts from this number; the AI never answers them.
+    if (await staffAlerts.isStaffPhone(waId)) {
+      whatsappService.markReadWithTyping(msg.id, { typing: false });
+      logger.info('Message from a staff number: no AI reply', { wa_suffix: String(waId).slice(-4) });
+      await eventRepository.complete(event.id);
+      return;
+    }
     const timestamp = msg.timestamp ? new Date(Number(msg.timestamp) * 1000).toISOString() : new Date().toISOString();
 
     let lead = await leadRepository.upsertInbound(waId, contact?.profile?.name || null, timestamp,
@@ -85,7 +93,10 @@ async function processEvent(event) {
     if (guard.paused || guard.overCap) {
       // Staff are handling this lead (or it hit the daily cap): record the message, don't answer.
       whatsappService.markReadWithTyping(msg.id, { typing: false });
-      if (guard.paused) notifyService.notifyLeadMessage({ waId, text: text ?? `[${msg.type} message]` });
+      if (guard.paused) {
+        notifyService.notifyLeadMessage({ waId, text: text ?? `[${msg.type} message]` });
+        staffAlerts.alert({ waId, event: 'lead_message', details: text ?? `[${msg.type} message]` });
+      }
       logger.info('Bot stayed quiet', { wa_id: waId, reason: guard.paused ? 'staff_handling' : 'daily_cap' });
       await eventRepository.complete(event.id);
       return;

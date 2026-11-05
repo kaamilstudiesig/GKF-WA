@@ -62,6 +62,22 @@ class WhatsAppService {
     return messageId;
   }
 
+  /**
+   * Sends an approved template to a phone number (staff alerts). Not saved in any
+   * lead's conversation. tpl: { name, language, body: [texts], button: URL suffix }.
+   */
+  async sendTemplate(phone, tpl) {
+    if (!/^[0-9]{8,15}$/.test(String(phone || ''))) throw new Error('sendTemplate needs a phone number');
+    if (!tpl?.name) throw new Error('sendTemplate needs a template name');
+    const components = [];
+    if (tpl.body?.length) components.push({ type: 'body', parameters: tpl.body.map(text => ({ type: 'text', text: String(text) })) });
+    if (tpl.button) components.push({ type: 'button', sub_type: 'url', index: '0', parameters: [{ type: 'text', text: String(tpl.button) }] });
+    return this.deliver({
+      messaging_product: 'whatsapp', recipient_type: 'individual', to: String(phone), type: 'template',
+      template: { name: tpl.name, language: { code: tpl.language || 'en' }, components }
+    }, String(phone));
+  }
+
   async deliver(payload, to) {
     if (!this.live) {
       logger.debug('Simulated WhatsApp send (no Meta token or test mode)', { to_suffix: to.slice(-4), type: payload.type });

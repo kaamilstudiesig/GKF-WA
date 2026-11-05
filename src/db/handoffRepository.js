@@ -1,6 +1,7 @@
 const db = require('./index');
 const logger = require('../utils/logger');
 const notifyService = require('../services/notifyService');
+const staffAlerts = require('../services/staffAlerts');
 
 /** Hand-offs from the bot to human staff. A lead has at most one open hand-off. */
 const handoffRepository = {
@@ -17,6 +18,8 @@ const handoffRepository = {
     if (row.inserted) {
       logger.info('Opened human hand-off', { handoff_id: row.id, wa_id: waId, reason });
       notifyService.notifyHandoff({ waId, reason, summary });
+      const why = notifyService.REASON_LABELS[reason] || reason;
+      staffAlerts.alert({ waId, event: 'handoff', details: summary ? `${why}: ${summary}` : why });
     }
     return row.id;
   },

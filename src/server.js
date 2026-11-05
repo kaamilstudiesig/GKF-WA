@@ -10,9 +10,11 @@ const businessProfile = require('./services/businessProfile');
 const eventRepository = require('./db/eventRepository');
 const outboundRepository = require('./db/outboundRepository');
 const logger = require('./utils/logger');
+const tenancy = require('./tenancy/context');
+const registry = require('./tenancy/registry');
 const { initSentry, captureException } = require('./utils/sentry');
 
-/** No CRM staff yet: seed the example accounts on local PGlite, otherwise say how. */
+/** No CRM staff yet (tenant 1): seed the example accounts on local PGlite, otherwise say how. */
 async function ensureCrmUsers() {
   const { c } = await db.one('SELECT COUNT(*)::int AS c FROM crm_users');
   if (c > 0) return;
@@ -29,10 +31,15 @@ async function ensureCrmUsers() {
 async function main() {
   env.validateForProduction(); // throws in production when settings are missing
   initSentry();
-  await migrateAll(); // connects, then applies pending bot and CRM migrations
-  await ensureCrmUsers();
-  await businessProfile.load(); // K10: business facts from the database (first run saves the defaults)
+  await migrateAll(); // connects, then applies pending bot, CRM and platform migrations
+  if (!(await db.checkRlsActive())) {
+    logger.error('Row-level security does not apply to this database role (superuser or BYPASSRLS). Tenants are NOT isolated.');
+  }
+  await businessProfile.loadAll(); // K8 + K10: every tenant and its business facts
+  registry.startRefresh();
   businessProfile.startRefresh();
+  logger.info('Tenants loaded', { tenants: registry.list().map(t => t.slug) });
+  await tenancy.run(registry.DEFAULT_TENANT_ID, ensureCrmUsers);
 
   const app = createApp();
   const server = app.listen(env.port, () => {
@@ -44,14 +51,16 @@ async function main() {
 
   webhookWorker.start();
   outboundWorker.start();
-  if (conversionsApi.enabled) conversionsWorker.start(); // K7: sales results back to Meta
-  else logger.info('Conversions API off (set META_DATASET_ID and META_WABA_ID to send sales results to Meta)');
+  if (conversionsApi.enabledForAny) conversionsWorker.start(); // K7: sales results back to Meta
+  else logger.info('Conversions API off for every tenant (set a dataset and WABA id to send sales results to Meta)');
 
   // Housekeeping: keep the small Postgres plan small.
   const housekeeping = setInterval(async () => {
     try {
-      const events = await eventRepository.cleanup(14);
-      const sent = await outboundRepository.cleanup(30);
+      const { events, sent } = await tenancy.runAsSystem(async () => ({
+        events: await eventRepository.cleanup(14),
+        sent: await outboundRepository.cleanup(30)
+      }));
       if (events || sent) logger.info('Housekeeping removed old queue rows', { events, sent });
     } catch (err) {
       logger.error('Housekeeping failed', { error: err.message });

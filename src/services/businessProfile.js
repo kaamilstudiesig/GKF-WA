@@ -2,6 +2,8 @@ const db = require('../db');
 const gymConfig = require('../config/gymConfig');
 const { VERTICALS } = require('../config/verticals');
 const logger = require('../utils/logger');
+const tenancy = require('../tenancy/context');
+const registry = require('../tenancy/registry');
 
 /**
  * The business profile: what the assistant knows about the business. Stored in
@@ -53,46 +55,89 @@ function normalize(input = {}) {
   return p;
 }
 
+/** A neutral starting profile for a new tenant (never another business's facts). */
+function starterProfile({ name = 'New business', type = 'services' } = {}) {
+  const d = gymConfig.DEFAULT_PROFILE;
+  return normalize({
+    name, type: VERTICALS[type] ? type : 'services',
+    area: '', address: 'Address not set yet', parking: '', facility: '',
+    voice: d.voice,
+    hours: ['Hours not set yet'],
+    programs: [],
+    plans: [{ name: 'Plans', price: 'Ask our team', details: '' }],
+    policies: [], sellingPoints: [],
+    fallback: {
+      systemError: `Thanks for messaging ${name}! Someone from our team will get back to you shortly.`,
+      nonTextMessage: d.fallback.nonTextMessage
+    }
+  });
+}
+
 const businessProfile = {
   normalize,
+  starterProfile,
   ProfileError,
   LIMITS,
 
-  /** Loads the saved profile into gymConfig; saves the defaults first if there is none. */
+  /**
+   * Loads the current tenant's saved profile into gymConfig. Tenant 1 saves the
+   * GKF defaults on first run (as before K8); other tenants get a neutral starter.
+   */
   async load() {
-    const row = await db.one('SELECT profile FROM business_profile WHERE id = 1');
+    const tenantId = tenancy.tenantId();
+    const row = await db.one('SELECT profile FROM business_profile'); // row-level security: this tenant's row
     if (!row) {
-      await db.query(`INSERT INTO business_profile (id, profile, updated_by) VALUES (1, $1::jsonb, 'defaults')
-        ON CONFLICT (id) DO NOTHING`, [JSON.stringify(gymConfig.DEFAULT_PROFILE)]);
-      gymConfig.resetToDefault();
+      const t = registry.config(tenantId);
+      const profile = tenantId === registry.DEFAULT_TENANT_ID ? gymConfig.DEFAULT_PROFILE : starterProfile({ name: t ? t.name : undefined });
+      await db.query(`INSERT INTO business_profile (profile, updated_by) VALUES ($1::jsonb, 'defaults')
+        ON CONFLICT (tenant_id) DO NOTHING`, [JSON.stringify(profile)]);
+      gymConfig.setProfile(profile, tenantId);
       return gymConfig.profile;
     }
     try {
-      gymConfig.setProfile(normalize(row.profile));
+      gymConfig.setProfile(normalize(row.profile), tenantId);
     } catch (err) {
-      logger.error('Saved business profile is invalid; keeping the current one', { error: err.message });
+      logger.error('Saved business profile is invalid; keeping the current one', { tenant: tenantId, error: err.message });
+      if (!gymConfig.profileFor(tenantId)) gymConfig.setProfile(row.profile, tenantId);
     }
     return gymConfig.profile;
   },
 
-  /** Validates, saves and applies a profile. Returns the saved profile. */
+  /** Loads the current tenant's profile if this process has not yet (a tenant added by another process). */
+  async ensureLoaded() {
+    if (!gymConfig.profileFor(tenancy.tenantId())) await this.load();
+  },
+
+  /** Loads every tenant's profile (startup and the refresh timer). */
+  async loadAll() {
+    await registry.load();
+    for (const t of registry.list()) {
+      try {
+        await tenancy.run(t.id, () => this.load());
+      } catch (err) {
+        logger.error('Failed to load a business profile', { tenant: t.slug, error: err.message });
+      }
+    }
+  },
+
+  /** Validates, saves and applies the current tenant's profile. Returns the saved profile. */
   async save(input, updatedBy = null) {
     const profile = normalize(input);
-    await db.query(`INSERT INTO business_profile (id, profile, updated_by, updated_at) VALUES (1, $1::jsonb, $2, now())
-      ON CONFLICT (id) DO UPDATE SET profile = EXCLUDED.profile, updated_by = EXCLUDED.updated_by, updated_at = now()`,
+    await db.query(`INSERT INTO business_profile (profile, updated_by, updated_at) VALUES ($1::jsonb, $2, now())
+      ON CONFLICT (tenant_id) DO UPDATE SET profile = EXCLUDED.profile, updated_by = EXCLUDED.updated_by, updated_at = now()`,
     [JSON.stringify(profile), updatedBy]);
     gymConfig.setProfile(profile);
-    logger.info('Business profile updated', { by: updatedBy });
+    logger.info('Business profile updated', { by: updatedBy, tenant: tenancy.tenantId() });
     return profile;
   },
 
   async meta() {
-    return db.one('SELECT updated_by, updated_at FROM business_profile WHERE id = 1');
+    return db.one('SELECT updated_by, updated_at FROM business_profile');
   },
 
-  /** Re-reads the profile every minute so every process picks up edits. */
+  /** Re-reads every profile every minute so every process picks up edits. */
   startRefresh(ms = 60 * 1000) {
-    const t = setInterval(() => this.load().catch(err => logger.warn('Profile refresh failed', { error: err.message })), ms);
+    const t = setInterval(() => this.loadAll().catch(err => logger.warn('Profile refresh failed', { error: err.message })), ms);
     t.unref();
     return t;
   }

@@ -33,7 +33,7 @@ test('saving updates the database and what the assistant says', async () => {
     const r = await owner.agent.post('/settings').type('form').send(form(owner.csrf));
     assert.strictEqual(r.status, 302);
     assert.match(r.headers.location, /^\/settings\?ok=Saved/);
-    const row = await ctx.db.one('SELECT profile, updated_by FROM business_profile WHERE id = 1');
+    const row = await ctx.db.one('SELECT profile, updated_by FROM business_profile');
     assert.deepStrictEqual(row.profile.plans.map(p => p.price), ['₹4,500/month', '₹7,500/3 months']);
     assert.deepStrictEqual(row.profile.policies, [{ name: 'Trial', text: 'Book a free trial' }]);
     assert.strictEqual(row.updated_by, 'owner@goldkraftfitness.com');

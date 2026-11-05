@@ -53,7 +53,7 @@ const leadRepository = {
       VALUES ($1, $2, $4,
         (SELECT CASE WHEN EXISTS (SELECT 1 FROM leads WHERE user_id = $5::text) THEN NULL ELSE $5::text END),
         $6, $3, $3, now(), now())
-      ON CONFLICT (wa_id) DO UPDATE SET
+      ON CONFLICT (tenant_id, wa_id) DO UPDATE SET
         display_name = COALESCE(EXCLUDED.display_name, leads.display_name),
         phone = COALESCE($4, leads.phone),
         user_id = CASE
@@ -115,7 +115,7 @@ const leadRepository = {
     await db.query(`
       INSERT INTO messages (message_id, wa_id, direction, text, timestamp)
       VALUES ($1, $2, $3, $4, $5)
-      ON CONFLICT (message_id) DO NOTHING`, [messageId, waId, direction, text, timestamp]);
+      ON CONFLICT (tenant_id, message_id) DO NOTHING`, [messageId, waId, direction, text, timestamp]);
     if (direction === 'out') {
       await db.query('UPDATE leads SET last_outbound_message_at = $2, updated_at = now() WHERE wa_id = $1', [waId, timestamp]);
     }

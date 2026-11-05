@@ -92,7 +92,10 @@ if (require.main === module) {
     }
     try {
       await migrateAll();
-      const added = await insertDemoData(db);
+      const tenancy = require('../src/tenancy/context');
+      const { tenantFromArgs } = require('./lib/tenantArg');
+      const { tenant } = await tenantFromArgs();
+      const added = await tenancy.run(tenant.id, () => insertDemoData(db));
       console.log(added ? `Added ${added} demo leads with chats and hand-offs.` : 'Demo leads are already there.');
     } finally {
       await db.close();

@@ -96,6 +96,7 @@ function createCrmApp({
 
   // ---- session + view helpers ----
   app.use(h(async (req, res, next) => {
+    if (businessProfile) await businessProfile.ensureLoaded(); // a tenant added by another process
     const token = auth.parseCookies(req.headers.cookie)[auth.SESSION_COOKIE];
     const session = await auth.getSession(db, token);
     req.sessionToken = token;

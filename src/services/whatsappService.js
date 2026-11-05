@@ -3,10 +3,15 @@ const env = require('../config/env');
 const leadRepository = require('../db/leadRepository');
 const identity = require('./identity');
 const logger = require('../utils/logger');
+const registry = require('../tenancy/registry');
+
+/** The current tenant's WhatsApp number and token (tenant 1: the env vars). */
+const creds = () => (registry.config() || { whatsapp: {} }).whatsapp;
 
 /**
- * Meta WhatsApp Cloud API client. Without META_ACCESS_TOKEN (local dev) or in
- * tests, sends are simulated and still recorded in the conversation.
+ * Meta WhatsApp Cloud API client. Sends from the current tenant's number with its
+ * token. Without a token (local dev) or in tests, sends are simulated and still
+ * recorded in the conversation.
  */
 class WhatsAppService {
   constructor() {
@@ -14,14 +19,18 @@ class WhatsAppService {
   }
 
   get live() {
-    return Boolean(this.transport || (env.metaAccessToken && env.metaPhoneNumberId && env.nodeEnv !== 'test'));
+    if (this.transport) return true;
+    const c = creds();
+    return Boolean(c.accessToken && c.phoneNumberId && env.nodeEnv !== 'test');
   }
 
   async post(payload, timeout = 10000) {
     if (this.transport) return this.transport(payload);
-    const url = `https://graph.facebook.com/${env.metaGraphApiVersion}/${env.metaPhoneNumberId}/messages`;
+    const c = creds();
+    if (!c.accessToken || !c.phoneNumberId) throw new Error('This tenant has no WhatsApp number or token set');
+    const url = `https://graph.facebook.com/${env.metaGraphApiVersion}/${c.phoneNumberId}/messages`;
     const res = await axios.post(url, payload, {
-      headers: { Authorization: `Bearer ${env.metaAccessToken}`, 'Content-Type': 'application/json' },
+      headers: { Authorization: `Bearer ${c.accessToken}`, 'Content-Type': 'application/json' },
       timeout
     });
     return res.data;

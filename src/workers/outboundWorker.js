@@ -5,6 +5,7 @@ const opsAlerts = require('../services/opsAlerts');
 const logger = require('../utils/logger');
 const env = require('../config/env');
 const signals = require('./signals');
+const registry = require('../tenancy/registry');
 const { captureException } = require('../utils/sentry');
 
 /** Network errors, rate limits and Meta 5xx are worth retrying; 4xx are not. */
@@ -15,6 +16,11 @@ function isRetryable(err) {
 }
 
 async function sendOne(job) {
+  const tenant = registry.config();
+  if (tenant && !tenant.active) { // suspended: never send for it
+    await outboundRepository.markFailed(job.id, `Tenant ${tenant.slug} is suspended`, false);
+    return;
+  }
   try {
     const providerId = job.metadata?.template
       ? await whatsappService.sendTemplate(job.wa_id, job.metadata.template) // staff alerts

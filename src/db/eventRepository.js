@@ -13,7 +13,7 @@ const eventRepository = {
     const row = await db.one(`
       INSERT INTO webhook_events (event_key, wa_id, message_id, payload, max_attempts, available_at)
       VALUES ($1, $2, $3, $4::jsonb, $5, now() + make_interval(secs => $6::float8 / 1000))
-      ON CONFLICT (event_key) DO NOTHING
+      ON CONFLICT (tenant_id, event_key) DO NOTHING
       RETURNING id`, [eventKey, waId, messageId, JSON.stringify(payload), maxAttempts, delayMs]);
     return row ? row.id : null;
   },
@@ -33,7 +33,7 @@ const eventRepository = {
             OR (c.status = 'processing' AND c.locked_at <= now() - make_interval(secs => $1)))
           AND NOT EXISTS (
             SELECT 1 FROM webhook_events p
-            WHERE c.wa_id IS NOT NULL AND p.wa_id = c.wa_id AND p.id <> c.id
+            WHERE c.wa_id IS NOT NULL AND p.tenant_id = c.tenant_id AND p.wa_id = c.wa_id AND p.id <> c.id
               AND ((p.status = 'processing' AND p.locked_at > now() - make_interval(secs => $1))
                 OR (p.status IN ('pending', 'processing') AND p.id < c.id)))
         ORDER BY c.id

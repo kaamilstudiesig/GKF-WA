@@ -1,5 +1,6 @@
 const crypto = require('crypto');
 const axios = require('axios');
+const registry = require('../tenancy/registry');
 const env = require('../config/env');
 const gymConfig = require('../config/gymConfig');
 const suggestedOutcome = require('./suggestedOutcome');
@@ -102,7 +103,7 @@ class AIService {
             Authorization: `Bearer ${env.openRouterApiKey}`,
             'Content-Type': 'application/json',
             'HTTP-Referer': 'https://goldkraftfitness.com',
-            'X-Title': `Lead Engine (${env.clientId})`
+            'X-Title': `Lead Engine (${registry.config()?.slug || env.clientId})`
           },
           timeout: timeoutMs
         })).data;

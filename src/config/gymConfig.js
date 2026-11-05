@@ -6,6 +6,7 @@
  * DEFAULT_PROFILE is Goldkraft Fitness, used until a profile is saved and in tests.
  */
 const { verticalFor } = require('./verticals');
+const tenancy = require('../tenancy/context');
 
 const DEFAULT_PROFILE = {
   name: 'Goldkraft Fitness',
@@ -50,37 +51,45 @@ const DEFAULT_PROFILE = {
 };
 
 const clone = v => JSON.parse(JSON.stringify(v));
-let current = clone(DEFAULT_PROFILE);
+// K8: one profile per tenant, loaded by businessProfile. The getters below read the current tenant's.
+const profiles = new Map();
+const fallback = clone(DEFAULT_PROFILE);
+const currentProfile = () => profiles.get(tenancy.tenantIdOrNull()) || fallback;
 
 const gymConfig = {
   DEFAULT_PROFILE,
 
-  /** The saved profile (plain object). */
-  get profile() { return current; },
-  /** Replaces the live profile (call with a normalised profile; see businessProfile.normalize). */
-  setProfile(profile) { current = clone(profile); },
-  resetToDefault() { current = clone(DEFAULT_PROFILE); },
+  /** The current tenant's saved profile (plain object). */
+  get profile() { return currentProfile(); },
+  /** Replaces a tenant's live profile (call with a normalised profile; see businessProfile.normalize). */
+  setProfile(profile, tenantId = tenancy.tenantId()) { profiles.set(Number(tenantId), clone(profile)); },
+  /** The profile of a tenant id, or null when none is loaded. */
+  profileFor(tenantId) { return profiles.get(Number(tenantId)) || null; },
+  resetToDefault(tenantId = tenancy.tenantIdOrNull()) {
+    if (tenantId) profiles.set(Number(tenantId), clone(DEFAULT_PROFILE)); else profiles.clear();
+  },
 
-  get vertical() { return verticalFor(current.type); },
-  get gymName() { return current.name; },
-  get brandVoice() { return current.voice; },
+  get vertical() { return verticalFor(currentProfile().type); },
+  get gymName() { return currentProfile().name; },
+  get brandVoice() { return currentProfile().voice; },
   get facility() {
+    const current = currentProfile();
     return { size: current.facility, location: current.address, area: current.area, parking: current.parking, programs: current.programs };
   },
   /** Opening hours as lines. weekday/sunday kept for older callers. */
-  get hours() { return { lines: current.hours, weekday: current.hours[0] || '', sunday: current.hours[1] || '' }; },
-  get pricingTiers() { return current.plans; },
-  get policies() { return current.policies; },
-  get fallbackMessages() { return current.fallback; },
+  get hours() { const h = currentProfile().hours; return { lines: h, weekday: h[0] || '', sunday: h[1] || '' }; },
+  get pricingTiers() { return currentProfile().plans; },
+  get policies() { return currentProfile().policies; },
+  get fallbackMessages() { return currentProfile().fallback; },
   /** Map pin, when the profile has coordinates. */
   get mapPin() {
-    const { latitude, longitude } = current;
+    const { latitude, longitude } = currentProfile();
     return Number.isFinite(latitude) && Number.isFinite(longitude) ? { latitude, longitude } : null;
   },
 
   /** System prompt for the WhatsApp assistant. Same for every lead (no per-lead data) so providers can cache it. */
   getSystemPrompt() {
-    const p = current;
+    const p = currentProfile();
     const v = this.vertical;
     const plans = p.plans.map(t => `- ${t.name}: ${t.price}${t.details ? ` (${t.details})` : ''}`).join('\n');
     const policies = p.policies.map(x => `- ${x.name}: ${x.text}`).join('\n');

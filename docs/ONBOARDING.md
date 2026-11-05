@@ -4,7 +4,7 @@ How a new business goes live: the target self-serve flow (the Platform stage in 
 
 ## Fast-track the next client (now)
 
-Until the Platform stage exists, each new client runs on **its own deployment** of this code. This keeps their data apart and needs no multi-tenant work. Tasks K14–K18 and R12–R13 in [TEAM.md](TEAM.md#0-next-client-fast-track-do-this-first) make it fast.
+Each new client is a **tenant** on the shared deployment (K8). Their data is kept apart by the database itself (row-level security), so no new Heroku app or database is needed. A client that needs its own database (data residency, very high volume) can still get a dedicated deployment with `npm run new-client`.
 
 **Ask the client first:**
 
@@ -19,7 +19,7 @@ Until the Platform stage exists, each new client runs on **its own deployment** 
 
 | Path | How | When |
 | --- | --- | --- |
-| A. Client's own Meta app (recommended now) | In the client's Meta Business: create a Meta app (type Business), add the WhatsApp product, link their WABA and number. Create a system user, give it the WABA (full control) and generate a never-expiring token with all three scopes (`whatsapp_business_messaging`, `whatsapp_business_management`, `catalog_management`). Set the webhook to our `/webhook` URL. They send us the token, app secret and IDs through a password manager, never chat or email | Works today. No App Review needed, because the app and the WABA belong to the same business |
+| A. Client's own Meta app (recommended now) | In the client's Meta Business: create a Meta app (type Business), add the WhatsApp product, link their WABA and number. Create a system user, give it the WABA (full control) and generate a never-expiring token with all three scopes (`whatsapp_business_messaging`, `whatsapp_business_management`, `catalog_management`). Set the webhook to our `/webhook/<slug>` URL (printed by `npm run tenant -- add`) with the verify token it prints. They send us the token, app secret and IDs through a password manager, never chat or email | Works today. No App Review needed, because the app and the WABA belong to the same business |
 | B. Partner access to their WABA | Client: Business settings → Accounts → WhatsApp accounts → Assign partner → our business ID. We use our own app and system user | Test once on a test business first. Before App Review, our app may not get access to assets of other businesses |
 | C. Embedded Signup | Client clicks "Connect WhatsApp" and logs in to Facebook | After App Review approval (K9) |
 
@@ -27,13 +27,14 @@ Check early: business verification (a new number can message only 250 people a d
 
 **Then, per client:**
 
-1. Copy `clients/example.json` to `clients/<client>.json` and fill it in (the file is git-ignored). Run `npm run new-client -- clients/<client>.json` to see the steps, then add `--run` to do them: Heroku app, Postgres, config vars, CRM domain, deploy. It prints the remaining manual steps.
+1. Copy `clients/tenant.example.json` to `clients/<client>.json` and fill it in (git-ignored): slug, name, business type, WhatsApp phone number id, WABA id, CRM host, and the secrets (token, app secret). Run `heroku run npm run tenant -- add clients/<client>.json -a gkf-wa`. Secrets are encrypted with `TENANT_SECRETS_KEY` (set once on the app). It prints the webhook URL, the verify token and the next steps.
 2. Connect WhatsApp by path A, B or C above.
-3. Fill **Business settings** with the client's facts and business type. Read the prompt preview.
-4. Create the owner login with `npm run crm:owner` (the setup script prints the command). Never run `crm:seed` on a client app: its passwords are in the repo. Add staff (R13). Make a Telegram group for their alerts.
-5. Run the test checklist from a fresh phone. Then the client goes live.
+3. CRM domain: `heroku domains:add crm.<client>.com -a gkf-wa`, then the client points DNS at the target it prints.
+4. Create the owner login: `heroku run npm run crm:owner -- --tenant <slug> "Owner Name" owner@client.com -a gkf-wa`. Never run `crm:seed` for a client: its passwords are in the repo. Add staff (R13). Optional: a Telegram group for their alerts (`settings.telegramChatId`).
+5. The owner fills **Business settings** with the facts and business type, and reads the prompt preview. Until then the assistant uses neutral placeholders, never another client's facts.
+6. Run the test checklist from a fresh phone. Then the client goes live.
 
-Costs: each extra deployment adds about $12/month (dyno + Postgres) and its own AI spend. Set the AI budget caps before go-live.
+Manage tenants with `npm run tenant -- list | set <slug> <file> | suspend <slug> | activate <slug>`. Each tenant has its own AI budget, reply cap and pause hours (`settings`); defaults come from the env vars. Costs: no extra dyno or database; only the client's own AI use.
 
 ## Target flow (under an hour)
 

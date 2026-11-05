@@ -32,6 +32,10 @@ const mark = (id, status, fields = {}) => db.query(`
   WHERE id = $1`, [id, status, fields.event || null, fields.error ? String(fields.error).slice(0, 1000) : null]);
 
 async function sendOne(outcome) {
+  if (!conversionsApi.enabled) { // this tenant has no dataset: nothing to send
+    await mark(outcome.id, 'skipped', { error: 'capi_off_for_tenant' });
+    return;
+  }
   const lead = await db.one('SELECT wa_id, phone, metadata FROM leads WHERE wa_id = $1', [outcome.wa_id]);
   const built = conversionsApi.buildEvent(outcome, lead);
   if (built.skip) {

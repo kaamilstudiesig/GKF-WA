@@ -38,11 +38,11 @@ test('brand settings, including the logo image, survive a backup and restore', a
   await converse('919855555502', 'hello');
   await require('../src/migrate').migrateAll(); // CRM tables too
   const png = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 1, 2, 3]);
-  await db.query(`INSERT INTO crm_branding (id, mark, color, logo_type, logo_data) VALUES (1, 'GK', '#112233', 'image/png', $1)`, [png]);
+  await db.query(`INSERT INTO crm_branding (mark, color, logo_type, logo_data) VALUES ('GK', '#112233', 'image/png', $1)`, [png]);
   const file = await createBackup();
   await db.close();
   await restore(file);
-  const row = await db.one('SELECT mark, color, logo_data FROM crm_branding WHERE id = 1');
+  const row = await db.one('SELECT mark, color, logo_data FROM crm_branding');
   assert.strictEqual(row.mark, 'GK');
   assert.strictEqual(row.color, '#112233');
   assert.ok(Buffer.from(row.logo_data).equals(png));

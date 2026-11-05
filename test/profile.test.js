@@ -19,7 +19,7 @@ const edited = () => ({
 
 test('the first load saves the defaults, so nothing changes for GKF', async () => {
   await businessProfile.load();
-  const row = await db.one('SELECT profile, updated_by FROM business_profile WHERE id = 1');
+  const row = await db.one('SELECT profile, updated_by FROM business_profile');
   assert.strictEqual(row.profile.name, 'Goldkraft Fitness');
   assert.strictEqual(row.updated_by, 'defaults');
   assert.match(gymConfig.getSystemPrompt(), /Monthly: ₹4,040\/month/);

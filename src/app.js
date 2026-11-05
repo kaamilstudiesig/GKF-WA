@@ -13,6 +13,7 @@ const { createCrmApp } = require('../crm/src');
 const { Crm } = require('../crm/src/crm');
 const razorpay = require('./services/razorpay');
 const notifyService = require('./services/notifyService');
+const staffAlerts = require('./services/staffAlerts');
 
 /**
  * One Express app for the whole process. Requests whose Host is in CRM_HOSTS
@@ -112,6 +113,7 @@ function createApp({
       if (paid) {
         notifyService.send(`💰 Paid: ${paid.plan}, ₹${paid.amount.toLocaleString('en-IN')} (logged as Joined)`,
           { buttons: notifyService.leadLinks(paid.waId, null, { replyLabel: 'Open in CRM' }).buttons }).catch(() => {});
+        staffAlerts.alert({ waId: paid.waId, event: 'payment', details: `${paid.plan}, ₹${paid.amount.toLocaleString('en-IN')} (logged as a sale)` });
       }
       res.json({ ok: true });
     } catch (err) {

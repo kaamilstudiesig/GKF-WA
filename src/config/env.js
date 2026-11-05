@@ -48,6 +48,9 @@ const env = {
   // Hostnames that get the staff CRM instead of the bot (comma list, matched without the port).
   // Backup poll for the queues (new work wakes the workers directly). Retries wait at least 5s anyway.
   queuePollMs: num(process.env.QUEUE_POLL_MS, 10000),
+  // Staff WhatsApp alerts use this approved Meta template (scripts/create-template.js staff_lead_alert).
+  staffAlertTemplate: process.env.STAFF_ALERT_TEMPLATE || 'staff_lead_alert',
+  staffAlertLanguage: process.env.STAFF_ALERT_TEMPLATE_LANGUAGE || 'en',
   // Wait this long before answering a text, so a burst of quick messages gets one reply.
   burstSettleMs: num(process.env.BURST_SETTLE_MS, process.env.NODE_ENV === 'test' ? 0 : 2000),
   // Short id for this client's deployment (tags alerts, Sentry, backups). One deployment per client until K8.

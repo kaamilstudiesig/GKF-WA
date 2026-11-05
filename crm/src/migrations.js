@@ -150,6 +150,15 @@ const CRM_MIGRATIONS = [
         updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
       )`
     ]
+  },
+  {
+    // Staff WhatsApp alerts: each staff member's WhatsApp number and which leads they get alerts for.
+    id: 6,
+    name: 'staff_whatsapp_alerts',
+    up: [
+      'ALTER TABLE crm_users ADD COLUMN alert_phone TEXT',
+      `ALTER TABLE crm_users ADD COLUMN alert_mode TEXT NOT NULL DEFAULT 'off' CHECK (alert_mode IN ('off', 'mine', 'all'))`
+    ]
   }
 ];
 

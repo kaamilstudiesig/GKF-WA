@@ -8,7 +8,7 @@
         <summary class="collapse-title flex items-center gap-3 pr-10">
           <div class="avatar avatar-placeholder"><div class="w-10 rounded-full bg-neutral text-neutral-content"><span class="text-sm"><%= u.name.split(' ').map(s => s[0]).join('').slice(0, 2).toUpperCase() %></span></div></div>
           <div class="min-w-0 flex-1">
-            <div class="flex flex-wrap items-center gap-1.5"><span class="font-semibold"><%= u.name %></span><span class="badge badge-ghost badge-xs"><%= ROLE_LABELS[u.role] %></span><% if (!u.active) { %><span class="badge badge-error badge-soft badge-xs">Disabled</span><% } %></div>
+            <div class="flex flex-wrap items-center gap-1.5"><span class="font-semibold"><%= u.name %></span><span class="badge badge-ghost badge-xs"><%= ROLE_LABELS[u.role] %></span><% if (!u.active) { %><span class="badge badge-error badge-soft badge-xs">Disabled</span><% } %><% if (u.alert_mode && u.alert_mode !== 'off') { %><span class="badge badge-success badge-soft badge-xs">WhatsApp alerts</span><% } %></div>
             <div class="truncate text-xs text-base-content/60"><%= u.email %> · <%= u.lead_count %> leads · <%= u.last_login_at ? 'seen ' + util.timeAgo(u.last_login_at) : 'never logged in' %><%= u.must_change_password ? ' · temp password' : '' %></div>
           </div>
         </summary>
@@ -21,6 +21,15 @@
             <fieldset class="fieldset py-0"><legend class="fieldset-legend">Manager (sales)</legend><select name="manager_id" class="select w-full"><option value="">None</option><% for (const m of managers) { %><option value="<%= m.id %>" <%= m.id === u.manager_id ? 'selected' : '' %>><%= m.name %></option><% } %></select></fieldset>
             <label class="label tap cursor-pointer gap-2"><input type="checkbox" name="active" value="1" class="toggle toggle-primary toggle-sm" <%= u.active ? 'checked' : '' %>> Active</label>
             <button class="btn btn-primary sm:justify-self-end" type="submit">Save</button>
+          </form>
+          <form method="post" action="/users/<%= u.id %>/alerts" class="grid gap-2 border-t border-base-300 pt-3 sm:grid-cols-2">
+            <%- include('partials/csrf') %>
+            <fieldset class="fieldset py-0"><legend class="fieldset-legend">WhatsApp number for alerts</legend><input name="alert_phone" type="tel" inputmode="tel" value="<%= u.alert_phone ? '+' + u.alert_phone : '' %>" placeholder="+91 98450 12345" class="input w-full"></fieldset>
+            <fieldset class="fieldset py-0"><legend class="fieldset-legend">Send WhatsApp alerts</legend><select name="alert_mode" class="select w-full">
+              <% for (const [v, l] of [['off', 'Off'], ['mine', u.role === 'manager' ? 'Their team\'s leads' : 'Their leads only'], ['all', 'All leads']]) { %><option value="<%= v %>" <%= (u.alert_mode || 'off') === v ? 'selected' : '' %>><%= l %></option><% } %>
+            </select></fieldset>
+            <p class="text-xs text-base-content/60 sm:col-span-2">Alerts: lead needs a person, lead replied while the AI is paused, payment received. Each alert is a Meta template message (about ₹0.12 in India, AED 0.06 in the UAE). The AI does not answer this number.</p>
+            <button class="btn sm:col-start-2 sm:justify-self-end" type="submit">Save alerts</button>
           </form>
           <form method="post" action="/users/<%= u.id %>/password" class="flex items-end gap-2 border-t border-base-300 pt-3">
             <%- include('partials/csrf') %>

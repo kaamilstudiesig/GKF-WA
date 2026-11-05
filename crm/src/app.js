@@ -382,6 +382,17 @@ function createCrmApp({
       res.status(err.status); await usersPage(res, { error: err.message });
     }
   }));
+  // Staff WhatsApp alerts: number and which leads (off / their leads / all leads).
+  app.post('/users/:id/alerts', allow(can.manageUsers), h(async (req, res) => {
+    try {
+      const u = await users.setAlerts(req.params.id, { phone: req.body.alert_phone, mode: req.body.alert_mode });
+      await crm.log(req.user, null, 'staff_alerts_updated', { user_id: u.id, mode: u.alert_mode });
+      res.redirect('/users?ok=' + encodeURIComponent(u.alert_mode === 'off' ? 'WhatsApp alerts off.' : 'WhatsApp alerts saved.'));
+    } catch (err) {
+      if (!(err instanceof HttpError)) throw err;
+      res.status(err.status); await usersPage(res, { error: err.message });
+    }
+  }));
   app.post('/users/:id/password', allow(can.manageUsers), h(async (req, res) => {
     try {
       await users.resetPassword(req.params.id, req.body.password);

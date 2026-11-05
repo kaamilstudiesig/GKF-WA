@@ -70,7 +70,7 @@ This is how GKF was set up. It takes a few hours and needs access to the client'
 3. Business Settings → System users → generate a never-expiring token with **all** of `whatsapp_business_messaging`, `whatsapp_business_management`, `catalog_management`. Assign the WABA (full control) and catalog to the system user. Never generate a token with fewer scopes for the same system user (see [META_PLATFORM.md §6](META_PLATFORM.md#6-tokens-and-permissions-learned-the-hard-way)).
 4. Set `META_ACCESS_TOKEN`, `META_PHONE_NUMBER_ID`, `META_APP_SECRET`, `META_WEBHOOK_VERIFY_TOKEN` on the server.
 5. Log in to the CRM as owner → **Business settings**: name, type, address, map pin, hours, programs, plans and prices, policies/FAQs, selling points, voice. Saving updates the assistant from its next reply; no deploy needed.
-6. Seed CRM staff (`npm run crm:seed`), Telegram group for alerts (`TELEGRAM_CHAT_ID`).
+6. Create the owner (`npm run crm:owner`) and staff. Alerts: Telegram group (`TELEGRAM_CHAT_ID`) and/or WhatsApp per person (create the `staff_lead_alert` template with `node scripts/create-template.js staff_lead_alert`, wait for approval, then set numbers on **Staff**). See [TEAM.md](TEAM.md#staff-whatsapp-alerts-built).
 7. Ice breakers (Conversational Automation API) and catalog, if used.
 8. Run the test checklist above from a phone that has never chatted with the number.
 

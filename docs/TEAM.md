@@ -155,6 +155,10 @@ Off until `RAZORPAY_KEY_ID`, `RAZORPAY_KEY_SECRET` and `RAZORPAY_WEBHOOK_SECRET`
 
 `src/config/verticals.js` has one pack per business type: `gym`, `services` (general), `realestate`. A pack sets how the AI sells (qualify questions, examples), the words in the free fixed replies and buttons (`words`), and display names (`labels`): settings field names, outcome and stage names (real estate: Site visit booked, Site visited, Booked). The CRM reads them per request (`namesFor` in `crm/src/app.js`); internal keys (`joined`, `visit_booked`) never change, so reports, K7 and K11 work the same for every type. Packs hold no personal data: no names, addresses or phone numbers in examples. Sales up to ₹10 crore can be logged (payment links stay at ₹10 lakh).
 
+## Staff WhatsApp alerts (built)
+
+Next to the Telegram group, each staff member can get alerts on their own WhatsApp. On **Staff** (owner), open a person → **WhatsApp alerts**: their number with country code and a mode: **Off**, **Their leads only** (a manager: their team's leads) or **All leads** (CRM migration 6: `crm_users.alert_phone`, `alert_mode`). Alerts: a lead needs a person (new hand-off), a lead wrote while the AI is paused (at most one per lead per 30 minutes), a payment link was paid. `src/services/staffAlerts.js` picks the people and queues one message each in `outbound_messages` (same retries and per-number order as replies). Staff do not message the business number first, so each alert is the Meta template `staff_lead_alert` (utility: about ₹0.12 in India, AED 0.06 in the UAE, paid on the client's Meta account) with an **Open in CRM** button. Create it once per WhatsApp account: `node scripts/create-template.js staff_lead_alert` (needs `META_WABA_ID`, `BUSINESS_NAME`, `CRM_BASE_URL`), then wait for Meta to approve it. The AI does not answer a number saved for alerts.
+
 ## How we work
 
 - **Branches + PRs only.** Never push to `main`. One PR per task, named after the task (`r1-outcomes`, `k1-bsuid`). The other person reviews.

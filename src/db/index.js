@@ -214,9 +214,11 @@ async function close() {
 
 /** Test helper: empties every app table (all tenants). Tenants other than 1 are removed. */
 async function truncateAll() {
-  await tenancy.runAsSystem(async () => {
-    await query(`TRUNCATE leads, messages, handoffs, webhook_events, outbound_messages, ai_usage RESTART IDENTITY CASCADE`);
-  });
+  const d = driver || await init();
+  const sql = 'TRUNCATE leads, messages, handoffs, webhook_events, outbound_messages, ai_usage RESTART IDENTITY CASCADE';
+  // RESTART IDENTITY needs the sequences' owner: locally that is the superuser, not the restricted role.
+  if (d.kind === 'pglite') await d.exec(`RESET ROLE; ${sql}; SET ROLE app_tenant;`);
+  else await tenancy.runAsSystem(() => query(sql));
 }
 
 /**

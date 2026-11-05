@@ -1,3 +1,5 @@
+process.env.NODE_ENV = 'test';
+require('../src/tenancy/context').setTestFallback(1); // profiles are per tenant (K8)
 const test = require('node:test');
 const assert = require('node:assert');
 const router = require('../src/services/deterministicRouter');

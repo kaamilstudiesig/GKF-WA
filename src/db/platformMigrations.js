@@ -192,10 +192,33 @@ const PLATFORM_MIGRATIONS = [
         EXECUTE FUNCTION zoho_mark_dirty()`,
       'CREATE TRIGGER outcomes_zoho AFTER INSERT ON crm_lead_outcomes FOR EACH ROW EXECUTE FUNCTION zoho_mark_dirty()'
     ]
+  },
+  {
+    // R2: hot-lead queue (crm/src/queue.js). Contract in docs/TEAM.md ("R2 details").
+    id: 3,
+    name: 'lead_queue',
+    up: [
+      // Sales people switch this off when they can't take new leads (on leave, busy, end of shift).
+      'ALTER TABLE crm_users ADD COLUMN accepting BOOLEAN NOT NULL DEFAULT true',
+      // 0 none, 1 manager alerted, 2 owners alerted. Reset to 0 on every (re)assignment.
+      'ALTER TABLE crm_lead_assignments ADD COLUMN escalation_level SMALLINT NOT NULL DEFAULT 0',
+      // CRM-wide owner settings, one row per client. No row = the defaults below.
+      `CREATE TABLE crm_settings (
+        tenant_id INTEGER PRIMARY KEY DEFAULT ${TENANT_DEFAULT} REFERENCES tenants (id),
+        auto_assign BOOLEAN NOT NULL DEFAULT false,
+        auto_assign_since TIMESTAMPTZ,
+        work_start TIME NOT NULL DEFAULT '09:00',
+        work_end TIME NOT NULL DEFAULT '21:00',
+        timezone TEXT NOT NULL DEFAULT 'Asia/Kolkata',
+        updated_by TEXT,
+        updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+      )`,
+      ...tenancyPolicy('crm_settings')
+    ]
   }
 ];
 
 // Every table with client data, including ones added after migration 1 (tests and tools use this).
-const ALL_TENANT_TABLES = [...TENANT_TABLES, 'zoho_links', 'zoho_cursors'];
+const ALL_TENANT_TABLES = [...TENANT_TABLES, 'zoho_links', 'zoho_cursors', 'crm_settings'];
 
 module.exports = { PLATFORM_MIGRATIONS, TENANT_TABLES, ALL_TENANT_TABLES, tenancyPolicy, TENANT_DEFAULT };

@@ -65,7 +65,7 @@ Krishna's R12 review: good. Logo upload is safe (type checked by its bytes, no S
 **Krishna, in this order** (one PR each):
 
 1. ✅ **R13 bulk staff add** (PR `r13-bulk-staff`, see [crm/README.md](../crm/README.md#adding-many-staff-r13)). Managers, teams and first-login password change already exist (`crm/src/users.js`), so this is only the bulk part. On **Staff**, an **Add many** form: paste CSV or fill rows of `name, email, role, manager email, WhatsApp alert number (optional)`. Check every row first and save all or none, showing errors per row. Show each new person's one-time password once (and offer a CSV of them). Done when: an owner adds 20 staff in a few minutes; tests in `test/crm/`.
-2. **R2 hot-lead queue.** Agree the contract below in a small PR first, then build the CRM side.
+2. ✅ **R2 hot-lead queue**, CRM side (PR `r2-hot-lead-queue`, see [crm/README.md](../crm/README.md#hot-lead-queue-r2)). Next: **Kaamil, K19** wires `autoAssign` and `sweep` into the bot.
 3. **R5 analytics** (moved up): funnel, speed to lead, logging rate, per salesperson, lost reasons, per business type names. The GKF case study, the deck and the analyser (K21) all need these numbers. Put the queries in one module (`crm/src/analytics.js`) returning plain objects, so K21 can reuse them.
 4. **R11 unlogged-lead nudges.**
 5. **R4 PWA.**
@@ -113,6 +113,8 @@ Off by default, so nothing changes for GKF until the owner turns it on in **Busi
 *CRM screens (Krishna)*: owner toggle plus working hours and timezone in Business settings; **Taking leads** switch for sales (header menu), which calls `release`; a timer on lead cards and the lead page from `assigned_at` until picked up, counting working minutes, red after 5.
 
 *Tests (Krishna)*: round-robin order; two `autoAssign` calls at once pick different people; old leads not escalated after turning on; no alerts outside working hours; `release` moves only not-picked-up leads; one client's queue never sees another client's staff.
+
+*Built as agreed, with one detail:* when `autoAssign` keeps the current assignee for a new hand-off, it restarts their clock (`assigned_at` now, level 0), so the 5/15 minutes count from this hand-off, not from an old assignment.
 
 *Bot side (Kaamil, K19)*: `handoffRepository.open` calls `autoAssign` before `notifyService` / `staffAlerts`, so "their leads only" alerts reach the new assignee, wrapped so a queue error never blocks the hand-off. The minute housekeeping timer runs `sweep()` per tenant in `tenancy.run` and sends a `not_picked_up` alert for each result; the text uses `level` ("not picked up in 5 min" / "15 min").
 

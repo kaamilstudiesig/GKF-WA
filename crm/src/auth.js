@@ -60,14 +60,14 @@ async function createSession(db, userId, ttlHours) {
 async function getSession(db, token) {
   if (!token) return null;
   const row = await db.one(`
-    SELECT s.csrf_token, u.id, u.email, u.name, u.role, u.manager_id, u.must_change_password
+    SELECT s.csrf_token, u.id, u.email, u.name, u.role, u.manager_id, u.must_change_password, u.accepting
     FROM crm_sessions s JOIN crm_users u ON u.id = s.user_id
     WHERE s.token_hash = $1 AND s.expires_at > now() AND u.active
   `, [sha256(token)]);
   if (!row) return null;
   return {
     csrfToken: row.csrf_token,
-    user: { id: row.id, email: row.email, name: row.name, role: row.role, manager_id: row.manager_id, must_change_password: Boolean(row.must_change_password) }
+    user: { id: row.id, email: row.email, name: row.name, role: row.role, manager_id: row.manager_id, must_change_password: Boolean(row.must_change_password), accepting: row.accepting !== false }
   };
 }
 

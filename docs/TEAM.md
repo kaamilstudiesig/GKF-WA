@@ -80,6 +80,37 @@ Krishna's R12 review: good. Logo upload is safe (type checked by its bytes, no S
   - No tenant filters needed (row-level security), and no Meta or Telegram calls: it only returns who to alert.
 - Kaamil (K19): `handoffRepository.open` calls `autoAssign` before staff alerts (so the alert goes to the assignee), wrapped so a queue error never blocks the hand-off. The minute housekeeping timer runs `sweep()` per tenant in `tenancy.run` and sends a `not_picked_up` staff alert (Telegram + WhatsApp) for each result.
 
+**R2 details (proposed by Krishna, PR `r2-queue-contract`; Kaamil to agree before either side builds)**
+
+*Storage*
+
+| What | Where | Owner |
+| --- | --- | --- |
+| Sales person taking leads | `crm_users.accepting BOOLEAN NOT NULL DEFAULT true` (CRM migration 7) | Krishna |
+| Escalation level reached | `crm_lead_assignments.escalation_level SMALLINT NOT NULL DEFAULT 0` (CRM migration 7): 0 none, 1 manager alerted, 2 owner alerted. Reset to 0 whenever the lead is (re)assigned, by `autoAssign` and by `Crm.assign` | Krishna |
+| Auto-assign on or off per business | New table `crm_settings (tenant_id PRIMARY KEY, auto_assign BOOLEAN NOT NULL DEFAULT false, updated_by TEXT, updated_at TIMESTAMPTZ)`, created in CRM migration 7. **Needs Kaamil:** add `crm_settings` to `TENANT_TABLES` with the isolation policy in a new platform migration (or tell me to put it in `tenants.settings` instead). Also the home for later CRM-wide owner settings | Kaamil (RLS) |
+
+Off by default, so nothing changes for GKF until the owner turns it on in **Business settings**.
+
+*`LeadQueue(db)` in `crm/src/queue.js`* (runs inside the caller's tenant context; never calls Meta or Telegram)
+
+- `autoAssign(waId)` → `{ id, name, email, role } | null`
+  1. Auto-assign off → `null` (the hand-off stays `pending`, as today).
+  2. The lead already has an assignee who is active and accepting → keep them, return them.
+  3. Otherwise pick an active, accepting **sales** user. If the previous assignee had a manager, only that manager's team; if nobody there is available, anyone. Round-robin: the person whose latest `crm_lead_assignments.assigned_at` is oldest (never assigned first, then lowest id).
+  4. Same writes as `Crm.assign`: upsert `crm_lead_assignments` (`assigned_by` NULL = system, `escalation_level` 0), `handoffs` → `assigned` + `assigned_to` email, `crm_activity_log` action `auto_assigned` with no user.
+  5. One transaction with `pg_advisory_xact_lock` per tenant, so two hand-offs at the same moment take turns instead of both picking the same person.
+  6. Nobody available → `null`.
+- `sweep(now = new Date())` → `[{ waId, userId, level, assigneeId }]`, one item per person to alert.
+  - Looks at leads with an open hand-off in `assigned` and an assignment that is **not picked up**: no staff reply (`outbound_messages` with `metadata.source = 'crm'`) and no outcome (`crm_lead_outcomes`, any outcome, so a logged "No answer" counts as an attempt) since `assigned_at`.
+  - 5 minutes after `assigned_at` → level 1: the assignee's manager (no manager → the owners). 15 minutes → level 2: every active owner.
+  - Each level once: `UPDATE ... SET escalation_level = n WHERE escalation_level < n RETURNING`, so it never repeats, even with two dynos sweeping.
+  - Auto-assign off → `[]`.
+
+*CRM screens (Krishna)*: owner toggle in Business settings; **Taking leads** switch for sales (header menu); a timer on lead cards and the lead page from `assigned_at` until picked up, red after 5 minutes.
+
+*Bot side (Kaamil, K19)*: as above. `autoAssign` runs before `notifyService` / `staffAlerts`, so "their leads only" alerts reach the new assignee. The `not_picked_up` alert text can use `level` ("not picked up in 5 min" / "15 min").
+
 **Kaamil, in this order**
 
 1. **Set up the 3 portfolio clients** (Dubai real estate first): `npm run tenant -- add clients/<client>.json` per client, real estate preset, branding, staff (R13 helps), `staff_lead_alert` template per WhatsApp account. Then the DartIt name, logo and website, then `crm.inter-rootlabs.com`.

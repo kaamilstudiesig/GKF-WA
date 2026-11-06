@@ -88,9 +88,10 @@ const registry = require('../src/tenancy/registry');
 /** Empties every table; removes tenants other than 1. */
 async function reset() {
   await db.truncateAll();
-  const { TENANT_TABLES } = require('../src/db/platformMigrations');
+  const { ALL_TENANT_TABLES } = require('../src/db/platformMigrations');
   await require('../src/tenancy/context').runAsSystem(async () => {
-    for (const t of [...TENANT_TABLES].reverse()) await db.query(`DELETE FROM ${t} WHERE tenant_id <> 1`); // children first
+    await db.query('DELETE FROM zoho_cursors');
+    for (const t of [...ALL_TENANT_TABLES].reverse()) await db.query(`DELETE FROM ${t} WHERE tenant_id <> 1`); // children first
     await db.query('DELETE FROM tenants WHERE id <> 1');
   });
   registry.resetForTests();

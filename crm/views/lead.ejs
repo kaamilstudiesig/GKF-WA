@@ -88,6 +88,14 @@
         <dt class="text-base-content/60">First contact</dt><dd><%= util.fmtDate(lead.first_contact_at) %></dd>
         <dt class="text-base-content/60">Last message</dt><dd><%= util.timeAgo(lead.last_inbound_message_at) %></dd>
         <dt class="text-base-content/60">Owner</dt><dd><%= lead.assignee_name || 'Unassigned' %></dd>
+        <% if (zoho) { %>
+        <dt class="text-base-content/60">Zoho CRM</dt>
+        <dd>
+          <% if (zoho.url) { %><a class="link link-primary" href="<%= zoho.url %>" target="_blank" rel="noopener noreferrer">Open <%= zoho.label %> in Zoho</a> · <% } %>
+          <span class="<%= zoho.state === 'dead' ? 'text-error' : zoho.state === 'failed' ? 'text-warning' : 'text-base-content/60' %>"><%= zoho.stateLabel %></span>
+          <% if (zoho.error) { %><div class="text-xs text-base-content/50"><%= zoho.error %></div><% } %>
+        </dd>
+        <% } %>
       </dl>
       <form method="post" action="/leads/<%= lead.wa_id %>/status" class="mt-4 flex items-end gap-2">
         <%- include('partials/csrf') %>

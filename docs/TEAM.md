@@ -120,7 +120,7 @@ Off by default, so nothing changes for GKF until the owner turns it on in **Busi
 
 1. **Set up the 3 portfolio clients** (Dubai real estate first): `npm run tenant -- add clients/<client>.json` per client, real estate preset, branding, staff (R13 helps), `staff_lead_alert` template per WhatsApp account. Then the DartIt name, logo and website, then `crm.inter-rootlabs.com`.
 2. **K19:** wire R2 into the bot once Krishna's contract PR is merged.
-3. ✅ **K20 Zoho two-way sync** (built, see below). Next: Krishna adds a Zoho status line on Business settings (on/off, last read, leads not sent) and an "Open in Zoho" link on the lead page, reading `zoho_links` and `zoho_cursors`.
+3. ✅ **K20 Zoho two-way sync** (built, see below). ✅ Krishna added the Zoho status on Business settings and "Open in Zoho" on the lead page (PR `zoho-crm-status`, see [crm/README.md](../crm/README.md#zoho-crm-status)).
 4. **K21 analyser:** sales and marketing analysis and suggestions, built on R5's queries. One AI call per report, not per lead.
 5. **K7b + Instagram** once GKF's Instagram is connected (evening of 6 Nov).
 6. **K9 Embedded Signup**, then **K8 follow-ups** (fair queues per client, a real second client live on the shared app).

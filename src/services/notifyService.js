@@ -1,6 +1,8 @@
 const axios = require('axios');
 const logger = require('../utils/logger');
 const gymConfig = require('../config/gymConfig');
+const registry = require('../tenancy/registry');
+const tenancy = require('../tenancy/context');
 
 const REASON_LABELS = {
   ready_to_book: 'Ready to book a trial',
@@ -36,13 +38,18 @@ class NotifyService {
     this.sendOverride = null; // test hook
   }
 
+  /**
+   * One Telegram bot (TELEGRAM_BOT_TOKEN) for all tenants; each tenant has its own
+   * staff group and CRM address (tenant 1: the env vars). Outside a tenant: tenant 1.
+   */
   get config() {
+    const t = registry.config(tenancy.tenantIdOrNull() || registry.DEFAULT_TENANT_ID) || { telegram: {}, crm: {} };
     return {
       token: process.env.TELEGRAM_BOT_TOKEN || '',
-      chatId: process.env.TELEGRAM_CHAT_ID || '',
+      chatId: t.telegram.chatId || '',
       // Technical alerts (failed sends, account warnings). Defaults to the staff group.
-      opsChatId: process.env.TELEGRAM_OPS_CHAT_ID || process.env.TELEGRAM_CHAT_ID || '',
-      crmBaseUrl: (process.env.CRM_BASE_URL || '').replace(/\/+$/, '')
+      opsChatId: t.telegram.opsChatId || t.telegram.chatId || '',
+      crmBaseUrl: t.crm.baseUrl || ''
     };
   }
 

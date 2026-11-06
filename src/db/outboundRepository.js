@@ -10,7 +10,7 @@ const outboundRepository = {
     const row = await db.one(`
       INSERT INTO outbound_messages (dedup_key, wa_id, text, metadata, max_attempts)
       VALUES ($1, $2, $3, $4::jsonb, $5)
-      ON CONFLICT (dedup_key) DO NOTHING
+      ON CONFLICT (tenant_id, dedup_key) DO NOTHING
       RETURNING id`, [dedupKey, waId, text, JSON.stringify(metadata || {}), maxAttempts]);
     return row ? row.id : null;
   },
@@ -31,7 +31,7 @@ const outboundRepository = {
           -- One message per lead at a time, oldest first, so they arrive in order.
           AND NOT EXISTS (
             SELECT 1 FROM outbound_messages p
-            WHERE p.wa_id = c.wa_id AND p.id <> c.id
+            WHERE p.tenant_id = c.tenant_id AND p.wa_id = c.wa_id AND p.id <> c.id
               AND ((p.status = 'sending' AND p.locked_at > now() - make_interval(secs => $1))
                 OR (p.status IN ('pending', 'sending') AND p.id < c.id)))
         ORDER BY c.id

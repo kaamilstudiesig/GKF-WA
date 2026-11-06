@@ -1,3 +1,4 @@
+const tenancy = require('../../src/tenancy/context');
 const crypto = require('crypto');
 const { HttpError } = require('./crm');
 
@@ -79,18 +80,17 @@ class Branding {
     this.db = db;
     this.nameFn = nameFn;
     this.ttlMs = ttlMs;
-    this.cached = null;
-    this.cachedAt = 0;
+    this.cache = new Map(); // tenant id -> { row, at }
   }
 
+  /** The current tenant's branding row ({} when none). Row-level security picks the tenant. */
   async row() {
-    if (!this.cached || Date.now() - this.cachedAt > this.ttlMs) {
-      this.cached = (await this.db.one(
-        'SELECT mark, color, logo_type, logo_data, updated_at FROM crm_branding WHERE id = 1'
-      )) || {};
-      this.cachedAt = Date.now();
-    }
-    return this.cached;
+    const key = tenancy.tenantId();
+    const hit = this.cache.get(key);
+    if (hit && Date.now() - hit.at <= this.ttlMs) return hit.row;
+    const row = (await this.db.one('SELECT mark, color, logo_type, logo_data, updated_at FROM crm_branding')) || {};
+    this.cache.set(key, { row, at: Date.now() });
+    return row;
   }
 
   /** What every page needs: name, mark, colours, logo URL. */
@@ -131,16 +131,16 @@ class Branding {
     const logo = input.logo ? parseLogo(input.logo) : null;
     const removeLogo = input.remove_logo === '1';
 
-    const current = await this.db.one('SELECT logo_type, logo_data FROM crm_branding WHERE id = 1');
+    const current = await this.db.one('SELECT logo_type, logo_data FROM crm_branding');
     const keep = !removeLogo && !logo && current ? current : { logo_type: null, logo_data: null };
     const next = logo ? { logo_type: logo.type, logo_data: logo.data } : keep;
 
-    await this.db.query(`INSERT INTO crm_branding (id, mark, color, logo_type, logo_data, updated_by, updated_at)
-      VALUES (1, $1, $2, $3, $4, $5, now())
-      ON CONFLICT (id) DO UPDATE SET mark = EXCLUDED.mark, color = EXCLUDED.color, logo_type = EXCLUDED.logo_type,
+    await this.db.query(`INSERT INTO crm_branding (mark, color, logo_type, logo_data, updated_by, updated_at)
+      VALUES ($1, $2, $3, $4, $5, now())
+      ON CONFLICT (tenant_id) DO UPDATE SET mark = EXCLUDED.mark, color = EXCLUDED.color, logo_type = EXCLUDED.logo_type,
         logo_data = EXCLUDED.logo_data, updated_by = EXCLUDED.updated_by, updated_at = now()`,
     [mark.toUpperCase() || null, color, next.logo_type, next.logo_data, updatedBy]);
-    this.cached = null;
+    this.cache.delete(tenancy.tenantId());
   }
 }
 

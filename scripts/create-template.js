@@ -6,6 +6,9 @@
  * Reads META_ACCESS_TOKEN, META_WABA_ID and BUSINESS_NAME from .env and never prints the token.
  * staff_lead_alert also needs CRM_BASE_URL (its "Open in CRM" button links to <CRM_BASE_URL>/leads/<lead>).
  * Meta reviews each template; staff alerts work after it shows "APPROVED".
+ * K8: templates belong to one WhatsApp account. For another tenant, pass its values:
+ *   META_WABA_ID=... META_ACCESS_TOKEN=... BUSINESS_NAME="Acme" CRM_BASE_URL=https://crm.acme.com \
+ *     node scripts/create-template.js staff_lead_alert
  */
 require('dotenv').config({ quiet: true });
 const axios = require('axios');

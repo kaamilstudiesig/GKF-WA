@@ -51,7 +51,7 @@ async function insertDemoData(db) {
       const res = await db.query(`INSERT INTO leads (wa_id, display_name, status, interest, source, first_contact_at, last_inbound_message_at,
           last_outbound_message_at, needs_human, handoff_reason, notes, metadata, created_at, updated_at)
         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12::jsonb, $6, $7)
-        ON CONFLICT (wa_id) DO NOTHING`,
+        ON CONFLICT (tenant_id, wa_id) DO NOTHING`,
       [l.wa, l.name, l.status, l.interest, l.ad ? `${l.ad[0]}_ad` : 'whatsapp_inbound', iso(firstMs), lastIn,
         lastOutIdx >= 0 ? msgTime(lastOutIdx) : null, Boolean(l.handoff), l.handoff || null,
         l.handoff ? `Bot: ${l.handoff.replace(/_/g, ' ')}` : null, JSON.stringify(metadata)]);
@@ -60,7 +60,7 @@ async function insertDemoData(db) {
       for (let i = 0; i < l.chat.length; i++) {
         const [dir, text] = l.chat[i];
         await db.query(`INSERT INTO messages (message_id, wa_id, direction, text, timestamp, created_at)
-          VALUES ($1, $2, $3, $4, $5, $5) ON CONFLICT (message_id) DO NOTHING`,
+          VALUES ($1, $2, $3, $4, $5, $5) ON CONFLICT (tenant_id, message_id) DO NOTHING`,
         [`wamid.demo_${l.wa}_${i}`, l.wa, dir, text, msgTime(i)]);
       }
       if (l.handoff) {
@@ -92,7 +92,10 @@ if (require.main === module) {
     }
     try {
       await migrateAll();
-      const added = await insertDemoData(db);
+      const tenancy = require('../src/tenancy/context');
+      const { tenantFromArgs } = require('./lib/tenantArg');
+      const { tenant } = await tenantFromArgs();
+      const added = await tenancy.run(tenant.id, () => insertDemoData(db));
       console.log(added ? `Added ${added} demo leads with chats and hand-offs.` : 'Demo leads are already there.');
     } finally {
       await db.close();

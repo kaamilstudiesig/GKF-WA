@@ -1,3 +1,4 @@
+const tenancy = require('../tenancy/context');
 const SentryLib = require('@sentry/node');
 const env = require('../config/env');
 const logger = require('./logger');
@@ -210,8 +211,11 @@ function initSentry() {
  * Sanitizes the error message for internal logging and ensures
  * beforeSend sanitizes the exception event before transmission.
  */
+// K8: every error and message is tagged with the tenant whose work raised it.
+const withTenant = context => ({ ...(tenancy.tenantIdOrNull() ? { tenantId: tenancy.tenantIdOrNull() } : {}), ...context });
+
 function captureException(error, context = {}) {
-  const sanitizedContext = logger.sanitizeMeta(context);
+  const sanitizedContext = logger.sanitizeMeta(withTenant(context));
   const rawMsg = error instanceof Error ? error.message : String(error || '');
   const sanitizedErrorMsg = sanitizeSentryMessage(rawMsg);
   logger.error('Exception captured:', { error: sanitizedErrorMsg, ...sanitizedContext });
@@ -236,7 +240,7 @@ function captureException(error, context = {}) {
  */
 function captureMessage(message, level = 'info', context = {}) {
   const sanitizedMsg = sanitizeSentryMessage(message);
-  const sanitizedContext = logger.sanitizeMeta(context);
+  const sanitizedContext = logger.sanitizeMeta(withTenant(context));
   logger.log(level, sanitizedMsg, sanitizedContext);
 
   if (isInitialized && SentryLib) {

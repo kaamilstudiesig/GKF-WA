@@ -11,15 +11,21 @@ const zlib = require('zlib');
 const db = require('../src/db');
 const { migrateAll } = require('../src/migrate');
 const { TABLES } = require('./backup');
+const tenancy = require('../src/tenancy/context');
 
 const IDENTITY_TABLES = new Set(['messages', 'handoffs', 'outbound_messages', 'ai_usage', 'webhook_events',
   'crm_users', 'crm_lead_notes', 'crm_follow_ups', 'crm_lead_outcomes', 'crm_payment_links', 'crm_activity_log']);
 const JSON_COLUMNS = new Set(['metadata', 'payload', 'details', 'profile']);
 
+/** Restores a backup of all tenants into an empty database (system context). */
 async function restore(buffer) {
   const doc = JSON.parse(zlib.gunzipSync(buffer).toString('utf8'));
   if (doc.format !== 'gkf-wa-backup') throw new Error('Not a GKF WhatsApp bot backup file.');
-  await migrateAll(); // bot and CRM tables
+  await migrateAll(); // bot, CRM and platform tables
+  return tenancy.runAsSystem(() => restoreAll(doc));
+}
+
+async function restoreAll(doc) {
   const existing = await db.one('SELECT COUNT(*)::int AS n FROM leads');
   if (existing.n > 0) throw new Error('Database already has leads; restore only into an empty database.');
   if (doc.tables.crm_users && (await db.one('SELECT COUNT(*)::int AS n FROM crm_users')).n > 0) {
@@ -30,9 +36,25 @@ async function restore(buffer) {
   await db.tx(async () => {
     for (const table of TABLES) { // leads first, so foreign keys resolve
       const rows = doc.tables[table] || [];
+      if (table === 'tenants') { // tenant 1 exists after migrating: update it, insert the rest
+        for (const t of rows) {
+          await db.query(`INSERT INTO tenants (id, slug, name, status, phone_number_id, waba_id, crm_host, settings, secrets, created_at, updated_at)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8::jsonb, $9, $10, $11)
+            ON CONFLICT (id) DO UPDATE SET slug = EXCLUDED.slug, name = EXCLUDED.name, status = EXCLUDED.status,
+              phone_number_id = EXCLUDED.phone_number_id, waba_id = EXCLUDED.waba_id, crm_host = EXCLUDED.crm_host,
+              settings = EXCLUDED.settings, secrets = EXCLUDED.secrets, updated_at = EXCLUDED.updated_at`,
+          [t.id, t.slug, t.name, t.status, t.phone_number_id, t.waba_id, t.crm_host, JSON.stringify(t.settings || {}), t.secrets, t.created_at, t.updated_at]);
+        }
+        await db.query(`SELECT setval(pg_get_serial_sequence('tenants', 'id'), GREATEST(COALESCE((SELECT MAX(id) FROM tenants), 1), 1))`);
+        counts[table] = rows.length;
+        continue;
+      }
       for (const original of rows) {
         // A manager may have a higher id than their reps: link managers after all users exist.
-        const row = table === 'crm_users' ? { ...original, manager_id: null } : original;
+        let row = table === 'crm_users' ? { ...original, manager_id: null } : { ...original };
+        // Backups from before K8 have no tenant_id (all tenant 1) and a singleton id on two tables.
+        if (!('tenant_id' in row)) row.tenant_id = 1;
+        if (table === 'business_profile' || table === 'crm_branding') delete row.id;
         const cols = Object.keys(row);
         // Binary columns (crm_branding.logo_data) are saved as { $base64 } by backup.js.
         const asValue = v => (v && typeof v.$base64 === 'string' ? Buffer.from(v.$base64, 'base64') : v);

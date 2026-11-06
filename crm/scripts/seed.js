@@ -31,7 +31,10 @@ if (require.main === module) {
   (async () => {
     try {
       await migrateAll();
-      const created = await seedUsers(db, config.seedUsersFile);
+      const tenancy = require('../../src/tenancy/context');
+      const { tenantFromArgs } = require('../../scripts/lib/tenantArg');
+      const { tenant } = await tenantFromArgs();
+      const created = await tenancy.run(tenant.id, () => seedUsers(db, config.seedUsersFile));
       console.log(created.length ? `Created users:\n  ${created.join('\n  ')}` : 'All seed users already exist.');
       console.log(`Passwords are in ${config.seedUsersFile}. Each user must change theirs at first login.`);
     } finally {

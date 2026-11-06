@@ -5,8 +5,19 @@ const logger = require('../utils/logger');
 /**
  * Middleware to verify Meta WhatsApp webhook signature (X-Hub-Signature-256)
  * Strict SHA-256 verification exclusively.
+ *
+ * K8: /webhook/:slug is a tenant's own Meta app, signed with that tenant's app
+ * secret (req.tenant, set by the route). /webhook is our shared Meta app (META_APP_SECRET).
  */
 function verifyWebhookSignature(req, res, next) {
+  if (req.tenant) {
+    const secret = req.tenant.whatsapp.appSecret;
+    if (!secret) {
+      logger.error('Tenant has no Meta app secret; rejecting its webhook', { tenant: req.tenant.slug });
+      return res.status(403).json({ error: 'Webhook secret not configured for this tenant' });
+    }
+    return checkSignature(req, res, next, secret);
+  }
   // If META_APP_SECRET is not configured
   if (!env.metaAppSecret) {
     if (env.nodeEnv === 'production') {
@@ -25,7 +36,10 @@ function verifyWebhookSignature(req, res, next) {
     }
     return next();
   }
+  return checkSignature(req, res, next, env.metaAppSecret);
+}
 
+function checkSignature(req, res, next, secret) {
   // Strictly check X-Hub-Signature-256 header (Meta standard)
   const signatureHeader = req.headers['x-hub-signature-256'];
 
@@ -51,7 +65,7 @@ function verifyWebhookSignature(req, res, next) {
   const rawBody = req.rawBody || Buffer.from(JSON.stringify(req.body || {}));
   
   const expectedHash = crypto
-    .createHmac('sha256', env.metaAppSecret)
+    .createHmac('sha256', secret)
     .update(rawBody)
     .digest('hex');
 

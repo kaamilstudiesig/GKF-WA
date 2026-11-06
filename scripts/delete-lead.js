@@ -36,13 +36,18 @@ async function deleteLead(key, { confirm = false } = {}) {
 }
 
 if (require.main === module) {
-  const [key, flag] = process.argv.slice(2);
-  if (!key) {
-    console.error('Usage: npm run delete-lead -- <lead key> [--confirm]');
-    process.exit(1);
-  }
-  deleteLead(key, { confirm: flag === '--confirm' })
+  const tenancy = require('../src/tenancy/context');
+  const { tenantFromArgs } = require('./lib/tenantArg');
+  db.init()
+    .then(() => tenantFromArgs())
+    .then(({ tenant, args }) => {
+      const [key, flag] = args;
+      if (!key) throw new Error('Usage: npm run delete-lead -- [--tenant <slug>] <lead key> [--confirm]');
+      return tenancy.run(tenant.id, () => deleteLead(key, { confirm: flag === '--confirm' }))
+        .then(r => ({ ...r, key }));
+    })
     .then(r => {
+      const key = r.key;
       if (!r.found) console.log(`No lead with key ${key}.`);
       else if (!r.deleted) console.log(`Dry run. Would delete lead ${key} and:`, r.counts, '\nRun again with --confirm to delete.');
       else console.log(`Deleted lead ${key} and:`, r.counts);

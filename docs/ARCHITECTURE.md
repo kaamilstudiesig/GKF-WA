@@ -261,7 +261,11 @@ docs/                    you are here
 10. **Wake on write, poll as backup.** Whoever adds work wakes the worker at once (webhook → inbound worker, inbound worker and CRM → outbound worker via `src/workers/signals.js`). Polling every `QUEUE_POLL_MS` (10s) only catches retries and crashed jobs. With more than one dyno, replace `signals` with Postgres `LISTEN/NOTIFY`.
 11. **Staff own the conversation, but can hand it back.** A CRM reply pauses the bot for that lead (`BOT_PAUSE_HOURS_AFTER_STAFF_REPLY`, 12h). The lead page shows "AI is paused until …" with **Turn AI back on**, which stores `leads.metadata.bot_resumed_at`; `botGuard` ignores staff replies older than that. The next staff reply pauses it again.
 
+12. **Tenants are isolated by the database, not by care (K8).** One deployment serves many businesses. Every client table has `tenant_id` and forced row-level security; each query runs as one tenant (`src/tenancy/context.js`, set per connection with `set_config('app.tenant_id')`). Entry points set the tenant: webhooks by phone number id (or `/webhook/:slug`), queue jobs by their row, the CRM by hostname. A query with no tenant throws (fails closed). Cross-tenant work (claiming jobs, housekeeping, migrations) runs with `tenancy.runAsSystem`. Keys are per tenant (`(tenant_id, wa_id)` for leads), and composite foreign keys stop links across tenants. Tenant settings live in `tenants` (secrets AES-GCM encrypted with `TENANT_SECRETS_KEY`); tenant 1 falls back to the env vars, other tenants never do. New migrations go to `src/db/platformMigrations.js`; `test/tenancy.test.js` fails for a client table without `tenant_id` and the policy.
+
 ## 8. Target architecture (multi-client)
+
+K8 (tenants, row-level security, routing by phone number id, per-tenant secrets, budgets and alerts) is built; see design rule 12. Still to come: Embedded Signup (K9), fair per-tenant queue claiming, an agency dashboard.
 
 What changes when we serve many businesses from one deployment. See [PRODUCT_PLAN.md](PRODUCT_PLAN.md) for when.
 
@@ -306,7 +310,8 @@ Ordered by risk; owners and timing are in [PRODUCT_PLAN.md](PRODUCT_PLAN.md) and
 
 | Gap | Why it matters |
 | --- | --- |
-| Single tenant (one profile row, one number) | Business facts are now data (K10), but one deployment still serves one business until K8 adds tenants. |
+| Queues are FIFO across tenants | One client's ad spike can delay another's replies by seconds. Next: round-robin claiming per tenant. |
+| One web dyno, in-process signals and caches | Tenant and profile caches refresh every 60s; with more dynos, use Postgres `LISTEN/NOTIFY` for instant updates. |
 | No speed-to-lead timer or live board (outcomes are logged since R1) | Hot leads can sit unanswered unnoticed. |
 | No templates for leads outside the 24h window | Can't win back no-shows and quiet leads. |
 | Conversions API built (K7) but only for click-to-WhatsApp, and only on real outcomes | No early signal from the chat score yet (K12); no Lead Ads webhook or Conversion Leads stages (K6). |

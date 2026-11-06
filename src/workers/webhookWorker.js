@@ -15,6 +15,7 @@ const staffAlerts = require('../services/staffAlerts');
 const { applyLeadUpdates } = require('../services/leadUpdates');
 const { applyReferral } = require('../services/adAttribution');
 const gymConfig = require('../config/gymConfig');
+const businessProfile = require('../services/businessProfile');
 const logger = require('../utils/logger');
 const { captureException } = require('../utils/sentry');
 
@@ -62,6 +63,7 @@ async function processEvent(event) {
       await eventRepository.complete(event.id);
       return;
     }
+    await businessProfile.ensureLoaded(); // this tenant's facts, before anything replies
     const timestamp = msg.timestamp ? new Date(Number(msg.timestamp) * 1000).toISOString() : new Date().toISOString();
 
     let lead = await leadRepository.upsertInbound(waId, contact?.profile?.name || null, timestamp,

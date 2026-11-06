@@ -1,6 +1,7 @@
 const db = require('../db');
 const env = require('../config/env');
 const logger = require('../utils/logger');
+const registry = require('../tenancy/registry');
 
 /**
  * Records every model call and enforces the monthly budget.
@@ -28,8 +29,11 @@ const aiCostTracker = {
       FROM ai_usage WHERE created_at >= $1`, [start]);
   },
 
-  /** Soft monthly guardrail; a few in-flight calls can finish after it trips. */
-  async checkBudget({ tokenBudget = env.aiMonthlyTokenBudget, requestBudget = env.aiMonthlyRequestBudget } = {}) {
+  /** Soft monthly guardrail per tenant; a few in-flight calls can finish after it trips. */
+  async checkBudget({
+    tokenBudget = (registry.config()?.limits.aiMonthlyTokenBudget ?? env.aiMonthlyTokenBudget),
+    requestBudget = (registry.config()?.limits.aiMonthlyRequestBudget ?? env.aiMonthlyRequestBudget)
+  } = {}) {
     const { tokens, requests } = await this.monthToDate();
     if (tokens >= tokenBudget) {
       logger.warn('Monthly AI token budget reached', { tokens, tokenBudget });

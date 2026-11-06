@@ -5,6 +5,12 @@ process.env.META_APP_SECRET = 'test_app_secret';
 process.env.META_WEBHOOK_VERIFY_TOKEN = 'test_verify_token';
 process.env.META_PHONE_NUMBER_ID = 'PNID_TEST';
 process.env.LOG_LEVEL = process.env.LOG_LEVEL || 'error';
+process.env.TENANT_SECRETS_KEY = Buffer.alloc(32, 7).toString('base64'); // test-only key
+
+// K8: code that tests call directly (repositories, services) runs as tenant 1.
+// Entry points (webhooks, workers, CRM) set their own tenant; test/tenancy.test.js
+// checks those with a second tenant, where this fallback would show up as a leak.
+require('../src/tenancy/context').setTestFallback(1);
 
 const crypto = require('crypto');
 const request = require('supertest');
@@ -77,6 +83,17 @@ async function converse(from, text, opts = {}) {
   await drainAll();
 }
 
-const reset = () => db.truncateAll();
+const registry = require('../src/tenancy/registry');
+
+/** Empties every table; removes tenants other than 1. */
+async function reset() {
+  await db.truncateAll();
+  const { TENANT_TABLES } = require('../src/db/platformMigrations');
+  await require('../src/tenancy/context').runAsSystem(async () => {
+    for (const t of [...TENANT_TABLES].reverse()) await db.query(`DELETE FROM ${t} WHERE tenant_id <> 1`); // children first
+    await db.query('DELETE FROM tenants WHERE id <> 1');
+  });
+  registry.resetForTests();
+}
 
 module.exports = { db, getApp, sign, inbound, postWebhook, drainAll, converse, reset, request };

@@ -1,6 +1,10 @@
 #!/usr/bin/env node
 /**
- * Sets up a new client as its own Heroku deployment of this code (until K8 multi-tenancy).
+ * K8: most clients are a tenant on the shared deployment: `npm run tenant -- add clients/<client>.json`
+ * (see scripts/tenant.js). Use this script only for a client that needs its own
+ * deployment (dedicated database, data residency, very high volume).
+ *
+ * Sets up a client as its own Heroku deployment of this code.
  *   cp clients/example.json clients/acme.json   # fill it in; clients/*.json is git-ignored
  *   node scripts/new-client.js clients/acme.json          # dry run: prints the steps, no secrets
  *   node scripts/new-client.js clients/acme.json --run    # does it (needs the heroku CLI, logged in)

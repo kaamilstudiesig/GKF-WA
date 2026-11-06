@@ -2,6 +2,7 @@ const db = require('../db');
 const env = require('../config/env');
 const logger = require('../utils/logger');
 const signals = require('../workers/signals');
+const registry = require('../tenancy/registry');
 
 /**
  * Staff alerts on WhatsApp (next to the Telegram group alerts).
@@ -83,7 +84,7 @@ async function alert({ waId, event, details = '' }) {
         text: `[Staff alert] ${body.join(' · ')}`,
         metadata: {
           staff_alert: { event, lead: String(waId), user_id: p.id },
-          template: { name: env.staffAlertTemplate, language: env.staffAlertLanguage, body, button: String(waId) }
+          template: { name: registry.config()?.staffAlertTemplate || env.staffAlertTemplate, language: env.staffAlertLanguage, body, button: String(waId) }
         }
       });
       if (id) queued++;

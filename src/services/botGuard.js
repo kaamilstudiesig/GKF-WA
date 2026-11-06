@@ -1,5 +1,10 @@
 const db = require('../db');
 const env = require('../config/env');
+const registry = require('../tenancy/registry');
+
+// The current tenant's limits (tenant 1: the env vars).
+const pauseDefault = () => registry.config()?.limits.botPauseHours ?? env.botPauseHoursAfterStaffReply;
+const capDefault = () => registry.config()?.limits.dailyReplyCap ?? env.maxBotRepliesPerLeadPerDay;
 
 /**
  * Decides whether the bot should answer a lead at all:
@@ -12,7 +17,7 @@ const RESUMED_AT = `COALESCE((SELECT (l.metadata->>'bot_resumed_at')::timestampt
 
 const botGuard = {
   /** When the staff pause ends for this lead, or null when the bot is not paused. */
-  async pausedUntil(waId, pauseHours = env.botPauseHoursAfterStaffReply) {
+  async pausedUntil(waId, pauseHours = pauseDefault()) {
     if (!(pauseHours > 0)) return null;
     const row = await db.one(`
       SELECT MAX(created_at) + ($2::float8 * interval '1 hour') AS until FROM outbound_messages
@@ -22,8 +27,8 @@ const botGuard = {
   },
 
   async check(waId, {
-    pauseHours = env.botPauseHoursAfterStaffReply,
-    dailyCap = env.maxBotRepliesPerLeadPerDay
+    pauseHours = pauseDefault(),
+    dailyCap = capDefault()
   } = {}) {
     const row = await db.one(`
       SELECT

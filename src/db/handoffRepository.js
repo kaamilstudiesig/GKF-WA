@@ -12,7 +12,7 @@ const handoffRepository = {
   async open({ waId, reason, summary = null }) {
     const row = await db.one(`
       INSERT INTO handoffs (wa_id, reason, summary) VALUES ($1, $2, $3)
-      ON CONFLICT (wa_id) WHERE status IN ('pending', 'assigned')
+      ON CONFLICT (tenant_id, wa_id) WHERE status IN ('pending', 'assigned')
       DO UPDATE SET reason = EXCLUDED.reason, summary = COALESCE(EXCLUDED.summary, handoffs.summary), updated_at = now()
       RETURNING id, (xmax = 0) AS inserted`, [waId, reason, summary]);
     if (row.inserted) {

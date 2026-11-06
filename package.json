@@ -13,6 +13,7 @@
     "crm:seed": "node crm/scripts/seed.js",
     "crm:owner": "node crm/scripts/create-owner.js",
     "new-client": "node scripts/new-client.js",
+    "tenant": "node scripts/tenant.js",
     "dev:demo-data": "node scripts/demo-data.js",
     "delete-lead": "node scripts/delete-lead.js",
     "build:css": "tailwindcss -i crm/styles/app.css -o crm/public/css/app.css --minify",

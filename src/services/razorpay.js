@@ -5,11 +5,10 @@ const axios = require('axios');
  * K11: Razorpay payment links. Off until RAZORPAY_KEY_ID, RAZORPAY_KEY_SECRET and
  * RAZORPAY_WEBHOOK_SECRET are set (use test-mode keys first). Tests replace createLink.
  */
-const cfg = () => ({
-  keyId: process.env.RAZORPAY_KEY_ID || '',
-  keySecret: process.env.RAZORPAY_KEY_SECRET || '',
-  webhookSecret: process.env.RAZORPAY_WEBHOOK_SECRET || ''
-});
+const registry = require('../tenancy/registry');
+
+// The current tenant's Razorpay account (tenant 1: the RAZORPAY_* env vars).
+const cfg = () => (registry.config() || { razorpay: {} }).razorpay;
 
 const razorpay = {
   enabled() { const c = cfg(); return Boolean(c.keyId && c.keySecret && c.webhookSecret); },

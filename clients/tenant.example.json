@@ -1,0 +1,28 @@
+{
+  "slug": "acme",
+  "name": "Acme Realty",
+  "type": "realestate",
+  "phoneNumberId": "",
+  "wabaId": "",
+  "crmHost": "crm.acme.example",
+  "settings": {
+    "crmBaseUrl": "",
+    "telegramChatId": "",
+    "telegramOpsChatId": "",
+    "metaDatasetId": "",
+    "metaPageId": "",
+    "botPauseHours": "",
+    "dailyReplyCap": "",
+    "aiMonthlyTokenBudget": "",
+    "aiMonthlyRequestBudget": "",
+    "staffAlertTemplate": ""
+  },
+  "secrets": {
+    "metaAccessToken": "",
+    "metaAppSecret": "",
+    "metaVerifyToken": "",
+    "razorpayKeyId": "",
+    "razorpayKeySecret": "",
+    "razorpayWebhookSecret": ""
+  }
+}

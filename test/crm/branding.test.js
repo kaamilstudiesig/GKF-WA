@@ -101,7 +101,7 @@ test('owner sets logo letters, colour and logo; others cannot', async () => {
     const manager = await login(ctx.app, 'manager');
     const denied = await manager.agent.post('/settings/brand').type('form').send({ _csrf: manager.csrf, mark: 'X', color: '#000000' });
     assert.strictEqual(denied.status, 403);
-    const row = await ctx.db.one('SELECT mark, color FROM crm_branding WHERE id = 1');
+    const row = await ctx.db.one('SELECT mark, color FROM crm_branding');
     assert.deepStrictEqual(row, { mark: null, color: '#d4af37' });
   } finally { await ctx.cleanup(); gymConfig.resetToDefault(); }
 });

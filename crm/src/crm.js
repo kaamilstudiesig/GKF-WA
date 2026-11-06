@@ -179,7 +179,7 @@ class Crm {
     await this.db.tx(async () => {
       await this.db.query(`
         INSERT INTO crm_lead_assignments (wa_id, user_id, assigned_by, assigned_at) VALUES ($1, $2, $3, now())
-        ON CONFLICT (wa_id) DO UPDATE SET user_id = EXCLUDED.user_id, assigned_by = EXCLUDED.assigned_by, assigned_at = EXCLUDED.assigned_at
+        ON CONFLICT (tenant_id, wa_id) DO UPDATE SET user_id = EXCLUDED.user_id, assigned_by = EXCLUDED.assigned_by, assigned_at = EXCLUDED.assigned_at
       `, [waId, target.id, user.id]);
       // Mirror onto the bot's handoff record so the bot side shows who picked it up.
       await this.db.query(`UPDATE handoffs SET status = 'assigned', assigned_to = $1, updated_at = now()

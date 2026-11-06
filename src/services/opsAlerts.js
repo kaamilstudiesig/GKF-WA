@@ -3,6 +3,7 @@ const { classify } = require('./metaErrors');
 const logger = require('../utils/logger');
 const env = require('../config/env');
 const { captureMessage } = require('../utils/sentry');
+const tenancy = require('../tenancy/context');
 
 const escapeHtml = s => String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 const minutes = n => n * 60 * 1000;
@@ -24,8 +25,12 @@ class OpsAlerts {
 
   reset() {
     this.lastSent = new Map();
-    this.unknownFailures = [];
+    this.unknownByTenant = new Map(); // tenant id -> recent unexplained failure times
   }
+
+  /** Recent unexplained send failures of the current tenant. */
+  get unknownFailures() { return this.unknownByTenant.get(tenancy.tenantIdOrNull() || 0) || []; }
+  set unknownFailures(list) { this.unknownByTenant.set(tenancy.tenantIdOrNull() || 0, list); }
 
   get cooldownMs() {
     const n = Number(process.env.OPS_ALERT_COOLDOWN_MINUTES);
@@ -35,9 +40,10 @@ class OpsAlerts {
   /** Sends one alert unless the same key alerted within the cooldown. Never throws. */
   alert(key, title, lines = [], { level = 'error' } = {}) {
     const now = Date.now();
-    const last = this.lastSent.get(key);
+    const scoped = `${tenancy.tenantIdOrNull() || 0}:${key}`; // one tenant's broken token must not mute another's alert
+    const last = this.lastSent.get(scoped);
     if (last !== undefined && now - last < this.cooldownMs) return false;
-    this.lastSent.set(key, now);
+    this.lastSent.set(scoped, now);
 
     const text = [`${level === 'info' ? 'ℹ️' : '🚨'} <b>${escapeHtml(title)}</b>`, ...lines.filter(Boolean).map(escapeHtml)].join('\n');
     captureMessage(`${title}: ${lines.join(' | ')}`, level === 'info' ? 'info' : 'error', { component: 'ops_alert', key });

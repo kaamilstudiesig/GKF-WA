@@ -67,7 +67,7 @@ Krishna's R12 review: good. Logo upload is safe (type checked by its bytes, no S
 1. ✅ **R13 bulk staff add** (PR `r13-bulk-staff`, see [crm/README.md](../crm/README.md#adding-many-staff-r13)). Managers, teams and first-login password change already exist (`crm/src/users.js`), so this is only the bulk part. On **Staff**, an **Add many** form: paste CSV or fill rows of `name, email, role, manager email, WhatsApp alert number (optional)`. Check every row first and save all or none, showing errors per row. Show each new person's one-time password once (and offer a CSV of them). Done when: an owner adds 20 staff in a few minutes; tests in `test/crm/`.
 2. **R2 hot-lead queue.** Agree the contract below in a small PR first, then build the CRM side.
 3. **R5 analytics** (moved up): funnel, speed to lead, logging rate, per salesperson, lost reasons, per business type names. The GKF case study, the deck and the analyser (K21) all need these numbers. Put the queries in one module (`crm/src/analytics.js`) returning plain objects, so K21 can reuse them.
-4. **R11 unlogged-lead nudges.**
+4. ✅ **R11 unlogged-lead nudges** (CRM side, PR `r11-unlogged-nudges`). **Kaamil:** send the morning reminder from `Nudges.daily()`, see "Contract: R11 daily reminder" below.
 5. **R4 PWA.**
 6. **R3 live board** (SSE). Events must stay inside one tenant. Plan for more than one web dyno: send events through Postgres `LISTEN/NOTIFY`, not only in-process.
 
@@ -127,7 +127,7 @@ Krishna's R12 review: good. Logo upload is safe (type checked by its bytes, no S
 | K13 | ✅ **AI-suggested outcomes:** the reply call also returns a suggested outcome ("paid", "visit booked Sat 7am"); staff confirm with one tap. The AI never logs a sale on its own | Kaamil | Still one AI call per reply |
 | R3 | **Live board:** server-sent events so the kanban pipeline updates for everyone in real time; overdue cards red | Krishna | No websockets or extra services |
 | R4 | **PWA:** manifest + service worker so sales installs the CRM on their phone | Krishna | |
-| R11 | Unlogged-lead nudges: daily list per salesperson of hot leads with no outcome | Krishna | |
+| R11 | ✅ Unlogged-lead nudges: daily list per salesperson of hot leads with no outcome | Krishna | CRM side built; the morning send is Kaamil's (contract below) |
 
 ### 3. Revenue per ad
 
@@ -159,6 +159,13 @@ Both: line up a partner agency with a few paying clients (any industry) while th
 ### 7. Compounding
 
 Cross-client benchmarks, score trained on every client's outcomes, outcome-based pricing pilot, win-back templates, Instagram capture (comment/DM → WhatsApp). Owners decided when we get there.
+
+## Contract: R11 daily reminder (Krishna built the CRM side; Kaamil sends it)
+
+`crm/src/nudges.js` decides which leads are **waiting for an outcome**: open (not converted, lost or cold), needed a person (a hand-off, or status hot), and no outcome logged since the latest hand-off (or the first message, for a hot lead with no hand-off), for 2 hours to 30 days. The dashboard tile and list, and the **No outcome** filter on Leads, use the same rule.
+
+- `new Nudges(db).daily(now)` → `[{ user: { id, name, email, role, alertPhone } | null, leads: [{ waId, name, since, hours }] }]`: one item per active person with waiting leads assigned (oldest first), then one item with `user: null` for unassigned leads (or leads assigned to someone disabled). Runs inside `tenancy.run`; no tenant filter. Sends nothing.
+- **Kaamil:** once a day per tenant (morning, display timezone), post each person's list to the staff Telegram group, and to their WhatsApp when `alertPhone` is set and their alert mode is on (a template with an **Open in CRM** button to `/leads?waiting=1&sort=waiting`). Send the `user: null` list to managers and owners. Skip people with an empty list.
 
 ## Contract: the outcome link (K4 ↔ R1)
 

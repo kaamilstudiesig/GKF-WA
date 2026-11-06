@@ -62,6 +62,16 @@ Every lead page starts with **Log outcome** (`#outcome`, also where Telegram's "
 - Then all are saved in one transaction: managers first, so sales can point to a manager from the same list. A WhatsApp number turns on alerts for their own leads (`alert_mode = 'mine'`).
 - Each person gets a random one-time password (`auth.oneTimePassword`, also used by `crm:owner`), shown once on the result page (`Cache-Control: no-store`) with a CSV download. Only the hash is stored; everyone must change it at first login.
 
+## Waiting for an outcome (R11)
+
+`crm/src/nudges.js`: a lead is waiting when it is still open, needed a person (a bot hand-off, or status hot) and nobody has logged an outcome since, for 2 hours to 30 days (`MIN_AGE_HOURS`, `LOOKBACK_DAYS`). `waitingSql(q, now)` is the SQL used by:
+
+- **Dashboard:** a **No outcome yet** tile and a **Log what happened** list (longest waiting first; each lead opens on its outcome buttons, `#outcome`).
+- **Leads:** the **No outcome** chip and checkbox (`?waiting=1`), and the sort **Waiting longest for an outcome** (`sort=waiting`).
+- `Nudges.daily(now)`: the per-person morning list the bot sends (contract in `docs/TEAM.md`).
+
+Each person sees only their own leads, as everywhere else. Logging any outcome takes the lead off the list until the bot opens a new hand-off.
+
 ## Roles
 
 | | Owner | Manager | Sales |

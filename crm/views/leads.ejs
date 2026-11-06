@@ -2,13 +2,14 @@
 <%
   const chip = (label, params) => {
     const qs = new URLSearchParams(params).toString();
-    const active = (!qs && !filters.q && !filters.status && !filters.assignee && !filters.needsHuman)
+    const active = (!qs && !filters.q && !filters.status && !filters.assignee && !filters.needsHuman && !filters.waiting)
+      || (params.waiting && filters.waiting && !filters.status && !filters.needsHuman)
       || (params.needs_human && filters.needsHuman && !filters.status)
       || (params.status && filters.status === params.status)
       || (params.assignee && String(filters.assignee) === params.assignee);
     return { label, href: '/leads' + (qs ? '?' + qs : ''), active };
   };
-  const chips = [chip('All', {}), chip('Needs human', { needs_human: '1' }), chip('Hot', { status: 'hot' }), chip('New', { status: 'new' })];
+  const chips = [chip('All', {}), chip('Needs human', { needs_human: '1' }), chip('No outcome', { waiting: '1', sort: 'waiting' }), chip('Hot', { status: 'hot' }), chip('New', { status: 'new' })];
   if (user.role !== 'sales') chips.push(chip('Mine', { assignee: 'me' }), chip('Unassigned', { assignee: 'unassigned' }));
 %>
 <div class="mb-4 flex items-center justify-between gap-3">
@@ -45,11 +46,12 @@
     <% } %>
     <fieldset class="fieldset"><legend class="fieldset-legend">Sort</legend>
       <select id="sort" name="sort" class="select w-full">
-        <% for (const [v, t] of [['attention', 'Needs human first'], ['recent', 'Latest message'], ['created', 'Newest leads'], ['oldest', 'Oldest message'], ['followup', 'Next follow-up']]) { %>
+        <% for (const [v, t] of [['attention', 'Needs human first'], ['recent', 'Latest message'], ['created', 'Newest leads'], ['oldest', 'Oldest message'], ['followup', 'Next follow-up'], ['waiting', 'Waiting longest for an outcome']]) { %>
           <option value="<%= v %>" <%= filters.sort === v ? 'selected' : '' %>><%= t %></option><% } %>
       </select></fieldset>
-    <div class="flex items-end gap-3">
+    <div class="flex min-w-0 flex-wrap items-end gap-x-3 gap-y-1">
       <label class="label tap cursor-pointer gap-2"><input type="checkbox" name="needs_human" value="1" class="checkbox checkbox-primary checkbox-sm" <%= filters.needsHuman ? 'checked' : '' %>> Needs human</label>
+      <label class="label tap cursor-pointer gap-2"><input type="checkbox" name="waiting" value="1" class="checkbox checkbox-primary checkbox-sm" <%= filters.waiting ? 'checked' : '' %>> No outcome</label>
       <button class="btn btn-primary ml-auto" type="submit">Apply</button>
     </div>
   </form>

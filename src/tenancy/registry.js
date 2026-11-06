@@ -20,9 +20,21 @@ const REFRESH_MS = 60 * 1000;
 const MISS_RELOAD_MS = 10 * 1000;
 const SLUG_RE = /^[a-z0-9][a-z0-9-]{1,29}$/;
 const HOST_RE = /^(?=.{1,253}$)([a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z0-9-]{2,63}$/;
-const SECRET_KEYS = ['metaAccessToken', 'metaAppSecret', 'metaVerifyToken', 'razorpayKeyId', 'razorpayKeySecret', 'razorpayWebhookSecret'];
+const SECRET_KEYS = ['metaAccessToken', 'metaAppSecret', 'metaVerifyToken', 'razorpayKeyId', 'razorpayKeySecret', 'razorpayWebhookSecret',
+  'zohoClientId', 'zohoClientSecret', 'zohoRefreshToken'];
 const SETTING_KEYS = ['crmBaseUrl', 'telegramChatId', 'telegramOpsChatId', 'metaDatasetId', 'metaPageId', 'metaCapiTestEventCode',
-  'botPauseHours', 'dailyReplyCap', 'aiMonthlyTokenBudget', 'aiMonthlyRequestBudget', 'staffAlertTemplate'];
+  'botPauseHours', 'dailyReplyCap', 'aiMonthlyTokenBudget', 'aiMonthlyRequestBudget', 'staffAlertTemplate',
+  // K20 Zoho CRM sync (scripts/zoho-connect.js sets these). No env fallback, tenant 1 included:
+  // the database trigger that marks leads for sync reads zohoSync from the tenants row.
+  'zohoSync', 'zohoAccountsUrl', 'zohoApiDomain', 'zohoIdField', 'zohoLinkField', 'zohoLeadSource',
+  'zohoDealPipeline', 'zohoWonStage', 'zohoLostStage', 'zohoLostStatuses', 'zohoStatusMap'];
+
+// Our lead status -> Zoho's standard Lead Status values. A client can override any of them (zohoStatusMap).
+const ZOHO_STATUS_MAP = {
+  new: 'Not Contacted', contacted: 'Contacted', qualified: 'Pre-Qualified', hot: 'Pre-Qualified',
+  cold: 'Contact in Future', converted: 'Pre-Qualified', lost: 'Lost Lead'
+};
+const ZOHO_LOST_STATUSES = ['Lost Lead', 'Junk Lead', 'Not Qualified'];
 
 let rows = new Map(); // id -> { row, secrets, secretsError }
 // Tenant 1 before the tenants table has been read: settings come from the env vars.
@@ -91,7 +103,23 @@ function resolve(entry) {
       aiMonthlyTokenBudget: limit(s.aiMonthlyTokenBudget, env.aiMonthlyTokenBudget),
       aiMonthlyRequestBudget: limit(s.aiMonthlyRequestBudget, env.aiMonthlyRequestBudget)
     },
-    staffAlertTemplate: s.staffAlertTemplate || env.staffAlertTemplate
+    staffAlertTemplate: s.staffAlertTemplate || env.staffAlertTemplate,
+    zoho: {
+      on: s.zohoSync === 'on' && Boolean(sec.zohoClientId && sec.zohoClientSecret && sec.zohoRefreshToken),
+      accountsUrl: String(s.zohoAccountsUrl || 'https://accounts.zoho.com').replace(/\/+$/, ''),
+      apiDomain: String(s.zohoApiDomain || '').replace(/\/+$/, ''),
+      clientId: sec.zohoClientId || '',
+      clientSecret: sec.zohoClientSecret || '',
+      refreshToken: sec.zohoRefreshToken || '',
+      idField: s.zohoIdField || '',
+      linkField: s.zohoLinkField || '',
+      leadSource: s.zohoLeadSource || '',
+      pipeline: s.zohoDealPipeline || '',
+      wonStage: s.zohoWonStage || 'Closed Won',
+      lostStage: s.zohoLostStage || 'Closed Lost',
+      lostStatuses: Array.isArray(s.zohoLostStatuses) && s.zohoLostStatuses.length ? s.zohoLostStatuses : ZOHO_LOST_STATUSES,
+      statusMap: { ...ZOHO_STATUS_MAP, ...(s.zohoStatusMap && typeof s.zohoStatusMap === 'object' ? s.zohoStatusMap : {}) }
+    }
   };
 }
 

@@ -68,7 +68,7 @@ Krishna's R12 review: good. Logo upload is safe (type checked by its bytes, no S
 2. **R2 hot-lead queue.** Agree the contract below in a small PR first, then build the CRM side.
 3. **R5 analytics** (moved up): funnel, speed to lead, logging rate, per salesperson, lost reasons, per business type names. The GKF case study, the deck and the analyser (K21) all need these numbers. Put the queries in one module (`crm/src/analytics.js`) returning plain objects, so K21 can reuse them.
 4. **R11 unlogged-lead nudges.**
-5. **R4 PWA.**
+5. ✅ **R4 PWA** (PR `r4-pwa`, see [crm/README.md](../crm/README.md#installable-app-r4)).
 6. **R3 live board** (SSE). Events must stay inside one tenant. Plan for more than one web dyno: send events through Postgres `LISTEN/NOTIFY`, not only in-process.
 
 **Contract: R2 hot-lead queue (Krishna builds the CRM side, Kaamil wires it into the bot as K19)**
@@ -162,7 +162,7 @@ Off by default, so nothing changes for GKF until the owner turns it on in **Busi
 | K11 | ✅ **Payment links:** staff send a Razorpay/UPI link from the CRM; the `payment_link.paid` webhook logs Won + ₹ on the lead and triggers the Conversions API event | Kaamil | The lead key goes in the link's `reference_id`/`notes` |
 | K13 | ✅ **AI-suggested outcomes:** the reply call also returns a suggested outcome ("paid", "visit booked Sat 7am"); staff confirm with one tap. The AI never logs a sale on its own | Kaamil | Still one AI call per reply |
 | R3 | **Live board:** server-sent events so the kanban pipeline updates for everyone in real time; overdue cards red | Krishna | No websockets or extra services |
-| R4 | **PWA:** manifest + service worker so sales installs the CRM on their phone | Krishna | |
+| R4 | ✅ **PWA:** manifest + service worker so sales installs the CRM on their phone | Krishna | Per-client name and icon from the branding; no lead data cached |
 | R11 | Unlogged-lead nudges: daily list per salesperson of hot leads with no outcome | Krishna | |
 
 ### 3. Revenue per ad

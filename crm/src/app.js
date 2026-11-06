@@ -15,6 +15,8 @@ const config = require('./config');
 const auth = require('./auth');
 const { Crm, HttpError } = require('./crm');
 const { Users } = require('./users');
+const { LiveBoard } = require('./liveBoard');
+const tenancy = require('../../src/tenancy/context');
 const bulkStaff = require('./bulkStaff');
 const { Branding } = require('./branding');
 const { can } = require('./permissions');
@@ -73,6 +75,8 @@ function createCrmApp({
   app.locals.assetV = assetVersion(); // cache-busting ?v= on CSS/JS links
   const crm = new Crm(db);
   const users = new Users(db);
+  const liveBoard = new LiveBoard(db);
+  app.locals.liveBoard = liveBoard; // tests and shutdown
   const throttle = new auth.LoginThrottle();
   const branding = new Branding(db, () => (gymConfig ? gymConfig.gymName : ''));
 
@@ -209,6 +213,9 @@ function createCrmApp({
     };
     res.render('leads', { result: await crm.listLeads(req.user, filters), filters, staff: await crm.assignableUsers(req.user) });
   }));
+
+  // R3: live board stream. Pings "board changed" for this client only; no lead data.
+  app.get('/events', (req, res) => liveBoard.subscribe(tenancy.tenantId(), req, res));
 
   app.get('/pipeline', h(async (req, res) => {
     const columns = (await crm.pipelineBoard(req.user)).map(c => ({ ...c, label: res.locals.STAGES[c.stage] || c.label }));

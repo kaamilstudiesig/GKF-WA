@@ -192,6 +192,31 @@ const PLATFORM_MIGRATIONS = [
         EXECUTE FUNCTION zoho_mark_dirty()`,
       'CREATE TRIGGER outcomes_zoho AFTER INSERT ON crm_lead_outcomes FOR EACH ROW EXECUTE FUNCTION zoho_mark_dirty()'
     ]
+  },
+  {
+    // R3: live board. Any change that moves a card tells listening CRM servers which client
+    // changed (crm/src/liveBoard.js), whoever made it: bot, CRM or Zoho. The payload is only
+    // the tenant id; Postgres sends it on commit and folds repeats in one transaction into one.
+    // Numbered 4 to leave 3 for R2's lead_queue (independent of this one).
+    id: 4,
+    name: 'live_board',
+    up: [
+      `CREATE FUNCTION crm_board_notify() RETURNS trigger LANGUAGE plpgsql AS $$
+      BEGIN
+        PERFORM pg_notify('crm_board', json_build_object('t', CASE WHEN TG_OP = 'DELETE' THEN OLD.tenant_id ELSE NEW.tenant_id END)::text);
+        RETURN NULL;
+      END $$`,
+      'CREATE TRIGGER leads_board_insert AFTER INSERT OR DELETE ON leads FOR EACH ROW EXECUTE FUNCTION crm_board_notify()',
+      `CREATE TRIGGER leads_board_update AFTER UPDATE ON leads FOR EACH ROW
+        WHEN (OLD.status IS DISTINCT FROM NEW.status OR OLD.needs_human IS DISTINCT FROM NEW.needs_human
+          OR OLD.last_inbound_message_at IS DISTINCT FROM NEW.last_inbound_message_at
+          OR OLD.display_name IS DISTINCT FROM NEW.display_name OR OLD.interest IS DISTINCT FROM NEW.interest)
+        EXECUTE FUNCTION crm_board_notify()`,
+      'CREATE TRIGGER assignments_board AFTER INSERT OR UPDATE OR DELETE ON crm_lead_assignments FOR EACH ROW EXECUTE FUNCTION crm_board_notify()',
+      'CREATE TRIGGER outcomes_board AFTER INSERT ON crm_lead_outcomes FOR EACH ROW EXECUTE FUNCTION crm_board_notify()',
+      'CREATE TRIGGER followups_board AFTER INSERT OR UPDATE ON crm_follow_ups FOR EACH ROW EXECUTE FUNCTION crm_board_notify()',
+      'CREATE TRIGGER handoffs_board AFTER INSERT OR UPDATE ON handoffs FOR EACH ROW EXECUTE FUNCTION crm_board_notify()'
+    ]
   }
 ];
 

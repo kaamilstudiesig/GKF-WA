@@ -87,7 +87,7 @@
           <% if (lead.ad.source_url && /^https:\/\//.test(lead.ad.source_url)) { %> · <a class="link link-primary" href="<%= lead.ad.source_url %>" target="_blank" rel="noopener noreferrer">view</a><% } %></dd><% } %>
         <dt class="text-base-content/60">First contact</dt><dd><%= util.fmtDate(lead.first_contact_at) %></dd>
         <dt class="text-base-content/60">Last message</dt><dd><%= util.timeAgo(lead.last_inbound_message_at) %></dd>
-        <dt class="text-base-content/60">Owner</dt><dd><%= lead.assignee_name || 'Unassigned' %></dd>
+        <dt class="text-base-content/60">Owner</dt><dd><%= lead.assignee_name || 'Unassigned' %> <%- include('partials/clock', { clock: lead.clock }) %></dd>
       </dl>
       <form method="post" action="/leads/<%= lead.wa_id %>/status" class="mt-4 flex items-end gap-2">
         <%- include('partials/csrf') %>

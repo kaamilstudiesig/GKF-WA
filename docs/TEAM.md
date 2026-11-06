@@ -80,6 +80,42 @@ Krishna's R12 review: good. Logo upload is safe (type checked by its bytes, no S
   - No tenant filters needed (row-level security), and no Meta or Telegram calls: it only returns who to alert.
 - Kaamil (K19): `handoffRepository.open` calls `autoAssign` before staff alerts (so the alert goes to the assignee), wrapped so a queue error never blocks the hand-off. The minute housekeeping timer runs `sweep()` per tenant in `tenancy.run` and sends a `not_picked_up` staff alert (Telegram + WhatsApp) for each result.
 
+**R2 details (proposed by Krishna in PR #32, agreed by Kaamil with 4 changes: storage in a platform migration, a cutoff for old leads, working hours, and hand-back when someone stops taking leads)**
+
+*Storage: one new platform migration `lead_queue` in `src/db/platformMigrations.js`* (not CRM migration 7, so every new table gets client isolation the same way `zoho_sync` did)
+
+| What | Where | Owner |
+| --- | --- | --- |
+| Sales person taking leads | `crm_users.accepting BOOLEAN NOT NULL DEFAULT true` | Krishna |
+| Escalation level reached | `crm_lead_assignments.escalation_level SMALLINT NOT NULL DEFAULT 0`: 0 none, 1 manager alerted, 2 owners alerted. Reset to 0 whenever the lead is (re)assigned, by `autoAssign` and by `Crm.assign` | Krishna |
+| Queue settings per business | New table `crm_settings`: `tenant_id` (primary key, default from the tenant setting like the other tables), `auto_assign BOOLEAN NOT NULL DEFAULT false`, `auto_assign_since TIMESTAMPTZ` (set each time the owner turns it on), `work_start TIME NOT NULL DEFAULT '09:00'`, `work_end TIME NOT NULL DEFAULT '21:00'`, `timezone TEXT NOT NULL DEFAULT 'Asia/Kolkata'` (Dubai clients use `Asia/Dubai`), `updated_by TEXT`, `updated_at TIMESTAMPTZ`. Add `...tenancyPolicy('crm_settings')` in the same migration. Also the home for later CRM-wide owner settings | Krishna (copy the `zoho_sync` pattern) |
+
+Off by default, so nothing changes for GKF until the owner turns it on in **Business settings**. No row = defaults.
+
+*`LeadQueue(db)` in `crm/src/queue.js`* (runs inside the caller's tenant context; never calls Meta or Telegram)
+
+- `autoAssign(waId, { exclude = [] } = {})` → `{ id, name, email, role } | null`
+  1. Auto-assign off → `null` (the hand-off stays `pending`, as today).
+  2. The lead already has an assignee who is active, accepting and not in `exclude` → keep them, return them.
+  3. Otherwise pick an active, accepting **sales** user not in `exclude`. If the previous assignee had a manager, only that manager's team first; if nobody there is available, anyone. Round-robin: the person whose latest `crm_lead_assignments.assigned_at` is oldest (never assigned first, then lowest id).
+  4. Same writes as `Crm.assign`: upsert `crm_lead_assignments` (`assigned_by` NULL = system, `escalation_level` 0), `handoffs` → `assigned` + `assigned_to` email, `crm_activity_log` action `auto_assigned` with no user.
+  5. One transaction with `pg_advisory_xact_lock(<queue key>, tenant_id)`, so two hand-offs at the same moment take turns instead of both picking the same person.
+  6. Nobody available → `null`.
+- `release(userId)` → number of leads moved. Called when a sales person turns **Taking leads** off, and when an owner deactivates a user. Their open hand-offs that are **not picked up yet** go to `autoAssign(waId, { exclude: [userId] })`. Leads they already picked up stay with them (they are mid-conversation). If nobody else is available the lead stays, and the sweep escalates it as normal.
+- `sweep(now = new Date())` → `[{ waId, userId, level, assigneeId }]`, one item per person to alert.
+  - Looks at leads with an open hand-off in `assigned` and an assignment that is **not picked up**: no staff reply (`outbound_messages` with `metadata.source = 'crm'`) and no outcome (`crm_lead_outcomes`, any outcome, so a logged "No answer" counts as an attempt) since `assigned_at`.
+  - **Old leads never escalate:** only assignments with `assigned_at >= auto_assign_since`. Turning auto-assign on does not alert owners about leads assigned before that.
+  - **Working minutes only:** the clock counts minutes between `work_start` and `work_end` in the business's `timezone`. A lead assigned at 2 AM starts counting at `work_start`, so nobody is alerted at night. Put this in a pure function `workingMinutes(from, to, settings)` with its own tests (overnight, weekend not special, Dubai vs India time).
+  - 5 working minutes → level 1: the assignee's manager (no manager → the owners). 15 working minutes → level 2: every active owner.
+  - Each level once: `UPDATE ... SET escalation_level = n WHERE escalation_level < n RETURNING`, so it never repeats, even with two dynos sweeping.
+  - Auto-assign off → `[]`.
+
+*CRM screens (Krishna)*: owner toggle plus working hours and timezone in Business settings; **Taking leads** switch for sales (header menu), which calls `release`; a timer on lead cards and the lead page from `assigned_at` until picked up, counting working minutes, red after 5.
+
+*Tests (Krishna)*: round-robin order; two `autoAssign` calls at once pick different people; old leads not escalated after turning on; no alerts outside working hours; `release` moves only not-picked-up leads; one client's queue never sees another client's staff.
+
+*Bot side (Kaamil, K19)*: `handoffRepository.open` calls `autoAssign` before `notifyService` / `staffAlerts`, so "their leads only" alerts reach the new assignee, wrapped so a queue error never blocks the hand-off. The minute housekeeping timer runs `sweep()` per tenant in `tenancy.run` and sends a `not_picked_up` alert for each result; the text uses `level` ("not picked up in 5 min" / "15 min").
+
 **Kaamil, in this order**
 
 1. **Set up the 3 portfolio clients** (Dubai real estate first): `npm run tenant -- add clients/<client>.json` per client, real estate preset, branding, staff (R13 helps), `staff_lead_alert` template per WhatsApp account. Then the DartIt name, logo and website, then `crm.inter-rootlabs.com`.

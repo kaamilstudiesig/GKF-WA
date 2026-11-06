@@ -37,7 +37,7 @@ class Users {
   }
 
   async managers() {
-    return this.db.many("SELECT id, name FROM crm_users WHERE role = 'manager' AND active ORDER BY name");
+    return this.db.many("SELECT id, name, email FROM crm_users WHERE role = 'manager' AND active ORDER BY name");
   }
 
   async validate({ name, email, role, managerId }) {

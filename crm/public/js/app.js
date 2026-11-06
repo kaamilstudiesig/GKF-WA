@@ -42,6 +42,28 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   }
 
+  // Add many staff (R13): "+ 5 more rows" copies the last row, emptied.
+  const bulkRows = document.querySelector('[data-bulk-rows]');
+  const bulkMore = document.querySelector('[data-bulk-more]');
+  if (bulkRows && bulkMore) {
+    bulkMore.hidden = false;
+    bulkMore.addEventListener('click', () => {
+      for (let i = 0; i < 5; i++) {
+        const row = bulkRows.lastElementChild.cloneNode(true);
+        row.classList.remove('ring-1', 'ring-error');
+        row.querySelectorAll('ul').forEach(el => el.remove());
+        row.querySelectorAll('input').forEach(el => { el.value = ''; });
+        row.querySelectorAll('select').forEach(el => {
+          el.querySelectorAll('option').forEach(o => { if (o.textContent === 'Choose a role') o.remove(); });
+          el.value = 'sales';
+        });
+        const n = bulkRows.children.length + 1;
+        row.querySelectorAll('[aria-label]').forEach(el => { el.setAttribute('aria-label', el.getAttribute('aria-label').replace(/^Row \d+/,'Row ' + n)); });
+        bulkRows.appendChild(row);
+      }
+    });
+  }
+
   // Character counter for the WhatsApp reply box.
   const box = document.querySelector('textarea[data-count]');
   const out = document.querySelector('[data-counter]');

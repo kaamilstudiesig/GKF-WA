@@ -1,5 +1,8 @@
 <%- include('partials/header', { title: 'Staff' }) %>
-<div class="mb-4"><p class="text-sm text-base-content/60">Owner only</p><h1 class="page-title max-lg:hidden">Staff accounts</h1></div>
+<div class="mb-4 flex flex-wrap items-end justify-between gap-3">
+  <div><p class="text-sm text-base-content/60">Owner only</p><h1 class="page-title max-lg:hidden">Staff accounts</h1></div>
+  <a href="/users/bulk" class="btn btn-primary btn-sm max-lg:w-full"><%- include('partials/icon', { name: 'users' }) %>Add many</a>
+</div>
 <div class="grid gap-4 lg:grid-cols-[minmax(0,1fr)_24rem]">
   <ul class="space-y-2">
     <% for (const u of list) { %>

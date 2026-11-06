@@ -5,6 +5,7 @@ const { migrateAll } = require('./migrate');
 const webhookWorker = require('./workers/webhookWorker');
 const outboundWorker = require('./workers/outboundWorker');
 const conversionsWorker = require('./workers/conversionsWorker');
+const zohoWorker = require('./workers/zohoWorker');
 const conversionsApi = require('./services/conversionsApi');
 const businessProfile = require('./services/businessProfile');
 const eventRepository = require('./db/eventRepository');
@@ -53,6 +54,7 @@ async function main() {
   outboundWorker.start();
   if (conversionsApi.enabledForAny) conversionsWorker.start(); // K7: sales results back to Meta
   else logger.info('Conversions API off for every tenant (set a dataset and WABA id to send sales results to Meta)');
+  zohoWorker.start(); // K20: does nothing until a tenant connects Zoho (scripts/zoho-connect.js)
 
   // Housekeeping: keep the small Postgres plan small.
   const housekeeping = setInterval(async () => {
@@ -76,7 +78,7 @@ async function main() {
     logger.info(`${signal} received; finishing in-flight work`);
     setTimeout(() => process.exit(1), 25000).unref(); // Heroku allows 30s
     server.close();
-    await Promise.all([webhookWorker.stop(), outboundWorker.stop(), conversionsWorker.stop()]);
+    await Promise.all([webhookWorker.stop(), outboundWorker.stop(), conversionsWorker.stop(), zohoWorker.stop()]);
     await db.close();
     process.exit(0);
   }

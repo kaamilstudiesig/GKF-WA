@@ -53,7 +53,7 @@ A possible large client wants the chatbot soon. Until this stage is done, it com
 | K17 | ✅ **Per-client safety:** AI budget caps, client name in every ops alert and Sentry event, separate Telegram groups | Kaamil | An alert always says which client it is about |
 | K18 | 📝 (written, not yet tested) **Meta access path:** written steps to get WhatsApp access for a business that is not ours, before App Review approval (partner access to their WABA, or a system-user token from their own Business Manager). Check the 250 / 1K message tier and display-name approval early | Kaamil | Steps tested once on a test business |
 | R12 | ✅ **White-label CRM:** brand name, logo and colour from the business profile (login, header, page titles, reports text). Remove "GKF" and "Goldkraft" from all views; make the theme name generic | Krishna | No GKF text in `crm/views`; GKF still looks the same |
-| R13 | **Team setup for a big client:** bulk-add staff (CSV or a multi-row form), managers with teams, first-login password change | Krishna | Owner adds 20 staff in a few minutes |
+| R13 | ✅ **Team setup for a big client:** bulk-add staff (CSV or a multi-row form), managers with teams, first-login password change | Krishna | Owner adds 20 staff in a few minutes |
 | R2 | Hot-lead queue (moved up from stage 2): a big team needs auto-assign and the 5-minute timer from day one | Krishna | Hand-offs reach a salesperson with no manual assigning |
 
 Status: K14–K17 are built and K18 is written (PR `k14-k18-new-client`). R12 is built (PR `r12-white-label`): name from the business profile, logo letters, colour and logo image on Business settings → Brand. GKF names stay only in the default profile (seed data) and the GKF CRM host default. Order: K14 + R12 first (no GKF name in front of the new client), then K15, K16, R13, R2, then K17/K18 in parallel. Ask the client early: business type, number of staff, existing WhatsApp number or new one, who owns their Meta Business Manager.
@@ -64,7 +64,7 @@ Krishna's R12 review: good. Logo upload is safe (type checked by its bytes, no S
 
 **Krishna, in this order** (one PR each):
 
-1. **R13 bulk staff add.** Managers, teams and first-login password change already exist (`crm/src/users.js`), so this is only the bulk part. On **Staff**, an **Add many** form: paste CSV or fill rows of `name, email, role, manager email, WhatsApp alert number (optional)`. Check every row first and save all or none, showing errors per row. Show each new person's one-time password once (and offer a CSV of them). Done when: an owner adds 20 staff in a few minutes; tests in `test/crm/`.
+1. ✅ **R13 bulk staff add** (PR `r13-bulk-staff`, see [crm/README.md](../crm/README.md#adding-many-staff-r13)). Managers, teams and first-login password change already exist (`crm/src/users.js`), so this is only the bulk part. On **Staff**, an **Add many** form: paste CSV or fill rows of `name, email, role, manager email, WhatsApp alert number (optional)`. Check every row first and save all or none, showing errors per row. Show each new person's one-time password once (and offer a CSV of them). Done when: an owner adds 20 staff in a few minutes; tests in `test/crm/`.
 2. **R2 hot-lead queue.** Agree the contract below in a small PR first, then build the CRM side.
 3. ✅ **R5 analytics** (PR `r5-analytics`; definitions in [crm/README.md](../crm/README.md#analytics-r5)) (moved up): funnel, speed to lead, logging rate, per salesperson, lost reasons, per business type names. The GKF case study, the deck and the analyser (K21) all need these numbers. Put the queries in one module (`crm/src/analytics.js`) returning plain objects, so K21 can reuse them.
 4. **R11 unlogged-lead nudges.**
@@ -84,7 +84,7 @@ Krishna's R12 review: good. Logo upload is safe (type checked by its bytes, no S
 
 1. **Set up the 3 portfolio clients** (Dubai real estate first): `npm run tenant -- add clients/<client>.json` per client, real estate preset, branding, staff (R13 helps), `staff_lead_alert` template per WhatsApp account. Then the DartIt name, logo and website, then `crm.inter-rootlabs.com`.
 2. **K19:** wire R2 into the bot once Krishna's contract PR is merged.
-3. **K20 Zoho two-way sync** (promised in the deck): leads and outcomes out to Zoho CRM, stage/won changes back in, matched by the lead key. Kaamil builds the sync worker and OAuth; Krishna adds the connect button on Business settings.
+3. ✅ **K20 Zoho two-way sync** (built, see below). Next: Krishna adds a Zoho status line on Business settings (on/off, last read, leads not sent) and an "Open in Zoho" link on the lead page, reading `zoho_links` and `zoho_cursors`.
 4. **K21 analyser:** sales and marketing analysis and suggestions, built on R5's queries. One AI call per report, not per lead.
 5. **K7b + Instagram** once GKF's Instagram is connected (evening of 6 Nov).
 6. **K9 Embedded Signup**, then **K8 follow-ups** (fair queues per client, a real second client live on the shared app).
@@ -97,6 +97,7 @@ Krishna's R12 review: good. Logo upload is safe (type checked by its bytes, no S
 - Razorpay keys for GKF (`RAZORPAY_KEY_ID`, `RAZORPAY_KEY_SECRET`, `RAZORPAY_WEBHOOK_SECRET`) and the webhook in the Razorpay dashboard.
 - K7b: `META_DATASET_ID` and the `whatsapp_business_manage_events` permission, then check Events Manager.
 - WhatsApp payment method on GKF's Meta account (Meta Business settings, before 1,000 conversations a month).
+- Connect Zoho for each client that uses it (`npm run zoho -- connect`, needs `DATABASE_URL`, `TENANT_SECRETS_KEY` and the client's Zoho admin for the one-time code).
 - Deploys after merging (Heroku).
 
 ### Done
@@ -199,6 +200,33 @@ Off until `RAZORPAY_KEY_ID`, `RAZORPAY_KEY_SECRET` and `RAZORPAY_WEBHOOK_SECRET`
 ## Staff WhatsApp alerts (built)
 
 Next to the Telegram group, each staff member can get alerts on their own WhatsApp. On **Staff** (owner), open a person → **WhatsApp alerts**: their number with country code and a mode: **Off**, **Their leads only** (a manager: their team's leads) or **All leads** (CRM migration 6: `crm_users.alert_phone`, `alert_mode`). Alerts: a lead needs a person (new hand-off), a lead wrote while the AI is paused (at most one per lead per 30 minutes), a payment link was paid. `src/services/staffAlerts.js` picks the people and queues one message each in `outbound_messages` (same retries and per-number order as replies). Staff do not message the business number first, so each alert is the Meta template `staff_lead_alert` (utility: about ₹0.12 in India, AED 0.06 in the UAE, paid on the client's Meta account) with an **Open in CRM** button. Create it once per WhatsApp account: `node scripts/create-template.js staff_lead_alert` (needs `META_WABA_ID`, `BUSINESS_NAME`, `CRM_BASE_URL`), then wait for Meta to approve it. The AI does not answer a number saved for alerts.
+
+## Zoho CRM sync (K20, built)
+
+For clients who already run their sales in Zoho CRM. Off until connected per client (`npm run zoho -- --tenant <slug> connect`, steps in [ONBOARDING.md](ONBOARDING.md#manual-flow-today-until-embedded-signup)). The refresh token and client secret are stored encrypted on the tenant; the accounts URL and API domain are per client, since Zoho runs separate data centres (India, UAE, Saudi, US, EU...). Zoho API v8.
+
+**Out (us → Zoho).** A database trigger marks a lead in `zoho_links` when it is created, its name, phone, interest or status changes, or an outcome is logged; a new message alone does not. CRM code needs no Zoho calls. `src/workers/zohoWorker.js` sends it:
+
+| Here | In Zoho |
+| --- | --- |
+| New lead | Lead: name, `+` mobile (when Meta shares it), Lead Status, short description with the CRM link. Matched first by the Lead Engine ID field (upsert), else by mobile, so existing Zoho leads are not duplicated |
+| Status changes | Lead Status: new → Not Contacted, contacted → Contacted, qualified/hot → Pre-Qualified, cold → Contact in Future, lost → Lost Lead (per-client override: `zohoStatusMap`) |
+| Joined (plan + ₹) | Lead converted into Contact + Deal: name "<lead> - <plan>", Amount, won stage (default Closed Won), closing date, pipeline if set |
+| Lost after a Deal exists | Deal moved to the lost stage (default Closed Lost) |
+
+Failures retry with back-off (2, 4, 8… up to 60 minutes, 6 tries). A broken connection (revoked token) raises an ops alert naming the client.
+
+**In (Zoho → us).** Every 5 minutes, per client, Leads and Deals modified since the last read (`If-Modified-Since`, 2 minutes overlap, cursor in `zoho_cursors`):
+
+| In Zoho | Here |
+| --- | --- |
+| Deal in the won stage with an Amount | **Joined** with plan = Deal name, ₹ = Amount; status converted; goes to Meta through K7 |
+| Lead Status Lost Lead / Junk Lead / Not Qualified, or Deal in the lost stage | **Lost** (reason Other, note says what Zoho said) |
+| Lead Status Contacted, our lead still new | Status contacted |
+
+Changes from Zoho are logged through the CRM's own outcome rules, in the name of the lead's salesperson, else the first owner. A won sale is never undone from Zoho. Loops are avoided: `zoho_links.zoho_state` remembers the last value on each side, so our own writes read back as "unchanged", and a status that came from Zoho is not pushed back over Zoho's value.
+
+Limits today: amounts are taken as they are in Zoho (an AED deal is stored as that number in the ₹ field); a lead converted in Zoho is matched to its Deal only when the Lead Engine ID field is mapped in lead conversion; `zoho_links` is not in backups yet (after a restore, matching falls back to the ID field or mobile); `npm run delete-lead` removes the lead here but not from Zoho (the client deletes it there). Tests: `test/zoho.test.js` against a fake Zoho.
 
 ## Multi-client tenants (K8, built)
 

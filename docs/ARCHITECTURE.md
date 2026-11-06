@@ -229,7 +229,7 @@ src/
   config/verticals.js    business-type presets (selling method, stages)
   controllers/           webhook verify + receive
   middleware/            signature check, rate limit
-  workers/               queueWorker base, inbound (webhookWorker), outbound
+  workers/               queueWorker base, inbound (webhookWorker), outbound, Conversions API, Zoho sync
   services/
     deterministicRouter  fixed answers, language detection, buttons
     aiService            prompt building, OpenRouter call, JSON parsing, cleanup
@@ -240,6 +240,7 @@ src/
     notifyService        Telegram alerts
     whatsappService      Cloud API sends (text, buttons, location), read receipts
     aiCostTracker        usage + monthly budget
+    zoho/                K20: Zoho CRM client (OAuth, data centres) and two-way lead sync
   db/                    pg/PGlite driver, schema, repositories
 crm/                     staff CRM (Express + EJS), mounted by src/app.js
 scripts/                 migrate, backup/restore, demo data, model eval

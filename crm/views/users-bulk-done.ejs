@@ -1,0 +1,30 @@
+<%- include('partials/header', { title: 'Staff added', back: '/users' }) %>
+<%
+  const esc = v => { const s = String(v); return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s; };
+  const csvText = ['name,email,role,one_time_password', ...created.map(c => [c.name, c.email, c.role, c.password].map(esc).join(','))].join('\n');
+  const csvHref = 'data:text/csv;charset=utf-8,' + encodeURIComponent(csvText);
+%>
+<div class="mb-4"><p class="text-sm text-base-content/60">Staff · owner only</p><h1 class="page-title max-lg:hidden">Staff added</h1></div>
+
+<div role="status" class="alert alert-success alert-soft mb-4"><%- include('partials/icon', { name: 'check' }) %><span>Added <%= created.length %> <%= created.length === 1 ? 'person' : 'people' %>.</span></div>
+<div role="alert" class="alert alert-warning alert-soft mb-4"><%- include('partials/icon', { name: 'alert' }) %><span><strong>These passwords are shown only once.</strong> Download or copy them now and share each one privately. Everyone must set their own password at first login.</span></div>
+
+<section class="rounded-box bg-base-100">
+  <ul class="list">
+    <% for (const c of created) { %>
+    <li class="list-row items-center">
+      <div class="min-w-0">
+        <div class="flex flex-wrap items-center gap-1.5"><span class="font-semibold"><%= c.name %></span><span class="badge badge-ghost badge-xs"><%= ROLE_LABELS[c.role] %></span></div>
+        <div class="truncate text-xs text-base-content/60"><%= c.email %></div>
+      </div>
+      <code class="select-all rounded-field bg-base-200 px-2 py-1 font-mono text-sm" aria-label="One-time password for <%= c.name %>"><%= c.password %></code>
+    </li>
+    <% } %>
+  </ul>
+</section>
+
+<div class="mt-4 flex flex-col gap-2 sm:flex-row">
+  <a href="<%= csvHref %>" download="staff-one-time-passwords.csv" class="btn btn-primary">Download CSV of passwords</a>
+  <a href="/users" class="btn">Back to staff</a>
+</div>
+<%- include('partials/footer') %>

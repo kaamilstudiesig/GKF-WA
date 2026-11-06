@@ -15,6 +15,7 @@ const config = require('./config');
 const auth = require('./auth');
 const { Crm, HttpError } = require('./crm');
 const { Users } = require('./users');
+const bulkStaff = require('./bulkStaff');
 const { Analytics } = require('./analytics');
 const { Branding } = require('./branding');
 const { can } = require('./permissions');
@@ -368,6 +369,29 @@ function createCrmApp({
   }));
 
   app.get('/users', allow(can.manageUsers), h((req, res) => usersPage(res)));
+
+  // R13: add many staff at once (pasted CSV and/or rows). All or none; one-time passwords shown once.
+  const bulkPage = async (res, extra = {}) => res.render('users-bulk', {
+    rows: [], csv: '', managers: await users.managers(), maxRows: bulkStaff.MAX_ROWS, ...extra
+  });
+  app.get('/users/bulk', allow(can.manageUsers), h((req, res) => bulkPage(res)));
+  app.post('/users/bulk', allow(can.manageUsers), h(async (req, res) => {
+    let created;
+    try {
+      created = await bulkStaff.bulkCreate(db, bulkStaff.rowsFromForm(req.body));
+    } catch (err) {
+      if (!(err instanceof bulkStaff.BulkError)) throw err;
+      res.status(400);
+      // Rows that were checked come back with their errors. Before checking (too many, none),
+      // give back exactly what was sent so a long paste is never lost.
+      if (err.rows.length) return bulkPage(res, { error: err.message, rows: err.rows });
+      return bulkPage(res, { error: err.message, rows: bulkStaff.rowsFromForm({ ...req.body, csv: '' }), csv: String(req.body.csv || '') });
+    }
+    await crm.log(req.user, null, 'staff_bulk_added', { count: created.length });
+    // The passwords are in this page only: never cache it.
+    res.set('Cache-Control', 'no-store');
+    res.render('users-bulk-done', { created });
+  }));
   app.post('/users', allow(can.manageUsers), h(async (req, res) => {
     try {
       await users.create({ name: req.body.name, email: req.body.email, role: req.body.role, managerId: req.body.manager_id || null, password: req.body.password });

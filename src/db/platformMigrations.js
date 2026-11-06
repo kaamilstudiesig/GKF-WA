@@ -135,7 +135,67 @@ const PLATFORM_MIGRATIONS = [
       // ---- isolation: each table only shows the current tenant's rows ----
       ...TENANT_TABLES.flatMap(tenancyPolicy)
     ]
+  },
+  {
+    // K20: two-way sync with the client's Zoho CRM (src/services/zoho/).
+    id: 2,
+    name: 'zoho_sync',
+    up: [
+      // One row per lead that exists (or should exist) in Zoho. dirty = something changed here
+      // that Zoho has not seen yet. zoho_state = the Zoho values we last saw or sent.
+      `CREATE TABLE zoho_links (
+        tenant_id INTEGER NOT NULL DEFAULT ${TENANT_DEFAULT} REFERENCES tenants (id),
+        wa_id TEXT NOT NULL,
+        zoho_lead_id TEXT,
+        zoho_contact_id TEXT,
+        zoho_deal_id TEXT,
+        dirty BOOLEAN NOT NULL DEFAULT true,
+        dirty_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+        status TEXT CHECK (status IN ('sending', 'synced', 'failed', 'dead', 'skipped')),
+        attempts INTEGER NOT NULL DEFAULT 0,
+        next_attempt_at TIMESTAMPTZ,
+        last_error TEXT,
+        zoho_state JSONB NOT NULL DEFAULT '{}'::jsonb,
+        pushed_at TIMESTAMPTZ,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+        PRIMARY KEY (tenant_id, wa_id),
+        FOREIGN KEY (tenant_id, wa_id) REFERENCES leads (tenant_id, wa_id) ON DELETE CASCADE
+      )`,
+      'CREATE INDEX zoho_links_dirty_idx ON zoho_links (dirty_at) WHERE dirty',
+      'CREATE INDEX zoho_links_lead_idx ON zoho_links (tenant_id, zoho_lead_id)',
+      'CREATE INDEX zoho_links_deal_idx ON zoho_links (tenant_id, zoho_deal_id)',
+      // Where reading changes from Zoho got to, per tenant.
+      `CREATE TABLE zoho_cursors (
+        tenant_id INTEGER PRIMARY KEY DEFAULT ${TENANT_DEFAULT} REFERENCES tenants (id),
+        pulled_until TIMESTAMPTZ,
+        last_error TEXT,
+        updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+      )`,
+      ...tenancyPolicy('zoho_links'),
+      ...tenancyPolicy('zoho_cursors'),
+      // Mark a lead for sync when it is created, its name/phone/status changes, or an outcome is logged.
+      // Only for tenants with Zoho on, so other tenants get no rows. Changing the lead in the CRM needs
+      // no Zoho code: the database notices.
+      `CREATE FUNCTION zoho_mark_dirty() RETURNS trigger LANGUAGE plpgsql AS $$
+      BEGIN
+        IF EXISTS (SELECT 1 FROM tenants WHERE id = NEW.tenant_id AND settings->>'zohoSync' = 'on') THEN
+          INSERT INTO zoho_links (tenant_id, wa_id) VALUES (NEW.tenant_id, NEW.wa_id)
+          ON CONFLICT (tenant_id, wa_id) DO UPDATE SET dirty = true, dirty_at = now(), attempts = 0,
+            next_attempt_at = NULL, status = NULL, last_error = NULL;
+        END IF;
+        RETURN NEW;
+      END $$`,
+      'CREATE TRIGGER leads_zoho_insert AFTER INSERT ON leads FOR EACH ROW EXECUTE FUNCTION zoho_mark_dirty()',
+      `CREATE TRIGGER leads_zoho_update AFTER UPDATE ON leads FOR EACH ROW
+        WHEN (OLD.status IS DISTINCT FROM NEW.status OR OLD.display_name IS DISTINCT FROM NEW.display_name
+          OR OLD.phone IS DISTINCT FROM NEW.phone OR OLD.interest IS DISTINCT FROM NEW.interest)
+        EXECUTE FUNCTION zoho_mark_dirty()`,
+      'CREATE TRIGGER outcomes_zoho AFTER INSERT ON crm_lead_outcomes FOR EACH ROW EXECUTE FUNCTION zoho_mark_dirty()'
+    ]
   }
 ];
 
-module.exports = { PLATFORM_MIGRATIONS, TENANT_TABLES, tenancyPolicy, TENANT_DEFAULT };
+// Every table with client data, including ones added after migration 1 (tests and tools use this).
+const ALL_TENANT_TABLES = [...TENANT_TABLES, 'zoho_links', 'zoho_cursors'];
+
+module.exports = { PLATFORM_MIGRATIONS, TENANT_TABLES, ALL_TENANT_TABLES, tenancyPolicy, TENANT_DEFAULT };

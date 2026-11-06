@@ -98,7 +98,9 @@ test('one bad row: nobody is added and each problem shows on its row', async () 
     assert.strictEqual(empty.status, 400);
     assert.match(empty.text, /Add at least one person/);
     const many = Array.from({ length: 101 }, (_, i) => `P${i},p${i}@client.com`).join('\n');
-    assert.match((await owner.agent.post('/users/bulk').type('form').send({ _csrf: owner.csrf, csv: many })).text, /at most 100 people/);
+    const tooMany = await owner.agent.post('/users/bulk').type('form').send({ _csrf: owner.csrf, csv: many });
+    assert.match(tooMany.text, /at most 100 people/);
+    assert.match(tooMany.text, /p100@client\.com/); // the paste comes back, so the owner can trim it instead of retyping
   } finally { await ctx.cleanup(); }
 });
 

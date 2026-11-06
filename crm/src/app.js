@@ -377,7 +377,10 @@ function createCrmApp({
     } catch (err) {
       if (!(err instanceof bulkStaff.BulkError)) throw err;
       res.status(400);
-      return bulkPage(res, { error: err.message, rows: err.rows });
+      // Rows that were checked come back with their errors. Before checking (too many, none),
+      // give back exactly what was sent so a long paste is never lost.
+      if (err.rows.length) return bulkPage(res, { error: err.message, rows: err.rows });
+      return bulkPage(res, { error: err.message, rows: bulkStaff.rowsFromForm({ ...req.body, csv: '' }), csv: String(req.body.csv || '') });
     }
     await crm.log(req.user, null, 'staff_bulk_added', { count: created.length });
     // The passwords are in this page only: never cache it.

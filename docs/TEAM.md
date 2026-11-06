@@ -66,7 +66,7 @@ Krishna's R12 review: good. Logo upload is safe (type checked by its bytes, no S
 
 1. **R13 bulk staff add.** Managers, teams and first-login password change already exist (`crm/src/users.js`), so this is only the bulk part. On **Staff**, an **Add many** form: paste CSV or fill rows of `name, email, role, manager email, WhatsApp alert number (optional)`. Check every row first and save all or none, showing errors per row. Show each new person's one-time password once (and offer a CSV of them). Done when: an owner adds 20 staff in a few minutes; tests in `test/crm/`.
 2. **R2 hot-lead queue.** Agree the contract below in a small PR first, then build the CRM side.
-3. **R5 analytics** (moved up): funnel, speed to lead, logging rate, per salesperson, lost reasons, per business type names. The GKF case study, the deck and the analyser (K21) all need these numbers. Put the queries in one module (`crm/src/analytics.js`) returning plain objects, so K21 can reuse them.
+3. ✅ **R5 analytics** (PR `r5-analytics`; definitions in [crm/README.md](../crm/README.md#analytics-r5)) (moved up): funnel, speed to lead, logging rate, per salesperson, lost reasons, per business type names. The GKF case study, the deck and the analyser (K21) all need these numbers. Put the queries in one module (`crm/src/analytics.js`) returning plain objects, so K21 can reuse them.
 4. **R11 unlogged-lead nudges.**
 5. **R4 PWA.**
 6. **R3 live board** (SSE). Events must stay inside one tenant. Plan for more than one web dyno: send events through Postgres `LISTEN/NOTIFY`, not only in-process.
@@ -116,7 +116,7 @@ Krishna's R12 review: good. Logo upload is safe (type checked by its bytes, no S
 | --- | --- | --- | --- |
 | K2 | Alert on outbound send failures (Telegram + Sentry) and on `account_update` webhooks | Kaamil | After the 30 Oct token incident |
 | K7b | Turn on the Conversions API in production (dataset, `whatsapp_business_manage_events`), verify events in Events Manager | Kaamil | |
-| R5 | Analytics: funnel, speed to lead, **logging rate**, per salesperson, lost reasons | Krishna | Baseline numbers for the GKF case study |
+| R5 | ✅ Analytics: funnel, speed to lead, **logging rate**, per salesperson, lost reasons | Krishna | Baseline numbers for the GKF case study |
 
 ### 2. Proof of sale
 

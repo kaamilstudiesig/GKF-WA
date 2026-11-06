@@ -11,6 +11,18 @@ function hashPassword(password) {
   return ['scrypt', SCRYPT.N, SCRYPT.r, SCRYPT.p, salt.toString('base64'), hash.toString('base64')].join('$');
 }
 
+/** Same as hashPassword, without blocking the event loop (bulk staff add hashes many at once). */
+function hashPasswordAsync(password) {
+  const salt = crypto.randomBytes(16);
+  return new Promise((resolve, reject) => crypto.scrypt(password, salt, SCRYPT.keylen, { N: SCRYPT.N, r: SCRYPT.r, p: SCRYPT.p }, (err, hash) => (
+    err ? reject(err) : resolve(['scrypt', SCRYPT.N, SCRYPT.r, SCRYPT.p, salt.toString('base64'), hash.toString('base64')].join('$')))));
+}
+
+/** Random one-time password that always meets validateNewPassword: 16 random characters, a digit and a letter. */
+function oneTimePassword() {
+  return `${crypto.randomBytes(12).toString('base64url')}${crypto.randomInt(10)}a`;
+}
+
 function verifyPassword(password, stored) {
   if (typeof password !== 'string' || typeof stored !== 'string') return false;
   const parts = stored.split('$');
@@ -89,6 +101,6 @@ class LoginThrottle {
 }
 
 module.exports = {
-  SESSION_COOKIE, MIN_PASSWORD_LENGTH, hashPassword, verifyPassword, validateNewPassword,
+  SESSION_COOKIE, MIN_PASSWORD_LENGTH, hashPassword, hashPasswordAsync, oneTimePassword, verifyPassword, validateNewPassword,
   createSession, getSession, destroySession, parseCookies, LoginThrottle
 };

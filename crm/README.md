@@ -54,6 +54,14 @@ prefixed `crm_`.
 
 Every lead page starts with **Log outcome** (`#outcome`, also where Telegram's "✅ Log outcome" button lands): one tap for *Called, spoke · No answer · WhatsApp sent · Visited · No-show*, and short forms for *Visit booked* (date/time), *Joined* (plan + ₹ paid) and *Lost* (reason). Each outcome updates the lead's status, resolves the bot's hand-off once someone has actually been in touch, and books the next follow-up automatically (no answer → retry in 2h, next day, 3 days, weekly). The rules are in `docs/TEAM.md` under "Lead outcomes".
 
+## Adding many staff (R13)
+
+**Staff → Add many** (owner only, `/users/bulk`, `crm/src/bulkStaff.js`). Paste CSV (commas, or tabs from a spreadsheet; a header line is skipped) and/or fill rows of `name, email, role, manager email, WhatsApp number`. Role is owner, manager or sales (empty = sales). Up to 100 people at a time.
+
+- Every row is checked first: email format, already taken, repeated in the list, role, manager (an active manager here or a manager row in the same list, sales only), WhatsApp number with country code. One bad row means **nobody is added**; the rows come back editable with each problem under its row.
+- Then all are saved in one transaction: managers first, so sales can point to a manager from the same list. A WhatsApp number turns on alerts for their own leads (`alert_mode = 'mine'`).
+- Each person gets a random one-time password (`auth.oneTimePassword`, also used by `crm:owner`), shown once on the result page (`Cache-Control: no-store`) with a CSV download. Only the hash is stored; everyone must change it at first login.
+
 ## Roles
 
 | | Owner | Manager | Sales |

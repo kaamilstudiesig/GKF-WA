@@ -30,7 +30,7 @@ Check early: business verification (a new number can message only 250 people a d
 1. Copy `clients/tenant.example.json` to `clients/<client>.json` and fill it in (git-ignored): slug, name, business type, WhatsApp phone number id, WABA id, CRM host, and the secrets (token, app secret). Run `heroku run npm run tenant -- add clients/<client>.json -a gkf-wa`. Secrets are encrypted with `TENANT_SECRETS_KEY` (set once on the app). It prints the webhook URL, the verify token and the next steps.
 2. Connect WhatsApp by path A, B or C above.
 3. CRM domain: `heroku domains:add crm.<client>.com -a gkf-wa`, then the client points DNS at the target it prints.
-4. Create the owner login: `heroku run npm run crm:owner -- --tenant <slug> "Owner Name" owner@client.com -a gkf-wa`. Never run `crm:seed` for a client: its passwords are in the repo. Add staff (R13). Optional: a Telegram group for their alerts (`settings.telegramChatId`).
+4. Create the owner login: `heroku run npm run crm:owner -- --tenant <slug> "Owner Name" owner@client.com -a gkf-wa`. Never run `crm:seed` for a client: its passwords are in the repo. Add staff on **Staff → Add many** (R13): paste their list, then share each one-time password privately. Optional: a Telegram group for their alerts (`settings.telegramChatId`).
 5. The owner fills **Business settings** with the facts and business type, and reads the prompt preview. Until then the assistant uses neutral placeholders, never another client's facts.
 6. Run the test checklist from a fresh phone. Then the client goes live.
 
@@ -72,7 +72,12 @@ This is how GKF was set up. It takes a few hours and needs access to the client'
 4. Set `META_ACCESS_TOKEN`, `META_PHONE_NUMBER_ID`, `META_APP_SECRET`, `META_WEBHOOK_VERIFY_TOKEN` on the server.
 5. Log in to the CRM as owner → **Business settings**: name, type, address, map pin, hours, programs, plans and prices, policies/FAQs, selling points, voice. Saving updates the assistant from its next reply; no deploy needed.
 6. Create the owner (`npm run crm:owner`) and staff. Alerts: Telegram group (`TELEGRAM_CHAT_ID`) and/or WhatsApp per person (create the `staff_lead_alert` template with `node scripts/create-template.js staff_lead_alert`, wait for approval, then set numbers on **Staff**). See [TEAM.md](TEAM.md#staff-whatsapp-alerts-built).
-7. Ice breakers (Conversational Automation API) and catalog, if used.
-8. Run the test checklist above from a phone that has never chatted with the number.
+7. Zoho CRM, if the client uses it (K20, see [TEAM.md](TEAM.md#zoho-crm-sync-k20-built)). The client's Zoho admin, on a call with us:
+   1. Optional but best: in Zoho, add a single-line custom field **Lead Engine ID** (API name `Lead_Engine_ID`, unique) on Leads, Contacts and Deals, and map it in **Lead conversion mapping**. Then nothing is ever duplicated and deals they convert themselves still match. Without it we match by mobile number.
+   2. Open the Zoho API console for their data centre (`api-console.zoho.in`, `.com`, `.ae`, `.sa`...) → **Self Client** → **Generate Code** with scope `ZohoCRM.modules.leads.ALL,ZohoCRM.modules.contacts.ALL,ZohoCRM.modules.accounts.ALL,ZohoCRM.modules.deals.ALL,ZohoCRM.org.READ`, 10 minutes. Copy the client ID, client secret and code.
+   3. Within those 10 minutes, on a machine with `DATABASE_URL` and `TENANT_SECRETS_KEY`: `ZOHO_CLIENT_ID=… ZOHO_CLIENT_SECRET=… ZOHO_CODE=… npm run zoho -- --tenant <slug> connect --accounts https://accounts.zoho.in --id-field Lead_Engine_ID` (add `--pipeline "<name>"` if their Deals use pipelines, `--won-stage`/`--lost-stage` if their stage names differ from Closed Won / Closed Lost). It prints the Zoho organisation name and currency when it works.
+   4. `npm run zoho -- --tenant <slug> backfill --days 30` to send recent leads; `status` shows progress and errors.
+8. Ice breakers (Conversational Automation API) and catalog, if used.
+9. Run the test checklist above from a phone that has never chatted with the number.
 
 Today this setup serves one business per deployment. Multi-client support is the Platform stage in [PRODUCT_PLAN.md](PRODUCT_PLAN.md#6-order-of-work). Until then, a paying agency's first clients can each get a separate deployment.

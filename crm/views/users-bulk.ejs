@@ -1,0 +1,48 @@
+<%- include('partials/header', { title: 'Add many staff', back: '/users' }) %>
+<%
+  const card = 'rounded-box bg-base-100 p-4 space-y-3';
+  const list = rows.length ? rows : Array.from({ length: 5 }, () => ({}));
+  const badCount = rows.filter(r => r.errors && r.errors.length).length;
+%>
+<div class="mb-4"><p class="text-sm text-base-content/60">Staff · owner only</p><h1 class="page-title max-lg:hidden">Add many staff</h1></div>
+
+<form method="post" action="/users/bulk" class="space-y-4" data-bulk-form>
+  <%- include('partials/csrf') %>
+
+  <section class="<%= card %>">
+    <h2>Paste from a spreadsheet</h2>
+    <p class="text-sm text-base-content/60">One person per line: <strong>name, email, role, manager email, WhatsApp number</strong>. Role is owner, manager or sales (empty = sales). The last two are optional. A header line is skipped. Up to <%= maxRows %> people at a time.</p>
+    <textarea name="csv" rows="6" class="textarea w-full font-mono text-sm" aria-label="Staff list as CSV" placeholder="Asha Rao, asha@example.com, manager
+Vikram N, vikram@example.com, sales, asha@example.com, +91 98450 12345"><%= csv %></textarea>
+  </section>
+
+  <section class="<%= card %>">
+    <div class="flex items-center justify-between gap-2"><h2>Or fill rows</h2><% if (badCount) { %><span class="badge badge-error badge-soft"><%= badCount %> to fix</span><% } %></div>
+    <% if (managers.length) { %><datalist id="manager-emails"><% for (const m of managers) { %><option value="<%= m.email %>"><%= m.name %></option><% } %></datalist><% } %>
+    <ol class="space-y-2" data-bulk-rows>
+      <% list.forEach((r, i) => { const bad = r.errors && r.errors.length; %>
+      <li class="rounded-field bg-base-200 p-2 <%= bad ? 'ring-1 ring-error' : '' %>">
+        <div class="grid gap-2 sm:grid-cols-2 lg:grid-cols-[1fr_1.2fr_7rem_1.2fr_1fr]">
+          <input name="row_name" value="<%= r.name || '' %>" placeholder="Name" aria-label="Row <%= i + 1 %> name" maxlength="100" class="input w-full">
+          <input name="row_email" type="email" value="<%= r.email || '' %>" placeholder="Email" aria-label="Row <%= i + 1 %> email" class="input w-full">
+          <select name="row_role" aria-label="Row <%= i + 1 %> role" class="select w-full">
+            <% if (r.errors && !r.roleKey) { %><option value="<%= r.role %>" selected>Choose a role</option><% } %>
+            <% for (const role of ROLES) { %><option value="<%= role %>" <%= (r.roleKey || r.role || 'sales') === role ? 'selected' : '' %>><%= ROLE_LABELS[role] %></option><% } %>
+          </select>
+          <input name="row_manager" type="email" list="manager-emails" value="<%= r.manager || '' %>" placeholder="Manager email (sales)" aria-label="Row <%= i + 1 %> manager email" class="input w-full">
+          <input name="row_phone" type="tel" inputmode="tel" value="<%= r.phone || '' %>" placeholder="WhatsApp +91…" aria-label="Row <%= i + 1 %> WhatsApp number" class="input w-full">
+        </div>
+        <% if (bad) { %><ul class="mt-1 px-1 text-sm text-error"><% for (const e of r.errors) { %><li><%= e %></li><% } %></ul><% } %>
+      </li>
+      <% }) %>
+    </ol>
+    <button type="button" class="btn btn-ghost btn-sm" data-bulk-more hidden>+ 5 more rows</button>
+  </section>
+
+  <p class="text-sm text-base-content/60">Everyone gets a one-time password, shown once on the next page. They must change it at first login. A WhatsApp number turns on alerts for their own leads (a manager: their team's). Nobody is added unless every row is right.</p>
+
+  <div class="sticky bottom-[calc(4.5rem+env(safe-area-inset-bottom))] z-20 lg:bottom-4">
+    <button class="btn btn-primary btn-lg w-full shadow-xl" type="submit">Check and add everyone</button>
+  </div>
+</form>
+<%- include('partials/footer') %>

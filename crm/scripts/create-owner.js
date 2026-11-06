@@ -6,14 +6,13 @@
  * Prints the password once. The owner must change it at first login.
  * Use this, not crm:seed, on a client's deployment: the seed file's passwords are public.
  */
-const crypto = require('crypto');
 const { Users } = require('../src/users');
+const { oneTimePassword } = require('../src/auth');
 
 async function createOwner(db, { name, email }) {
   const users = new Users(db);
   if (await users.findByEmail(email)) return null;
-  // Letters + a digit always (the CRM's password rule), 16+ random characters.
-  const password = `${crypto.randomBytes(12).toString('base64url')}${crypto.randomInt(10)}a`;
+  const password = oneTimePassword();
   await users.create({ name, email, role: 'owner', managerId: null, password, mustChange: true });
   return password;
 }

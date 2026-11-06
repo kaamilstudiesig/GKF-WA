@@ -62,6 +62,15 @@ Every lead page starts with **Log outcome** (`#outcome`, also where Telegram's "
 - Then all are saved in one transaction: managers first, so sales can point to a manager from the same list. A WhatsApp number turns on alerts for their own leads (`alert_mode = 'mine'`).
 - Each person gets a random one-time password (`auth.oneTimePassword`, also used by `crm:owner`), shown once on the result page (`Cache-Control: no-store`) with a CSV download. Only the hash is stored; everyone must change it at first login.
 
+## Zoho CRM status
+
+For clients with the Zoho sync on (K20, `docs/TEAM.md`). `crm/src/zohoStatus.js` reads only our tables (`zoho_links`, `zoho_cursors`) and the client's settings; it never calls Zoho.
+
+- **Business settings → Zoho CRM:** Connected or Off; when Zoho was last read; counts in sync / waiting to send / retrying / not sent; the last 5 leads Zoho refused, with Zoho's reason and a link to each lead; a link to the client's Zoho (`crm.zoho.<data centre>` from `zohoAccountsUrl`). When off, a short note on what it does. Secrets never reach the page.
+- **Lead page → Lead details:** "Open deal / contact / lead in Zoho" (the Deal if there is one, else Contact, else Lead; numeric ids only) and the sync state, with Zoho's error when it failed.
+
+Local testing: turning Zoho on locally (even with fake credentials) starts the real sync worker in `npm run dev`, which calls Zoho. Keep it off locally; the tests cover the screens without the worker.
+
 ## Roles
 
 | | Owner | Manager | Sales |

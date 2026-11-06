@@ -220,5 +220,11 @@ One deployment serves many businesses. `tenants` holds each business (slug, What
 ## Using Claude Code on this repo
 
 - `CLAUDE.md` at the root is loaded automatically: rules, commands and pointers.
-- Good first prompt: *"Read CLAUDE.md and docs/TEAM.md, then plan task R1 on a new branch. Don't touch src/ except through an agreed contract."*
+- Before each task: `git checkout main && git pull`, then start Claude Code in the repo folder (`claude`), so it reads the latest docs.
+- First prompt for a new task (change the task ID):
+
+  > Read CLAUDE.md, then docs/TEAM.md (start at "Now: order of work"), docs/ARCHITECTURE.md and docs/UI_GUIDE.md. My next task is R13. Look at the code it touches (crm/src/users.js, crm/views/users.ejs, test/crm/), then give me a short plan: what you'll change, the tests you'll add, and anything that needs Kaamil (src/ or a shared table). Don't write code until I say go. Work on a new branch named r13-bulk-staff.
+
+- After "go": ask it to run `npm test` and check the screen at 375px and desktop width, then open a PR into `main` with the task ID in the title. Kaamil reviews.
+- For a task with a contract (R2): first ask Claude for a small PR that only writes the contract into docs/TEAM.md and adds the function signatures with tests. Build the rest after Kaamil agrees.
 - Ask Claude to write tests with every change and to run `npm test` before opening the PR.

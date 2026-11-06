@@ -3,6 +3,7 @@ const { Params } = require('./util');
 const { leadScope, staffScope, canAssignTo } = require('./permissions');
 const { LEAD_STATUSES, WINDOW_MS, OUTCOMES, LOST_REASONS, STAGES } = require('./constants');
 const { localDay, leadPhone } = require('./util');
+const { waitingSql, SINCE_SQL } = require('./nudges');
 const razorpay = require('../../src/services/razorpay');
 const signals = require('../../src/workers/signals');
 
@@ -80,12 +81,13 @@ class Crm {
     };
   }
 
-  async listLeads(user, { status, assignee, needsHuman, q: search, sort, page = 1, pageSize = PAGE_SIZE } = {}) {
+  async listLeads(user, { status, assignee, needsHuman, waiting, q: search, sort, page = 1, pageSize = PAGE_SIZE } = {}) {
     const q = new Params();
     const where = [leadScope(user, q)];
 
     if (status && LEAD_STATUSES.includes(status)) where.push(`l.status = ${q.p(status)}`);
     if (needsHuman) where.push('l.needs_human');
+    if (waiting) where.push(waitingSql(q)); // R11: no outcome logged yet
     if (assignee === 'me') where.push(`a.user_id = ${q.p(user.id)}`);
     else if (assignee === 'unassigned') where.push('a.user_id IS NULL');
     else if (assignee && /^\d{1,9}$/.test(String(assignee))) where.push(`a.user_id = ${q.p(Number(assignee))}`);
@@ -99,7 +101,8 @@ class Crm {
       oldest: 'l.last_inbound_message_at ASC',
       created: 'l.first_contact_at DESC',
       attention: 'l.needs_human DESC, l.last_inbound_message_at DESC',
-      followup: 'next_followup_at ASC NULLS LAST'
+      followup: 'next_followup_at ASC NULLS LAST',
+      waiting: `${SINCE_SQL} ASC NULLS LAST` // longest waiting first
     };
     const order = orders[sort] || orders.attention;
     const whereSql = where.join(' AND ');
@@ -564,13 +567,15 @@ class Crm {
       SELECT
         COUNT(*) FILTER (WHERE l.needs_human)::int AS needs_human,
         COUNT(*) FILTER (WHERE a.user_id IS NULL)::int AS unassigned,
-        COUNT(*) FILTER (WHERE l.first_contact_at >= ${q.p(since)})::int AS new_this_week
+        COUNT(*) FILTER (WHERE l.first_contact_at >= ${q.p(since)})::int AS new_this_week,
+        COUNT(*) FILTER (WHERE ${waitingSql(q)})::int AS waiting
       FROM leads l ${ASSIGN_JOIN} WHERE ${leadScope(user, q)}
     `;
     const counts = await this.statusCounts(user);
     const extra = await this.db.one(extraSql, q.values);
     const attention = (await this.listLeads(user, { needsHuman: true, sort: 'recent', pageSize: 8 })).leads;
     const recent = (await this.listLeads(user, { sort: 'recent', pageSize: 8 })).leads;
+    const waiting = extra.waiting ? (await this.listLeads(user, { waiting: true, sort: 'waiting', pageSize: 8 })).leads : [];
     const myFollowUps = (await this.listFollowUps(user, { mine: true })).slice(0, 10);
     const nowIso = now();
     const overdue = myFollowUps.filter(f => f.due_at < nowIso).length;
@@ -579,6 +584,7 @@ class Crm {
       needsHuman: extra.needs_human,
       unassigned: extra.unassigned,
       newThisWeek: extra.new_this_week,
+      waitingCount: extra.waiting, waiting,
       attention, recent, myFollowUps, overdue
     };
   }

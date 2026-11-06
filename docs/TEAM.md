@@ -58,6 +58,47 @@ A possible large client wants the chatbot soon. Until this stage is done, it com
 
 Status: K14–K17 are built and K18 is written (PR `k14-k18-new-client`). R12 is built (PR `r12-white-label`): name from the business profile, logo letters, colour and logo image on Business settings → Brand. GKF names stay only in the default profile (seed data) and the GKF CRM host default. Order: K14 + R12 first (no GKF name in front of the new client), then K15, K16, R13, R2, then K17/K18 in parallel. Ask the client early: business type, number of staff, existing WhatsApp number or new one, who owns their Meta Business Manager.
 
+### Now: order of work (from 6 Nov)
+
+Krishna's R12 review: good. Logo upload is safe (type checked by its bytes, no SVG, 40 KB cap), readable text colour is computed, migration and tests included. Follow-ups were small (initials with punctuation, logo in backups) and are fixed. K8 moved `crm_branding` to one row per client.
+
+**Krishna, in this order** (one PR each):
+
+1. **R13 bulk staff add.** Managers, teams and first-login password change already exist (`crm/src/users.js`), so this is only the bulk part. On **Staff**, an **Add many** form: paste CSV or fill rows of `name, email, role, manager email, WhatsApp alert number (optional)`. Check every row first and save all or none, showing errors per row. Show each new person's one-time password once (and offer a CSV of them). Done when: an owner adds 20 staff in a few minutes; tests in `test/crm/`.
+2. **R2 hot-lead queue.** Agree the contract below in a small PR first, then build the CRM side.
+3. **R5 analytics** (moved up): funnel, speed to lead, logging rate, per salesperson, lost reasons, per business type names. The GKF case study, the deck and the analyser (K21) all need these numbers. Put the queries in one module (`crm/src/analytics.js`) returning plain objects, so K21 can reuse them.
+4. **R11 unlogged-lead nudges.**
+5. **R4 PWA.**
+6. **R3 live board** (SSE). Events must stay inside one tenant. Plan for more than one web dyno: send events through Postgres `LISTEN/NOTIFY`, not only in-process.
+
+**Contract: R2 hot-lead queue (Krishna builds the CRM side, Kaamil wires it into the bot as K19)**
+
+- Krishna adds `crm/src/queue.js` with a `LeadQueue(db)`:
+  - `autoAssign(waId)`: keeps the current assignee if they are active; otherwise picks the next active sales person who is taking leads (new `crm_users.accepting`, default on), round-robin by oldest last assignment, inside the lead's team when it has one. Writes `crm_lead_assignments` and sets the hand-off to `assigned`, exactly like `Crm.assign`, logged as the system. Returns the user or `null` (nobody available: the hand-off stays `pending`).
+  - `sweep(now)`: finds assigned hand-offs not picked up (no staff reply, call or outcome since assignment). At 5 minutes escalate to the person's manager, at 15 minutes to the owner, each level once. Returns `[{ waId, userId, level }]` to alert. Stores the level it reached so it never repeats.
+  - Owner setting to turn auto-assign on or off per business. Sales get a **Taking leads** on/off switch. Lead cards and the lead page show the timer, red after 5 minutes.
+  - No tenant filters needed (row-level security), and no Meta or Telegram calls: it only returns who to alert.
+- Kaamil (K19): `handoffRepository.open` calls `autoAssign` before staff alerts (so the alert goes to the assignee), wrapped so a queue error never blocks the hand-off. The minute housekeeping timer runs `sweep()` per tenant in `tenancy.run` and sends a `not_picked_up` staff alert (Telegram + WhatsApp) for each result.
+
+**Kaamil, in this order**
+
+1. **Set up the 3 portfolio clients** (Dubai real estate first): `npm run tenant -- add clients/<client>.json` per client, real estate preset, branding, staff (R13 helps), `staff_lead_alert` template per WhatsApp account. Then the DartIt name, logo and website, then `crm.inter-rootlabs.com`.
+2. **K19:** wire R2 into the bot once Krishna's contract PR is merged.
+3. **K20 Zoho two-way sync** (promised in the deck): leads and outcomes out to Zoho CRM, stage/won changes back in, matched by the lead key. Kaamil builds the sync worker and OAuth; Krishna adds the connect button on Business settings.
+4. **K21 analyser:** sales and marketing analysis and suggestions, built on R5's queries. One AI call per report, not per lead.
+5. **K7b + Instagram** once GKF's Instagram is connected (evening of 6 Nov).
+6. **K9 Embedded Signup**, then **K8 follow-ups** (fair queues per client, a real second client live on the shared app).
+
+**Needs credentials (do later, from a machine with `.env` or Heroku access).** Nothing here can run in a cloud session without them:
+
+- Check the `staff_lead_alert` review: `node scripts/create-template.js --status` (needs `META_WABA_ID`, `META_ACCESS_TOKEN`). Then add staff WhatsApp numbers on **Staff**.
+- Create `staff_lead_alert` on each new client's WhatsApp account.
+- Add each portfolio client (`npm run tenant -- add`, needs `DATABASE_URL`, `TENANT_SECRETS_KEY` and the client's Meta token).
+- Razorpay keys for GKF (`RAZORPAY_KEY_ID`, `RAZORPAY_KEY_SECRET`, `RAZORPAY_WEBHOOK_SECRET`) and the webhook in the Razorpay dashboard.
+- K7b: `META_DATASET_ID` and the `whatsapp_business_manage_events` permission, then check Events Manager.
+- WhatsApp payment method on GKF's Meta account (Meta Business settings, before 1,000 conversations a month).
+- Deploys after merging (Heroku).
+
 ### Done
 
 | # | Task | Owner | Notes |
@@ -179,5 +220,11 @@ One deployment serves many businesses. `tenants` holds each business (slug, What
 ## Using Claude Code on this repo
 
 - `CLAUDE.md` at the root is loaded automatically: rules, commands and pointers.
-- Good first prompt: *"Read CLAUDE.md and docs/TEAM.md, then plan task R1 on a new branch. Don't touch src/ except through an agreed contract."*
+- Before each task: `git checkout main && git pull`, then start Claude Code in the repo folder (`claude`), so it reads the latest docs.
+- First prompt for a new task (change the task ID):
+
+  > Read CLAUDE.md, then docs/TEAM.md (start at "Now: order of work"), docs/ARCHITECTURE.md and docs/UI_GUIDE.md. My next task is R13. Look at the code it touches (crm/src/users.js, crm/views/users.ejs, test/crm/), then give me a short plan: what you'll change, the tests you'll add, and anything that needs Kaamil (src/ or a shared table). Don't write code until I say go. Work on a new branch named r13-bulk-staff.
+
+- After "go": ask it to run `npm test` and check the screen at 375px and desktop width, then open a PR into `main` with the task ID in the title. Kaamil reviews.
+- For a task with a contract (R2): first ask Claude for a small PR that only writes the contract into docs/TEAM.md and adds the function signatures with tests. Build the rest after Kaamil agrees.
 - Ask Claude to write tests with every change and to run `npm test` before opening the PR.

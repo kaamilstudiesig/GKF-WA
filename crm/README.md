@@ -62,6 +62,15 @@ Every lead page starts with **Log outcome** (`#outcome`, also where Telegram's "
 - Then all are saved in one transaction: managers first, so sales can point to a manager from the same list. A WhatsApp number turns on alerts for their own leads (`alert_mode = 'mine'`).
 - Each person gets a random one-time password (`auth.oneTimePassword`, also used by `crm:owner`), shown once on the result page (`Cache-Control: no-store`) with a CSV download. Only the hash is stored; everyone must change it at first login.
 
+## Live board (R3)
+
+The pipeline updates by itself when anyone changes a lead (the bot, another person, Zoho), and shows **Live** while connected.
+
+- **Database:** platform migration 4 `live_board` adds triggers on `leads` (new lead; status, needs-human, last message, name or interest changed), `crm_lead_assignments`, `crm_lead_outcomes`, `crm_follow_ups` and `handoffs`. Each runs `pg_notify('crm_board', '{"t": <tenant id>}')`: sent on commit, repeats in one transaction folded into one.
+- **Servers:** `crm/src/liveBoard.js` LISTENs once per process through `db.listen` (`src/db/index.js`: a dedicated connection that reconnects; PGlite's own `listen` locally), so several web dynos all hear every change.
+- **Browsers:** the board opens `GET /events` (server-sent events, logged in). A change pings only that client's boards, at most once per 400 ms, with **no lead data**: `event: board`. The page then reloads the board through the normal role-scoped `/pipeline`, so a sales person still sees only their leads. It waits while a card is being dragged or a dialog is open, keeps the scroll position, and sets up drag-and-drop again. A heartbeat every 25 s keeps the connection open through Heroku's router.
+- **Overdue:** a card with an open follow-up past due gets a red border and **Follow-up overdue**; the page re-checks every minute, so cards turn red without a change.
+
 ## Roles
 
 | | Owner | Manager | Sales |

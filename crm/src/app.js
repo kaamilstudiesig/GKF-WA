@@ -17,6 +17,7 @@ const { Crm, HttpError } = require('./crm');
 const { Users } = require('./users');
 const pwa = require('./pwa');
 const bulkStaff = require('./bulkStaff');
+const { MIN_AGE_HOURS } = require('./nudges');
 const { Analytics } = require('./analytics');
 const { Branding } = require('./branding');
 const { can } = require('./permissions');
@@ -107,6 +108,7 @@ function createCrmApp({
     req.user = session ? session.user : null;
     req.csrfToken = session ? session.csrfToken : null;
     Object.assign(res.locals, {
+      MIN_AGE_HOURS,
       user: req.user, csrfToken: req.csrfToken, can, util, LEAD_STATUSES, ROLE_LABELS, ROLES, LOST_REASONS, PLAN_OPTIONS: planOptions(), PAYMENTS_ON: razorpay.enabled(),
       ...namesFor(gymConfig ? gymConfig.profile.type : 'gym'),
       path: req.path, query: req.query, flash: req.query.ok || null, error: req.query.err || null,
@@ -233,7 +235,7 @@ function createCrmApp({
   app.get('/leads', h(async (req, res) => {
     const filters = {
       status: req.query.status || '', assignee: req.query.assignee || '', q: req.query.q || '',
-      needsHuman: req.query.needs_human === '1', sort: req.query.sort || 'attention', page: req.query.page || 1
+      needsHuman: req.query.needs_human === '1', waiting: req.query.waiting === '1', sort: req.query.sort || 'attention', page: req.query.page || 1
     };
     res.render('leads', { result: await crm.listLeads(req.user, filters), filters, staff: await crm.assignableUsers(req.user) });
   }));

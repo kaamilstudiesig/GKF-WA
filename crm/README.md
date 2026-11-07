@@ -86,6 +86,16 @@ Staff install the CRM on their phone from their own CRM host. It opens full scre
 - `/sw.js` (`crm/public/sw.js` with the deploy's asset version): caches only the CSS, JS and `/offline`. **Pages and lead data are never cached** (shared phones, private data). Offline, a page shows **You're offline** instead of the browser's error. A deploy changes the version, so phones pick up new CSS/JS on the next visit.
 - Menu: **Install app** appears when the browser offers it (Android Chrome); on iPhone a short hint (Share → Add to Home Screen), since Safari has no install prompt. Both hide once installed. iPhones ignore SVG icons: they use the uploaded logo as the home-screen icon (`apple-touch-icon`), else `/brand/apple-touch-icon.png`, a plain 180×180 tile in the brand colour (built with zlib, no image library). Brand settings tells the owner to upload a square PNG for a proper iPhone icon.
 
+## Waiting for an outcome (R11)
+
+`crm/src/nudges.js`: a lead is waiting when it is still open, needed a person (a bot hand-off, or status hot) and nobody has logged an outcome since, for 2 hours to 30 days (`MIN_AGE_HOURS`, `LOOKBACK_DAYS`). `waitingSql(q, now)` is the SQL used by:
+
+- **Dashboard:** a **No outcome yet** tile and a **Log what happened** list (longest waiting first; each lead opens on its outcome buttons, `#outcome`).
+- **Leads:** the **No outcome** chip and checkbox (`?waiting=1`), and the sort **Waiting longest for an outcome** (`sort=waiting`).
+- `Nudges.daily(now)`: the per-person morning list the bot sends (contract in `docs/TEAM.md`).
+
+Each person sees only their own leads, as everywhere else. Logging any outcome takes the lead off the list until the bot opens a new hand-off. A hand-off staff resolved without logging an outcome still counts (that is the gap this closes); the 2-hour and 30-day bounds are inclusive. **Limit:** a hot lead with no hand-off is timed from its first message (we don't store when it turned hot), so it is tracked only for 30 days after first contact; one that first wrote 5 weeks ago and turned hot yesterday doesn't show. Leads that need a person almost always get a hand-off from the bot, which restarts the clock.
+
 ## Roles
 
 | | Owner | Manager | Sales |

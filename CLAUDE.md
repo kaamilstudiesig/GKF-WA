@@ -18,7 +18,7 @@ Read before larger changes: `docs/ARCHITECTURE.md`, `docs/PRODUCT_PLAN.md`, `doc
 
 ## Rules
 
-- Work on a branch and open a PR; never push to `main`. CI runs `npm test`.
+- Work on a branch and open a PR; never push to `main`. CI runs `npm test`. Each PR also gets an automatic Claude review comment (`.claude/skills/pr-review/SKILL.md`); fix its findings before asking for a merge.
 - Owners: Kaamil owns `src/`, `scripts/`, infra and Meta; Krishna owns `crm/` and `test/crm/`. Cross-area changes need an agreed contract (see `docs/TEAM.md`).
 - Never commit or print secrets (tokens, keys, passwords). `.env` is git-ignored; `.env.example` lists the variables.
 - Tests must never call Meta, OpenRouter or Telegram. Use the existing fakes (`aiService.transport`, `whatsappService.transport`, `notifyService.sendOverride`).

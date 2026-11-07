@@ -35,7 +35,7 @@ We split by **area of the code**, so we rarely edit the same files.
 | CRM product: sales floor, live board, phone app, analytics, onboarding/agency UI | **Krishna** | `crm/`, `test/crm/` |
 | Product decisions, pricing, pilots with agencies | Both | `docs/` |
 
-Shared contracts (agree in a PR before building on them): new tables both sides use, and the events the CRM emits that the bot side sends to Meta.
+Shared contracts (agree in a PR before building on them): new tables both sides use, and the events the CRM emits that the bot side sends to Meta. From 7 Nov Krishna may also own a feature end to end, `src/` included, once its contract PR is agreed; Kaamil keeps Meta access and tokens, AI prompts, tenancy and deploys.
 
 ## Work split by stage
 
@@ -58,18 +58,37 @@ A possible large client wants the chatbot soon. Until this stage is done, it com
 
 Status: K14–K17 are built and K18 is written (PR `k14-k18-new-client`). R12 is built (PR `r12-white-label`): name from the business profile, logo letters, colour and logo image on Business settings → Brand. GKF names stay only in the default profile (seed data) and the GKF CRM host default. Order: K14 + R12 first (no GKF name in front of the new client), then K15, K16, R13, R2, then K17/K18 in parallel. Ask the client early: business type, number of staff, existing WhatsApp number or new one, who owns their Meta Business Manager.
 
-### Now: order of work (from 6 Nov)
+### Now: order of work (from 7 Nov)
 
-Krishna's R12 review: good. Logo upload is safe (type checked by its bytes, no SVG, 40 KB cap), readable text colour is computed, migration and tests included. Follow-ups were small (initials with punctuation, logo in backups) and are fixed. K8 moved `crm_branding` to one row per client.
+**Decided with Kaamil on 7 Nov**
 
-**Krishna, in this order** (one PR each):
+- Order: **3 portfolio demos (this week) → Dubai real estate client → Turiya (agency) → GKF case study.**
+- Real estate is the focus, but nothing is built for one industry: differences stay in presets and the business profile.
+- The 3 portfolio clients are live demos: own branded CRM, bot on a test WhatsApp number, realistic sample data, no real ad traffic.
+- Dubai: amounts in AED; leads also come from portals and the website (sources still to confirm); their CRM is unknown, so ask before building another connector; projects and units should live in a Meta catalog.
+- Turiya will judge value for money. With no real numbers yet, we show two strengths: (1) a sales pipeline tool, not just a chatbot (qualify, assign, alert, time, log the outcome); (2) sales data flowing back to marketing (revenue per ad, signals to Meta, reports).
+- Speed to lead counts **working hours** everywhere (the R2 rule), so night leads don't make staff look slow.
+- Krishna may own a feature end to end, `src/` included, once a small contract PR is agreed. Kaamil keeps Meta access and tokens, AI prompts, tenancy and deploys.
 
-1. ✅ **R13 bulk staff add** (PR `r13-bulk-staff`, see [crm/README.md](../crm/README.md#adding-many-staff-r13)). Managers, teams and first-login password change already exist (`crm/src/users.js`), so this is only the bulk part. On **Staff**, an **Add many** form: paste CSV or fill rows of `name, email, role, manager email, WhatsApp alert number (optional)`. Check every row first and save all or none, showing errors per row. Show each new person's one-time password once (and offer a CSV of them). Done when: an owner adds 20 staff in a few minutes; tests in `test/crm/`.
-2. **R2 hot-lead queue.** Agree the contract below in a small PR first, then build the CRM side.
-3. ✅ **R5 analytics** (PR `r5-analytics`; definitions in [crm/README.md](../crm/README.md#analytics-r5)) (moved up): funnel, speed to lead, logging rate, per salesperson, lost reasons, per business type names. The GKF case study, the deck and the analyser (K21) all need these numbers. Put the queries in one module (`crm/src/analytics.js`) returning plain objects, so K21 can reuse them.
-4. **R11 unlogged-lead nudges.**
-5. **R4 PWA.**
-6. **R3 live board** (SSE). Events must stay inside one tenant. Plan for more than one web dyno: send events through Postgres `LISTEN/NOTIFY`, not only in-process.
+**Review of Krishna's 6 open PRs (#33-#38): merge all, fix after.** Each passes all tests merged with `main`; security and client separation are right. They were branched from the same point, so they conflict with each other in `crm/src/app.js` and the docs: rebase and merge one at a time, in this order: R5 (#33) → R11 (#34) → R4 (#36) → Zoho status (#38) → R2 (#35) → R3 (#37). Fixes:
+
+1. R2: the owner's auto-assign switch does nothing until K19 (bot side). Show it as "needs the bot update" until K19 is merged.
+2. R5 (definitions in [crm/README.md](../crm/README.md#analytics-r5)): speed to lead in working minutes (reuse `workingMinutes` from `crm/src/queue.js`, so after R2).
+3. R3: every inbound message pings every open board, and each viewer reloads the whole board. Send at most one ping per client every 5 seconds.
+4. R4: iPhones ignore SVG icons; with no uploaded logo the home-screen icon is a screenshot. Serve a PNG `apple-touch-icon`, or tell the owner on Brand settings to upload a square PNG.
+5. Zoho status: the "Open in Zoho" link format is unverified; check it on the first real connection and note the result in the PR.
+6. Lost reasons are gym wording ("Joined another gym") for every business. Move the labels into the business-type packs (`labels` in `src/config/verticals.js`), with real estate wording ("Bought elsewhere", "Budget", "Location").
+
+**Krishna, in this order** (one PR each; a contract PR first where marked):
+
+1. Merge the 6 PRs with the fixes above.
+2. **R14 real estate demo kit** (portfolio, this week): `npm run demo -- --tenant <slug> --preset realestate` fills one client with realistic sample data: projects, about 60 leads over 30 days with chats in English and Hinglish/Arabic, hand-offs, site visits, bookings with amounts, lost reasons, staff with a manager, and some leads waiting, so every screen (pipeline, reports, R11, R2 timers) looks alive. No real names or phone numbers (use +91 98000 / +971 50 000 test ranges). Safe to run twice. Builds on `scripts/demo-data.js`.
+3. **R15 currency per business** (contract PR first, with Kaamil): a `currency` field in the business profile (INR default, AED for Dubai). The CRM shows amounts in it, and payment fields and reports use it. The `amount_inr` column keeps its name (it holds the amount in the business's currency); document that. Kaamil handles the Conversions API currency and keeps Razorpay INR-only.
+4. **R16 lead intake** (contract PR first): leads from portals and website forms. A signed `POST` endpoint per client plus a copy-paste website form snippet: create or match the lead (phone, else email), record the source, open a hand-off, and send the first WhatsApp message as an approved template (leads from forms haven't messaged us, so the 24-hour window is closed). Adapters for specific portals (Property Finder, Bayut, Dubizzle) come once the Dubai client confirms which ones.
+5. **R17 projects and units** (contract PR first, with Kaamil's K24): a Projects page where the owner manages projects and units (name, area, type, size, price from, handover date, brochure link, photo), stored in the client's Meta catalog so the bot can send them as WhatsApp product messages.
+6. **R6 revenue per ad** (Turiya): per ad and campaign: leads, qualified, site visits, sales, revenue, cost per customer and ROAS once K5 brings spend. Reuse `crm/src/analytics.js`.
+7. **R18 value page per client** (Turiya): one shareable screen for the owner or agency: leads, speed to lead, logging rate, sales, revenue, cost per customer, plus "what the system did" (replies sent, leads qualified, hand-offs timed, sales sent to Meta). Demo data until real numbers exist.
+8. **R8 onboarding wizard** (Turiya: easy onboarding): profile, business-type preset, brand, team (R13), test chat, checklist. Pairs with Kaamil's K9.
 
 **Contract: R2 hot-lead queue (Krishna builds the CRM side, Kaamil wires it into the bot as K19)**
 
@@ -80,14 +99,51 @@ Krishna's R12 review: good. Logo upload is safe (type checked by its bytes, no S
   - No tenant filters needed (row-level security), and no Meta or Telegram calls: it only returns who to alert.
 - Kaamil (K19): `handoffRepository.open` calls `autoAssign` before staff alerts (so the alert goes to the assignee), wrapped so a queue error never blocks the hand-off. The minute housekeeping timer runs `sweep()` per tenant in `tenancy.run` and sends a `not_picked_up` staff alert (Telegram + WhatsApp) for each result.
 
+**R2 details (proposed by Krishna in PR #32, agreed by Kaamil with 4 changes: storage in a platform migration, a cutoff for old leads, working hours, and hand-back when someone stops taking leads)**
+
+*Storage: one new platform migration `lead_queue` in `src/db/platformMigrations.js`* (not CRM migration 7, so every new table gets client isolation the same way `zoho_sync` did)
+
+| What | Where | Owner |
+| --- | --- | --- |
+| Sales person taking leads | `crm_users.accepting BOOLEAN NOT NULL DEFAULT true` | Krishna |
+| Escalation level reached | `crm_lead_assignments.escalation_level SMALLINT NOT NULL DEFAULT 0`: 0 none, 1 manager alerted, 2 owners alerted. Reset to 0 whenever the lead is (re)assigned, by `autoAssign` and by `Crm.assign` | Krishna |
+| Queue settings per business | New table `crm_settings`: `tenant_id` (primary key, default from the tenant setting like the other tables), `auto_assign BOOLEAN NOT NULL DEFAULT false`, `auto_assign_since TIMESTAMPTZ` (set each time the owner turns it on), `work_start TIME NOT NULL DEFAULT '09:00'`, `work_end TIME NOT NULL DEFAULT '21:00'`, `timezone TEXT NOT NULL DEFAULT 'Asia/Kolkata'` (Dubai clients use `Asia/Dubai`), `updated_by TEXT`, `updated_at TIMESTAMPTZ`. Add `...tenancyPolicy('crm_settings')` in the same migration. Also the home for later CRM-wide owner settings | Krishna (copy the `zoho_sync` pattern) |
+
+Off by default, so nothing changes for GKF until the owner turns it on in **Business settings**. No row = defaults.
+
+*`LeadQueue(db)` in `crm/src/queue.js`* (runs inside the caller's tenant context; never calls Meta or Telegram)
+
+- `autoAssign(waId, { exclude = [] } = {})` → `{ id, name, email, role } | null`
+  1. Auto-assign off → `null` (the hand-off stays `pending`, as today).
+  2. The lead already has an assignee who is active, accepting and not in `exclude` → keep them, return them.
+  3. Otherwise pick an active, accepting **sales** user not in `exclude`. If the previous assignee had a manager, only that manager's team first; if nobody there is available, anyone. Round-robin: the person whose latest `crm_lead_assignments.assigned_at` is oldest (never assigned first, then lowest id).
+  4. Same writes as `Crm.assign`: upsert `crm_lead_assignments` (`assigned_by` NULL = system, `escalation_level` 0), `handoffs` → `assigned` + `assigned_to` email, `crm_activity_log` action `auto_assigned` with no user.
+  5. One transaction with `pg_advisory_xact_lock(<queue key>, tenant_id)`, so two hand-offs at the same moment take turns instead of both picking the same person.
+  6. Nobody available → `null`.
+- `release(userId)` → number of leads moved. Called when a sales person turns **Taking leads** off, and when an owner deactivates a user. Their open hand-offs that are **not picked up yet** go to `autoAssign(waId, { exclude: [userId] })`. Leads they already picked up stay with them (they are mid-conversation). If nobody else is available the lead stays, and the sweep escalates it as normal.
+- `sweep(now = new Date())` → `[{ waId, userId, level, assigneeId }]`, one item per person to alert.
+  - Looks at leads with an open hand-off in `assigned` and an assignment that is **not picked up**: no staff reply (`outbound_messages` with `metadata.source = 'crm'`) and no outcome (`crm_lead_outcomes`, any outcome, so a logged "No answer" counts as an attempt) since `assigned_at`.
+  - **Old leads never escalate:** only assignments with `assigned_at >= auto_assign_since`. Turning auto-assign on does not alert owners about leads assigned before that.
+  - **Working minutes only:** the clock counts minutes between `work_start` and `work_end` in the business's `timezone`. A lead assigned at 2 AM starts counting at `work_start`, so nobody is alerted at night. Put this in a pure function `workingMinutes(from, to, settings)` with its own tests (overnight, weekend not special, Dubai vs India time).
+  - 5 working minutes → level 1: the assignee's manager (no manager → the owners). 15 working minutes → level 2: every active owner.
+  - Each level once: `UPDATE ... SET escalation_level = n WHERE escalation_level < n RETURNING`, so it never repeats, even with two dynos sweeping.
+  - Auto-assign off → `[]`.
+
+*CRM screens (Krishna)*: owner toggle plus working hours and timezone in Business settings; **Taking leads** switch for sales (header menu), which calls `release`; a timer on lead cards and the lead page from `assigned_at` until picked up, counting working minutes, red after 5.
+
+*Tests (Krishna)*: round-robin order; two `autoAssign` calls at once pick different people; old leads not escalated after turning on; no alerts outside working hours; `release` moves only not-picked-up leads; one client's queue never sees another client's staff.
+
+*Bot side (Kaamil, K19)*: `handoffRepository.open` calls `autoAssign` before `notifyService` / `staffAlerts`, so "their leads only" alerts reach the new assignee, wrapped so a queue error never blocks the hand-off. The minute housekeeping timer runs `sweep()` per tenant in `tenancy.run` and sends a `not_picked_up` alert for each result; the text uses `level` ("not picked up in 5 min" / "15 min").
+
 **Kaamil, in this order**
 
-1. **Set up the 3 portfolio clients** (Dubai real estate first): `npm run tenant -- add clients/<client>.json` per client, real estate preset, branding, staff (R13 helps), `staff_lead_alert` template per WhatsApp account. Then the DartIt name, logo and website, then `crm.inter-rootlabs.com`.
-2. **K19:** wire R2 into the bot once Krishna's contract PR is merged.
-3. ✅ **K20 Zoho two-way sync** (built, see below). Next: Krishna adds a Zoho status line on Business settings (on/off, last read, leads not sent) and an "Open in Zoho" link on the lead page, reading `zoho_links` and `zoho_cursors`.
-4. **K21 analyser:** sales and marketing analysis and suggestions, built on R5's queries. One AI call per report, not per lead.
-5. **K7b + Instagram** once GKF's Instagram is connected (evening of 6 Nov).
-6. **K9 Embedded Signup**, then **K8 follow-ups** (fair queues per client, a real second client live on the shared app).
+1. **Portfolio (this week):** create the 3 demo clients (`npm run tenant -- add`), each with a test WhatsApp number, real estate preset, branding and Krishna's R14 data. Then the DartIt name, logo and website, then `crm.inter-rootlabs.com`.
+2. **K19:** wire R2 into the bot (contract above). Also send R11's daily list (`Nudges.daily()`) each morning on Telegram and staff WhatsApp.
+3. **Dubai discovery:** ask the client for their CRM, lead sources and portals, languages, team size and Meta setup. Then **K22**: turn K20 into a general CRM connector and add their CRM. Test Arabic replies.
+4. **K24 Meta catalog** (with R17): catalog API, product messages from the bot, `catalog_management` on the client's token.
+5. **R15 bot side:** Conversions API events in the business's currency.
+6. **K5 ad spend import** (with R6), then **K21 analyser** on R5/R6 numbers. One AI call per report, not per lead.
+7. **K9 Embedded Signup** (with R8), **K7b** Conversions API on for GKF, then the GKF case study.
 
 **Needs credentials (do later, from a machine with `.env` or Heroku access).** Nothing here can run in a cloud session without them:
 
@@ -244,6 +300,17 @@ One deployment serves many businesses. `tenants` holds each business (slug, What
 - **Docs:** when you change how something works, update the doc in the same PR.
 - **Style:** small files, plain names, comments that explain why. Match the existing code.
 - **UI:** follow [UI_GUIDE.md](UI_GUIDE.md): daisyUI components, phone-first, check in the browser at 375px and desktop before a PR.
+
+## Automatic PR review
+
+Every PR gets a Claude review, started by the PR itself (no session waits or polls):
+
+1. **Opening a PR** (or reopening it, or marking a draft ready) runs `.github/workflows/claude-review.yml`. Claude follows `.claude/skills/pr-review/SKILL.md`: it reads the diff, `CLAUDE.md` and the task and contract in this file, and posts **one comment** with a verdict, up to 8 findings and a **Prompt for your Claude** block.
+2. **The author fixes:** paste that prompt into your own Claude, or comment `@claude fix findings 1 and 2 from the review` on the PR and Claude pushes the fixes itself (`.github/workflows/claude.yml`). CI runs on those pushes.
+3. **Re-review after fixes:** add the label `claude-review` to the PR (pushes alone don't re-run it, to save usage).
+4. **Merging stays with Kaamil.** Claude never approves or merges.
+
+Usage: reviews run on Sonnet with a turn cap and only on the events above; `@claude` runs use the default model. Both run on Kaamil's Claude subscription (`CLAUDE_CODE_OAUTH_TOKEN`), so they count against its usage limits, plus GitHub Actions minutes. If only an `ANTHROPIC_API_KEY` secret is set, they use it instead (billed per use); once `CLAUDE_CODE_OAUTH_TOKEN` is added they switch to it and the key can be deleted. Without either, both workflows skip and stay green. The same review runs locally with `/pr-review <number>` (needs `gh`).
 
 ## Using Claude Code on this repo
 

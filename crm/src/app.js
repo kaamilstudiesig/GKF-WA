@@ -79,7 +79,7 @@ function createCrmApp({
   const users = new Users(db);
   // Zoho sync status (K20). Without the bot's tenant registry (standalone CRM) it is simply off.
   let registry = null;
-  try { registry = require('../../src/tenancy/registry'); } catch (e) { /* standalone */ }
+  try { registry = require('../../src/tenancy/registry'); } catch (e) { if (e.code !== 'MODULE_NOT_FOUND' || !/tenancy[\\/]registry/.test(e.message)) throw e; /* standalone: no bot code */ }
   const zoho = new ZohoStatus(db, registry || { config: () => ({}) });
   const analytics = new Analytics(db);
   const throttle = new auth.LoginThrottle();

@@ -22,14 +22,17 @@ function recordUrl(domain, link) {
   return null;
 }
 
-const STATE_LABELS = { synced: 'In sync', sending: 'Sending', failed: 'Retrying', dead: 'Not sent', skipped: 'Skipped', waiting: 'Waiting to send' };
+const STATE_LABELS = { synced: 'In sync', sending: 'Sending', failed: 'Retrying', dead: 'Not sent', skipped: 'Skipped', waiting: 'Waiting to send', none: 'Not in Zoho yet' };
+const ERROR_CHARS = 200; // Zoho's errors can be long; the pages show the start
 
 class ZohoStatus {
   /** registry: src/tenancy/registry (config(tenantId).zoho). */
   constructor(db, registry) { this.db = db; this.registry = registry; }
 
+  /** The client's Zoho settings, or null when off. An unknown client (no config) is off; real errors throw. */
   config() {
-    try { return this.registry.config(tenancy.tenantId()).zoho; } catch (e) { return null; }
+    const cfg = this.registry.config(tenancy.tenantId());
+    return (cfg && cfg.zoho) || null;
   }
 
   /** For Business settings: on/off, last read, counts, and the leads Zoho refused. */
@@ -38,10 +41,12 @@ class ZohoStatus {
     if (!z || !z.on) return { on: false };
     const counts = await this.db.many(`SELECT COALESCE(status, 'waiting') AS status, dirty, COUNT(*)::int AS n FROM zoho_links GROUP BY 1, 2`);
     const c = { synced: 0, waiting: 0, retrying: 0, notSent: 0 };
+    // Every row lands in one bucket except 'skipped': the worker claimed it while Zoho was being
+    // turned off; it isn't waiting and goes out again on the lead's next change.
     for (const r of counts) {
       if (r.status === 'dead') c.notSent += r.n;
       else if (r.status === 'failed') c.retrying += r.n;
-      else if (r.dirty) c.waiting += r.n;
+      else if (r.dirty || r.status === 'sending' || r.status === 'waiting') c.waiting += r.n;
       else if (r.status === 'synced') c.synced += r.n;
     }
     const cursor = await this.db.one('SELECT pulled_until, last_error FROM zoho_cursors');
@@ -51,9 +56,9 @@ class ZohoStatus {
       on: true,
       domain: webDomain(z.accountsUrl),
       pulledUntil: cursor ? cursor.pulled_until : null,
-      readError: cursor ? cursor.last_error : null,
+      readError: cursor && cursor.last_error ? String(cursor.last_error).slice(0, ERROR_CHARS) : null,
       counts: c,
-      notSent: notSent.map(r => ({ waId: r.wa_id, name: r.name, error: String(r.last_error || '').slice(0, 200) }))
+      notSent: notSent.map(r => ({ waId: r.wa_id, name: r.name, error: String(r.last_error || '').slice(0, ERROR_CHARS) }))
     };
   }
 
@@ -62,11 +67,13 @@ class ZohoStatus {
     const z = this.config();
     if (!z || !z.on) return null;
     const link = await this.db.one(`SELECT zoho_lead_id, zoho_contact_id, zoho_deal_id, status, dirty, last_error FROM zoho_links WHERE wa_id = $1`, [waId]);
-    const state = !link ? 'waiting' : link.status === 'dead' ? 'dead' : link.status === 'failed' ? 'failed' : link.dirty ? 'waiting' : link.status || 'waiting';
+    // No row: the lead existed before Zoho was turned on and wasn't in the backfill
+    // (npm run zoho -- backfill --days 30), and hasn't changed since.
+    const state = !link ? 'none' : link.status === 'dead' ? 'dead' : link.status === 'failed' ? 'failed' : link.dirty ? 'waiting' : link.status || 'waiting';
     const rec = recordUrl(webDomain(z.accountsUrl), link);
     return {
       url: rec && rec.url, label: rec && rec.label, state, stateLabel: STATE_LABELS[state] || state,
-      error: link && ['dead', 'failed'].includes(state) ? String(link.last_error || '').slice(0, 200) : null
+      error: link && ['dead', 'failed'].includes(state) ? String(link.last_error || '').slice(0, ERROR_CHARS) : null
     };
   }
 }

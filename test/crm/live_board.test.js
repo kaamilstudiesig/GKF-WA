@@ -147,3 +147,18 @@ test('pings to one client are spaced out, and a change in the gap still arrives 
   assert.strictEqual(pings(), 2); // nothing changed since: nothing more
   await board.stop();
 });
+
+test('after the LISTEN connection comes back, every open board refreshes (changes in the gap were missed)', async () => {
+  let opts = null;
+  const board = new LiveBoard({ listen: async (c, fn, o) => { opts = o; return async () => {}; } }, { debounceMs: 20, minIntervalMs: 0, heartbeatMs: 1000 });
+  const one = fakeRes(); const two = fakeRes();
+  board.subscribe(1, new EventEmitter(), one);
+  board.subscribe(2, new EventEmitter(), two);
+  await board.listening;
+  assert.strictEqual(typeof opts.onReconnect, 'function');
+  opts.onReconnect();
+  await sleep(60);
+  assert.match(one.out, /event: board/); // both clients, no NOTIFY needed
+  assert.match(two.out, /event: board/);
+  await board.stop();
+});

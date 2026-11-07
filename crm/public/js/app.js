@@ -36,6 +36,13 @@ document.addEventListener('DOMContentLoaded', () => {
   // Keep the conversation scrolled to the latest message.
   document.querySelectorAll('[data-chat]').forEach(el => { el.scrollTop = el.scrollHeight; });
 
+  // Auto-submit checkboxes marked with data-autosubmit ("Taking leads" switch); hide their Save button.
+  document.querySelectorAll('input[type=checkbox][data-autosubmit]').forEach(box => {
+    box.addEventListener('change', () => box.form.submit());
+    const btn = box.form.querySelector('.js-hide');
+    if (btn) btn.hidden = true;
+  });
+
   // Auto-submit selects marked with data-autosubmit (pipeline status changes).
   document.querySelectorAll('select[data-autosubmit]').forEach(sel => {
     sel.addEventListener('change', () => sel.form.submit());

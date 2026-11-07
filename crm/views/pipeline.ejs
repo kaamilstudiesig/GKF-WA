@@ -35,6 +35,7 @@
         </div>
         <div class="mt-2 flex flex-wrap items-center gap-1">
           <% if (l.needs_human) { %><span class="badge badge-primary badge-xs">Needs human</span><% } %>
+          <%- include('partials/clock', { clock: l.clock }) %>
           <% if (l.visit_outcome === 'no_show') { %><span class="badge badge-warning badge-soft badge-xs">No-show</span><% } %>
           <% if (col.stage === 'visit_booked' && l.visit_at) { %><span class="badge badge-ghost badge-xs"><%= util.fmtDate(l.visit_at) %></span><% } %>
           <% if (col.stage === 'joined' && l.joined_amount) { %><span class="badge badge-success badge-soft badge-xs">₹<%= Number(l.joined_amount).toLocaleString('en-IN') %></span><% } %>

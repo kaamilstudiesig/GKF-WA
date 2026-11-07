@@ -126,3 +126,24 @@ test('/events streams to logged-in staff and pings when a lead changes; overdue 
     await ctx.cleanup();
   }
 });
+
+test('pings to one client are spaced out, and a change in the gap still arrives at the end', async () => {
+  let notify = null;
+  const board = new LiveBoard({ listen: async (c, fn) => { notify = fn; return async () => {}; } }, { debounceMs: 20, minIntervalMs: 200, heartbeatMs: 1000 });
+  const res = fakeRes();
+  board.subscribe(1, new EventEmitter(), res);
+  await board.listening;
+  const pings = () => (res.out.match(/event: board/g) || []).length;
+
+  notify('{"t":1}');
+  await sleep(60);
+  assert.strictEqual(pings(), 1); // first change: after the short debounce
+  for (let i = 0; i < 5; i++) { notify('{"t":1}'); await sleep(10); } // busy period
+  await sleep(60);
+  assert.strictEqual(pings(), 1); // still inside the 200 ms gap: no new ping yet
+  await sleep(150);
+  assert.strictEqual(pings(), 2); // one trailing ping for all of them
+  await sleep(300);
+  assert.strictEqual(pings(), 2); // nothing changed since: nothing more
+  await board.stop();
+});

@@ -9,13 +9,19 @@
 
 const CHANNEL = 'crm_board';
 const DEBOUNCE_MS = 400; // a burst of changes (one outcome touches several tables) -> one ping
+// Every inbound WhatsApp message changes a lead, and each ping makes every open board
+// reload the pipeline. So at most one ping per client every 5 s; a change inside that
+// window still gets a (trailing) ping at the end of it, so the final state always arrives.
+const MIN_INTERVAL_MS = 5000;
 const HEARTBEAT_MS = 25000; // under Heroku's 55 s idle timeout
 
 class LiveBoard {
   /** db needs listen(channel, fn) (src/db). Without it the board just isn't live. */
-  constructor(db, { debounceMs = DEBOUNCE_MS, heartbeatMs = HEARTBEAT_MS } = {}) {
+  constructor(db, { debounceMs = DEBOUNCE_MS, minIntervalMs = MIN_INTERVAL_MS, heartbeatMs = HEARTBEAT_MS } = {}) {
     this.db = db;
     this.debounceMs = debounceMs;
+    this.minIntervalMs = minIntervalMs;
+    this.lastPing = new Map(); // tenantId -> time of the last ping sent
     this.heartbeatMs = heartbeatMs;
     this.clients = new Map(); // tenantId -> Set(res)
     this.timers = new Map(); // tenantId -> pending ping
@@ -52,15 +58,22 @@ class LiveBoard {
 
   each(fn) { for (const set of this.clients.values()) for (const res of set) fn(res); }
 
-  /** A NOTIFY from Postgres: ping that tenant's boards, once per burst. */
+  /**
+   * A NOTIFY from Postgres: ping that tenant's boards. Changes are gathered for
+   * debounceMs, and pings to one tenant are at least minIntervalMs apart; a change
+   * while a ping is pending is folded into it (trailing), so nothing is lost.
+   */
   notified(payload) {
     let tenantId;
     try { tenantId = Number(JSON.parse(payload).t); } catch (e) { return; }
     if (!this.clients.has(tenantId) || this.timers.has(tenantId)) return;
+    const sinceLast = Date.now() - (this.lastPing.get(tenantId) || 0);
+    const wait = Math.max(this.debounceMs, this.minIntervalMs - sinceLast);
     this.timers.set(tenantId, setTimeout(() => {
       this.timers.delete(tenantId);
+      this.lastPing.set(tenantId, Date.now());
       for (const res of this.clients.get(tenantId) || []) res.write('event: board\ndata: {}\n\n');
-    }, this.debounceMs));
+    }, wait));
   }
 
   /** Opens an SSE stream for one viewer of one tenant's board. */

@@ -20,6 +20,7 @@ const tenancy = require('../../src/tenancy/context');
 const { ZohoStatus } = require('./zohoStatus');
 const pwa = require('./pwa');
 const bulkStaff = require('./bulkStaff');
+const { LeadQueue, QueueError, TIMEZONES } = require('./queue');
 const { MIN_AGE_HOURS } = require('./nudges');
 const { Analytics } = require('./analytics');
 const { Branding } = require('./branding');
@@ -81,6 +82,13 @@ function createCrmApp({
   const users = new Users(db);
   const liveBoard = new LiveBoard(db);
   app.locals.liveBoard = liveBoard; // tests and shutdown
+  const queue = new LeadQueue(db);
+  // R2: "waiting N min" on leads assigned but not picked up yet (only while auto-assign is on).
+  const withClock = async leads => {
+    const clock = await queue.waitingClock(leads.map(l => l.wa_id));
+    for (const l of leads) l.clock = clock[l.wa_id] ?? null;
+    return leads;
+  };
   // Zoho sync status (K20). Without the bot's tenant registry (standalone CRM) it is simply off.
   let registry = null;
   try { registry = require('../../src/tenancy/registry'); } catch (e) { /* standalone */ }
@@ -237,8 +245,23 @@ function createCrmApp({
     }
   }));
 
+  // R2: a sales person switches "Taking leads" off (on leave, busy, end of shift). Their
+  // leads nobody has picked up yet go back into the queue.
+  app.post('/account/accepting', h(async (req, res) => {
+    const on = req.body.accepting === '1';
+    await db.query('UPDATE crm_users SET accepting = $1, updated_at = now() WHERE id = $2', [on, req.user.id]);
+    const moved = on ? 0 : await queue.release(req.user.id);
+    await crm.log(req.user, null, on ? 'taking_leads_on' : 'taking_leads_off', { moved });
+    const msg = on ? 'You are taking new leads.' : `You are not taking new leads.${moved ? ` ${moved} lead${moved === 1 ? '' : 's'} went to someone else.` : ''}`;
+    res.redirect(withOk(back(req, '/'), msg));
+  }));
+
   // ---- dashboard ----
-  app.get('/', h(async (req, res) => res.render('dashboard', { d: await crm.dashboard(req.user) })));
+  app.get('/', h(async (req, res) => {
+    const d = await crm.dashboard(req.user);
+    await withClock([...d.attention, ...d.recent]);
+    res.render('dashboard', { d });
+  }));
 
   // ---- leads ----
   app.get('/leads', h(async (req, res) => {
@@ -246,7 +269,9 @@ function createCrmApp({
       status: req.query.status || '', assignee: req.query.assignee || '', q: req.query.q || '',
       needsHuman: req.query.needs_human === '1', waiting: req.query.waiting === '1', sort: req.query.sort || 'attention', page: req.query.page || 1
     };
-    res.render('leads', { result: await crm.listLeads(req.user, filters), filters, staff: await crm.assignableUsers(req.user) });
+    const result = await crm.listLeads(req.user, filters);
+    await withClock(result.leads);
+    res.render('leads', { result, filters, staff: await crm.assignableUsers(req.user) });
   }));
 
   // R3: live board stream. Pings "board changed" for this client only; no lead data.
@@ -254,6 +279,7 @@ function createCrmApp({
 
   app.get('/pipeline', h(async (req, res) => {
     const columns = (await crm.pipelineBoard(req.user)).map(c => ({ ...c, label: res.locals.STAGES[c.stage] || c.label }));
+    await withClock(columns.flatMap(c => c.leads || []));
     res.render('pipeline', { columns });
   }));
 
@@ -285,6 +311,7 @@ function createCrmApp({
     const waId = util.cleanWaId(req.params.waId);
     const lead = await crm.getLead(req.user, waId);
     if (!lead) return res.status(404).render('error', { status: 404, message: 'Lead not found, or it is not assigned to you.' });
+    await withClock([lead]);
     res.render('lead', {
       lead,
       messages: await crm.messages(waId),
@@ -376,6 +403,7 @@ function createCrmApp({
     res.render('settings', {
       profile: gymConfig.profile, meta: await businessProfile.meta(), verticals: VERTICALS,
       prompt: gymConfig.getSystemPrompt(), limits: businessProfile.LIMITS, brandForm: null,
+      queueSettings: await queue.settings(), TIMEZONES, queueBotWired: LeadQueue.botWired,
       zoho: await zoho.summary(), ...extra
     });
   };
@@ -397,6 +425,21 @@ function createCrmApp({
   }));
 
   // Branding (R12): logo letters, colour and logo image, on the Business settings page.
+  // R2: lead queue settings (auto-assign, working hours, time zone).
+  app.post('/settings/queue', allow(can.manageBusiness), h(async (req, res) => {
+    // Until the bot calls autoAssign (K19), turning it on would do nothing: keep it off.
+    const input = { autoAssign: LeadQueue.botWired && req.body.auto_assign === '1', workStart: req.body.work_start, workEnd: req.body.work_end, timezone: req.body.timezone };
+    try {
+      await queue.saveSettings(input, req.user.email);
+    } catch (err) {
+      if (!(err instanceof QueueError)) throw err;
+      res.status(400);
+      return settingsPage(res, { error: err.message, queueSettings: { auto_assign: input.autoAssign, work_start: input.workStart, work_end: input.workEnd, timezone: input.timezone } });
+    }
+    await crm.log(req.user, null, 'queue_settings_updated', { autoAssign: input.autoAssign });
+    res.redirect(withOk('/settings', input.autoAssign ? 'Lead queue saved. New hand-offs go to sales people in turn.' : 'Lead queue saved. Auto-assign is off.') + '#queue');
+  }));
+
   app.post('/settings/brand', allow(can.manageBusiness), h(async (req, res) => {
     if (!businessProfile) return res.status(404).render('error', { status: 404, message: 'Business settings need the WhatsApp bot.' });
     try {
@@ -445,10 +488,12 @@ function createCrmApp({
   }));
   app.post('/users/:id', allow(can.manageUsers), h(async (req, res) => {
     try {
-      await users.update(req.user, req.params.id, {
+      const updated = await users.update(req.user, req.params.id, {
         name: req.body.name, email: req.body.email, role: req.body.role, managerId: req.body.manager_id || null, active: req.body.active === '1'
       });
-      res.redirect('/users?ok=' + encodeURIComponent('User updated.'));
+      // R2: a deactivated person's leads nobody has picked up go back into the queue.
+      const moved = updated.active ? 0 : await queue.release(updated.id);
+      res.redirect('/users?ok=' + encodeURIComponent(`User updated.${moved ? ` ${moved} lead${moved === 1 ? '' : 's'} went to someone else.` : ''}`));
     } catch (err) {
       if (!(err instanceof HttpError)) throw err;
       res.status(err.status); await usersPage(res, { error: err.message });

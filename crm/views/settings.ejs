@@ -16,6 +16,28 @@
 <%
   const bf = brandForm || { mark: brand.markIsDefault ? '' : brand.mark, color: brand.color };
 %>
+<%
+  const qs = queueSettings;
+  const tzLabels = { 'Asia/Kolkata': 'India (IST)', 'Asia/Dubai': 'UAE (GST)' };
+%>
+<form method="post" action="/settings/queue" id="queue" class="<%= card %> mb-4 scroll-mt-20">
+  <%- include('partials/csrf') %>
+  <h2>Lead queue</h2>
+  <p class="text-sm text-base-content/60">When the bot hands a lead to a person, give it to a sales person straight away, in turn. If nobody replies or logs an outcome, their manager is alerted after 5 working minutes and the owners after 15.</p>
+  <% if (!queueBotWired) { %>
+  <div role="status" class="alert alert-warning alert-soft text-sm"><span><strong>Needs the WhatsApp bot update.</strong> Auto-assign starts working once the bot assigns hand-offs as they open. Until then, assign leads by hand. You can set working hours now.</span></div>
+  <% } %>
+  <label class="label tap gap-3 text-base-content <%= queueBotWired ? 'cursor-pointer' : 'opacity-60' %>"><input type="checkbox" name="auto_assign" value="1" class="toggle toggle-primary" <%= qs.auto_assign && queueBotWired ? 'checked' : '' %> <%= queueBotWired ? '' : 'disabled' %>> Auto-assign hand-offs</label>
+  <div class="grid grid-cols-2 gap-2 sm:grid-cols-[9rem_9rem_1fr]">
+    <fieldset class="<%= field %>"><legend class="fieldset-legend">Working from</legend><input type="time" name="work_start" value="<%= qs.work_start %>" required class="input w-full"></fieldset>
+    <fieldset class="<%= field %>"><legend class="fieldset-legend">Until</legend><input type="time" name="work_end" value="<%= qs.work_end %>" required class="input w-full"></fieldset>
+    <fieldset class="<%= field %> col-span-2 sm:col-span-1"><legend class="fieldset-legend">Time zone</legend>
+      <select name="timezone" class="select w-full"><% for (const tz of TIMEZONES) { %><option value="<%= tz %>" <%= qs.timezone === tz ? 'selected' : '' %>><%= tzLabels[tz] || tz %></option><% } %></select></fieldset>
+  </div>
+  <p class="text-xs text-base-content/50">The 5 and 15 minutes only count during working hours, so nobody is alerted at night. Sales people can switch <em>Taking leads</em> off in their menu.</p>
+  <button class="btn btn-primary w-full sm:w-auto" type="submit">Save lead queue</button>
+</form>
+
 <section class="<%= card %> mb-4" id="zoho">
   <div class="flex items-center justify-between gap-2">
     <h2>Zoho CRM</h2>

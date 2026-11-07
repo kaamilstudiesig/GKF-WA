@@ -87,6 +87,17 @@ The pipeline updates by itself when anyone changes a lead (the bot, another pers
 - **Browsers:** the board opens `GET /events` (server-sent events, logged in). A change pings only that client's boards with **no lead data** (`event: board`): changes are gathered for 400 ms, and one client gets **at most one ping every 5 s** (busy ads mean many inbound messages, and each ping reloads every open board); a change inside the gap gets one trailing ping at its end, so the final state always arrives. The page then reloads the board through the normal role-scoped `/pipeline`, so a sales person still sees only their leads. It waits while a card is being dragged or a dialog is open, keeps the scroll position, and sets up drag-and-drop again. A heartbeat every 25 s keeps the connection open through Heroku's router.
 - **Overdue:** a card with an open follow-up past due gets a red border and **Follow-up overdue**; the page re-checks every minute, so cards turn red without a change.
 
+## Hot-lead queue (R2)
+
+`crm/src/queue.js` (contract and K19 wiring in `docs/TEAM.md`, "R2 details"). Storage is platform migration 3 `lead_queue`: `crm_users.accepting`, `crm_lead_assignments.escalation_level` and the per-client `crm_settings` table.
+
+- **Business settings → Lead queue** (owner): auto-assign on/off (off by default; shown as **Needs the WhatsApp bot update** and kept off until K19 sets `LeadQueue.botWired = true`, since only the bot assigns hand-offs as they open), working hours and time zone (India or UAE). Turning it on sets `auto_assign_since`; older assignments never escalate.
+- `autoAssign(waId, { exclude })`: keeps an active, accepting assignee (and restarts their clock), else the sales person with the oldest latest assignment, the previous assignee's team first. Same writes as a manual assignment, logged as `auto_assigned` with no user. Per-client advisory lock, so two at once pick different people.
+- `release(userId)`: hands back leads with an open hand-off that the person hasn't picked up (no CRM reply, no outcome since assignment). Called by the **Taking leads** switch in a sales person's menu and when an owner deactivates someone.
+- `sweep(now)`: 5 working minutes not picked up → their manager (owners if none); 15 → every owner; each level once. Returns who to alert; the bot sends (K19).
+- `workingMinutes(from, to, settings)`: minutes inside working hours in the client's time zone (shifts past midnight work). Nights don't count.
+- **Timers:** "Waiting N min" on lead cards, pipeline cards and the lead page while auto-assign is on and the lead isn't picked up; red from 5. Staff shows **Not taking leads**.
+
 ## Zoho CRM status
 
 For clients with the Zoho sync on (K20, `docs/TEAM.md`). `crm/src/zohoStatus.js` reads only our tables (`zoho_links`, `zoho_cursors`) and the client's settings; it never calls Zoho.

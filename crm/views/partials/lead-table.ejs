@@ -12,6 +12,7 @@
       <div class="truncate text-sm text-base-content/60"><%= l.last_message || util.contactLabel(l) %></div>
       <div class="mt-1 flex flex-wrap items-center gap-1.5 text-xs text-base-content/50">
         <% if (l.needs_human) { %><span class="badge badge-primary badge-xs">Needs human</span><% } %>
+        <%- include('clock', { clock: l.clock }) %>
         <% if (l.open_followups) { %><span class="<%= l.next_followup_at < nowIso ? 'text-error' : '' %>">Follow-up <%= util.timeAgo(l.next_followup_at) %></span><% } %>
         <span><%= l.assignee_name || 'Unassigned' %></span>
       </div>

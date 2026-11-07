@@ -60,6 +60,7 @@
       <input type="file" accept="image/png,image/jpeg,image/webp" class="file-input w-full" data-logo-file aria-label="Logo image">
       <input type="hidden" name="logo" data-logo-data>
       <p class="label whitespace-normal" data-logo-hint>Square PNG, JPEG or WebP under 40 KB. Replaces the letters.</p>
+      <% if (!brand.logoUrl) { %><p class="label whitespace-normal text-warning">For the app icon on iPhones, upload a square PNG (180×180 or larger). Without one, iPhones show a plain tile in your brand colour.</p><% } %>
       <% if (brand.logoUrl) { %><label class="label mt-1 cursor-pointer gap-2"><input type="checkbox" name="remove_logo" value="1" class="checkbox checkbox-sm"> Remove the current logo</label><% } %>
     </fieldset>
   </div>

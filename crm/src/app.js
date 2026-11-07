@@ -16,7 +16,9 @@ const auth = require('./auth');
 const { Crm, HttpError } = require('./crm');
 const { Users } = require('./users');
 const { ZohoStatus } = require('./zohoStatus');
+const pwa = require('./pwa');
 const bulkStaff = require('./bulkStaff');
+const { MIN_AGE_HOURS } = require('./nudges');
 const { Analytics } = require('./analytics');
 const { Branding } = require('./branding');
 const { can } = require('./permissions');
@@ -111,6 +113,7 @@ function createCrmApp({
     req.user = session ? session.user : null;
     req.csrfToken = session ? session.csrfToken : null;
     Object.assign(res.locals, {
+      MIN_AGE_HOURS,
       user: req.user, csrfToken: req.csrfToken, can, util, LEAD_STATUSES, ROLE_LABELS, ROLES, LOST_REASONS, PLAN_OPTIONS: planOptions(), PAYMENTS_ON: razorpay.enabled(),
       ...namesFor(gymConfig ? gymConfig.profile.type : 'gym'),
       path: req.path, query: req.query, flash: req.query.ok || null, error: req.query.err || null,
@@ -157,6 +160,31 @@ function createCrmApp({
     res.set('Cache-Control', req.query.v ? 'public, max-age=31536000, immutable' : 'no-cache');
     res.send(logo.data);
   }));
+
+  // ---- installable app (R4). Public: the browser fetches these before anyone logs in. ----
+  const SW_SOURCE = fs.readFileSync(path.join(__dirname, '..', 'public', 'sw.js'), 'utf8').replace('__ASSET_VERSION__', app.locals.assetV);
+  app.get('/sw.js', (req, res) => {
+    res.set('Content-Type', 'text/javascript; charset=utf-8');
+    res.set('Cache-Control', 'no-cache'); // browsers must see a new version right after a deploy
+    res.send(SW_SOURCE);
+  });
+  app.get('/manifest.webmanifest', h(async (req, res) => {
+    res.set('Content-Type', 'application/manifest+json; charset=utf-8');
+    res.set('Cache-Control', 'no-cache');
+    res.send(JSON.stringify(pwa.manifest(res.locals.brand, await branding.logo())));
+  }));
+  app.get('/brand/icon.svg', (req, res) => {
+    res.set('Content-Type', 'image/svg+xml');
+    res.set('Cache-Control', 'no-cache');
+    res.send(pwa.iconSvg(res.locals.brand, { pad: req.query.maskable === '1' }));
+  });
+  // iPhones need a PNG home-screen icon; head.ejs uses the uploaded logo when there is one.
+  app.get('/brand/apple-touch-icon.png', (req, res) => {
+    res.set('Content-Type', 'image/png');
+    res.set('Cache-Control', 'no-cache');
+    res.send(pwa.solidPng(res.locals.brand.color));
+  });
+  app.get('/offline', (req, res) => res.render('offline'));
 
   // ---- auth ----
   app.get('/login', (req, res) => (req.user ? res.redirect('/') : res.render('login', { email: '' })));
@@ -212,7 +240,7 @@ function createCrmApp({
   app.get('/leads', h(async (req, res) => {
     const filters = {
       status: req.query.status || '', assignee: req.query.assignee || '', q: req.query.q || '',
-      needsHuman: req.query.needs_human === '1', sort: req.query.sort || 'attention', page: req.query.page || 1
+      needsHuman: req.query.needs_human === '1', waiting: req.query.waiting === '1', sort: req.query.sort || 'attention', page: req.query.page || 1
     };
     res.render('leads', { result: await crm.listLeads(req.user, filters), filters, staff: await crm.assignableUsers(req.user) });
   }));

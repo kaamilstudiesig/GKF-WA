@@ -82,6 +82,7 @@ async function createPgliteDriver(url) {
     },
     async exec(sql) { await pg.exec(sql); },
     async transaction(fn) { return pg.transaction(tx => fn(tx)); },
+    async listen(channel, fn) { return pg.listen(channel, fn); },
     async close() { await pg.close(); }
   };
 }
@@ -123,6 +124,33 @@ function createPgDriver(url) {
       }
     },
     async exec(sql) { await pool.query(sql); },
+    /**
+     * LISTEN on its own connection (a pooled one would be handed to other queries).
+     * Reconnects with back-off, so a database restart doesn't stop live updates.
+     */
+    async listen(channel, fn) {
+      const { Client } = require('pg');
+      let client = null; let stopped = false; let delay = 1000;
+      const connect = () => {
+        if (stopped) return;
+        const c = new Client({ connectionString: url, ssl: isLocal ? false : { rejectUnauthorized: false } });
+        let dead = false;
+        const retry = err => {
+          if (dead) return;
+          dead = true;
+          if (client === c) client = null;
+          if (err) logger.warn('LISTEN connection lost; reconnecting', { channel, error: err.message });
+          c.end().catch(() => {});
+          if (!stopped) { setTimeout(connect, delay).unref(); delay = Math.min(delay * 2, 30000); }
+        };
+        c.on('notification', msg => { if (msg.channel === channel) fn(msg.payload); });
+        c.on('error', retry);
+        c.on('end', () => retry(null));
+        c.connect().then(() => c.query(`LISTEN ${channel}`)).then(() => { client = c; delay = 1000; }).catch(retry);
+      };
+      connect();
+      return async () => { stopped = true; if (client) await client.end().catch(() => {}); };
+    },
     async transaction(fn) {
       const client = await pool.connect();
       try {
@@ -247,11 +275,21 @@ async function useMigrationRole() {
 }
 
 /** True when row-level security applies to this connection's role (not a superuser, not BYPASSRLS). */
+/**
+ * Calls fn(payload) for every NOTIFY on `channel` (all tenants: the payload says which).
+ * Returns an async function that stops listening. Used by the CRM's live board (R3).
+ */
+async function listen(channel, fn) {
+  if (!/^[a-z_]{1,63}$/.test(channel)) throw new Error(`Invalid channel name: ${channel}`);
+  const d = driver || await init();
+  return d.listen(channel, fn);
+}
+
 async function checkRlsActive() {
   const row = await tenancy.runAsSystem(() => one('SELECT rolsuper, rolbypassrls FROM pg_roles WHERE rolname = current_user'));
   return Boolean(row) && !row.rolsuper && !row.rolbypassrls;
 }
 
 module.exports = {
-  init, query, many, one, tx, close, truncateAll, useRestrictedRole, useMigrationRole, checkRlsActive, driverKind: () => driver && driver.kind
+  init, query, many, one, tx, listen, close, truncateAll, useRestrictedRole, useMigrationRole, checkRlsActive, driverKind: () => driver && driver.kind
 };

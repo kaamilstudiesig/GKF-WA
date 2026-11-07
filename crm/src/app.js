@@ -15,6 +15,8 @@ const config = require('./config');
 const auth = require('./auth');
 const { Crm, HttpError } = require('./crm');
 const { Users } = require('./users');
+const { LiveBoard } = require('./liveBoard');
+const tenancy = require('../../src/tenancy/context');
 const { ZohoStatus } = require('./zohoStatus');
 const pwa = require('./pwa');
 const bulkStaff = require('./bulkStaff');
@@ -78,6 +80,8 @@ function createCrmApp({
   app.locals.assetV = assetVersion(); // cache-busting ?v= on CSS/JS links
   const crm = new Crm(db);
   const users = new Users(db);
+  const liveBoard = new LiveBoard(db);
+  app.locals.liveBoard = liveBoard; // tests and shutdown
   const queue = new LeadQueue(db);
   // R2: "waiting N min" on leads assigned but not picked up yet (only while auto-assign is on).
   const withClock = async leads => {
@@ -269,6 +273,9 @@ function createCrmApp({
     await withClock(result.leads);
     res.render('leads', { result, filters, staff: await crm.assignableUsers(req.user) });
   }));
+
+  // R3: live board stream. Pings "board changed" for this client only; no lead data.
+  app.get('/events', (req, res) => liveBoard.subscribe(tenancy.tenantId(), req, res));
 
   app.get('/pipeline', h(async (req, res) => {
     const columns = (await crm.pipelineBoard(req.user)).map(c => ({ ...c, label: res.locals.STAGES[c.stage] || c.label }));

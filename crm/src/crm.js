@@ -498,7 +498,8 @@ class Crm {
           (SELECT o.visit_at FROM crm_lead_outcomes o WHERE o.wa_id = l.wa_id
              AND o.outcome = 'visit_booked' ORDER BY o.created_at DESC, o.id DESC LIMIT 1) AS visit_at,
           (SELECT o.amount_inr FROM crm_lead_outcomes o WHERE o.wa_id = l.wa_id
-             AND o.outcome = 'joined' ORDER BY o.created_at DESC, o.id DESC LIMIT 1) AS joined_amount
+             AND o.outcome = 'joined' ORDER BY o.created_at DESC, o.id DESC LIMIT 1) AS joined_amount,
+          (SELECT MIN(f.due_at) FROM crm_follow_ups f WHERE f.wa_id = l.wa_id AND f.status = 'open') AS next_followup_at
         FROM leads l
         ${ASSIGN_JOIN}
         LEFT JOIN crm_users u ON u.id = a.user_id

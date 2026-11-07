@@ -84,3 +84,45 @@ test('dashboard and Leads filter show waiting leads within each role', async () 
     assert.ok(!(await sales.agent.get('/leads?waiting=1')).text.includes('917700000001'));
   } finally { await ctx.cleanup(); }
 });
+
+test('daily list with a fixed time: exact 2-hour and 30-day edges, resolved hand-offs, alert mode', async () => {
+  const ctx = await setup();
+  try {
+    const NOW = new Date('2030-05-10T12:00:00Z');
+    const at = mins => new Date(NOW.getTime() - mins * 60000).toISOString();
+    const salesId = await ctx.userId('sales');
+    await ctx.db.query("UPDATE crm_users SET alert_phone = '919845000001', alert_mode = 'mine' WHERE id = $1", [salesId]);
+    const add = async (waId, handoffMinsAgo, status = 'assigned') => {
+      await ctx.db.query("INSERT INTO leads (wa_id, status, first_contact_at) VALUES ($1, 'qualified', $2)", [waId, at(handoffMinsAgo + 60)]);
+      await ctx.db.query("INSERT INTO handoffs (wa_id, reason, status, created_at) VALUES ($1, 'ready_to_book', $2, $3)", [waId, status, at(handoffMinsAgo)]);
+      await ctx.db.query('INSERT INTO crm_lead_assignments (wa_id, user_id) VALUES ($1, $2)', [waId, salesId]);
+    };
+    await add('917800000001', 120); // exactly 2 hours: waiting
+    await add('917800000002', 119); // 1 minute short: not yet
+    await add('917800000003', 30 * 24 * 60); // exactly 30 days: still waiting
+    await add('917800000004', 30 * 24 * 60 + 1); // 1 minute past 30 days: too old
+    await add('917800000005', 300, 'resolved'); // staff resolved it but logged nothing: still waiting
+
+    const list = await new Nudges(ctx.db).daily(NOW);
+    const mine = list.find(g => g.user && g.user.id === salesId);
+    assert.deepStrictEqual(mine.leads.map(l => l.waId).filter(w => w.startsWith('9178')).sort(), ['917800000001', '917800000003', '917800000005']);
+    assert.deepStrictEqual([mine.user.alertPhone, mine.user.alertMode], ['919845000001', 'mine']);
+    assert.strictEqual(mine.leads.find(l => l.waId === '917800000001').hours, 2);
+
+    // Alerts turned off: the list says so, so the sender skips WhatsApp.
+    await ctx.db.query("UPDATE crm_users SET alert_mode = 'off' WHERE id = $1", [salesId]);
+    assert.strictEqual((await new Nudges(ctx.db).daily(NOW)).find(g => g.user && g.user.id === salesId).user.alertMode, 'off');
+  } finally { await ctx.cleanup(); }
+});
+
+test('Leads chips: with both "Needs human" and "No outcome" on, neither single chip is highlighted', async () => {
+  const ctx = await setup();
+  try {
+    const owner = await login(ctx.app, 'owner');
+    const chip = (html, label) => new RegExp(`class="[^"]*btn-primary[^"]*">${label}</a>`).test(html);
+    const both = (await owner.agent.get('/leads?waiting=1&needs_human=1')).text;
+    assert.ok(!chip(both, 'Needs human') && !chip(both, 'No outcome'));
+    assert.ok(chip((await owner.agent.get('/leads?waiting=1&sort=waiting')).text, 'No outcome'));
+    assert.ok(chip((await owner.agent.get('/leads?needs_human=1')).text, 'Needs human'));
+  } finally { await ctx.cleanup(); }
+});

@@ -6,12 +6,16 @@ const { Params } = require('./util');
  *
  * A lead is waiting when:
  * - it is still open (not converted, lost or cold),
- * - it needed a person: the bot opened a hand-off, or it is hot,
+ * - it needed a person: the bot opened a hand-off (open or already resolved), or it is hot,
  * - nobody has logged an outcome since then ("since" = the latest hand-off, or
  *   the first message for a hot lead with no hand-off),
  * - that was at least MIN_AGE_HOURS ago (a fresh hand-off is not overdue yet)
  *   and not more than LOOKBACK_DAYS ago (old leads stop nagging).
  * The same rule feeds the dashboard, the Leads filter and the daily list.
+ *
+ * A resolved hand-off still counts: "someone handled it but logged nothing" is exactly
+ * the gap this closes, because reports and the Meta loop only see outcomes. Logging any
+ * outcome ends it.
  */
 
 const MIN_AGE_HOURS = 2;
@@ -39,7 +43,9 @@ class Nudges {
    * The daily list: who has leads waiting, and which. For the bot's morning reminder
    * (Telegram + staff WhatsApp, Kaamil). Runs inside a tenant (tenancy.run), so no
    * tenant filter. Returns
-   *   [{ user: { id, name, email, role, alertPhone } | null, leads: [{ waId, name, since, hours }] }]
+   *   [{ user: { id, name, email, role, alertPhone, alertMode } | null, leads: [{ waId, name, since, hours }] }]
+   * alertMode is the person's WhatsApp alert setting ('off', 'mine', 'all'): send to
+   * alertPhone only when it is not 'off'.
    * one item per active person with waiting leads assigned (oldest lead first), then
    * one item with user null for unassigned leads (send that one to managers and owners).
    * A lead assigned to someone disabled counts as unassigned.
@@ -48,7 +54,7 @@ class Nudges {
     const q = new Params();
     const rows = await this.db.many(`
       SELECT l.wa_id, COALESCE(NULLIF(l.display_name, ''), l.username, l.phone, l.wa_id) AS name, ${SINCE_SQL} AS since,
-        u.id AS user_id, u.name AS user_name, u.email, u.role, u.alert_phone
+        u.id AS user_id, u.name AS user_name, u.email, u.role, u.alert_phone, u.alert_mode
       FROM leads l
         LEFT JOIN crm_lead_assignments a ON a.wa_id = l.wa_id
         LEFT JOIN crm_users u ON u.id = a.user_id AND u.active
@@ -60,7 +66,7 @@ class Nudges {
       const key = r.user_id || 0;
       if (!groups.has(key)) {
         groups.set(key, {
-          user: r.user_id ? { id: r.user_id, name: r.user_name, email: r.email, role: r.role, alertPhone: r.alert_phone || null } : null,
+          user: r.user_id ? { id: r.user_id, name: r.user_name, email: r.email, role: r.role, alertPhone: r.alert_phone || null, alertMode: r.alert_mode || 'off' } : null,
           leads: []
         });
       }

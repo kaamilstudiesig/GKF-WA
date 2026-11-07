@@ -4,7 +4,7 @@
     const qs = new URLSearchParams(params).toString();
     const active = (!qs && !filters.q && !filters.status && !filters.assignee && !filters.needsHuman && !filters.waiting)
       || (params.waiting && filters.waiting && !filters.status && !filters.needsHuman)
-      || (params.needs_human && filters.needsHuman && !filters.status)
+      || (params.needs_human && filters.needsHuman && !filters.status && !filters.waiting)
       || (params.status && filters.status === params.status)
       || (params.assignee && String(filters.assignee) === params.assignee);
     return { label, href: '/leads' + (qs ? '?' + qs : ''), active };

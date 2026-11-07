@@ -268,6 +268,8 @@ Next to the Telegram group, each staff member can get alerts on their own WhatsA
 
 For clients who already run their sales in Zoho CRM. Off until connected per client (`npm run zoho -- --tenant <slug> connect`, steps in [ONBOARDING.md](ONBOARDING.md#manual-flow-today-until-embedded-signup)). The refresh token and client secret are stored encrypted on the tenant; the accounts URL and API domain are per client, since Zoho runs separate data centres (India, UAE, Saudi, US, EU...). Zoho API v8.
 
+**In the CRM** (Krishna, PR `zoho-crm-status`, see [crm/README.md](../crm/README.md#zoho-crm-status)): sync status on Business settings and "Open in Zoho" on the lead page. **To check on the first real connection:** the record link `https://crm.zoho.<dc>/crm/tab/<Module>/<id>` has no `org<id>` segment; if it doesn't open the record, add the org id (read from `/org` at connect) and note the result on the PR.
+
 **Out (us → Zoho).** A database trigger marks a lead in `zoho_links` when it is created, its name, phone, interest or status changes, or an outcome is logged; a new message alone does not. CRM code needs no Zoho calls. `src/workers/zohoWorker.js` sends it:
 
 | Here | In Zoho |

@@ -15,6 +15,7 @@ const config = require('./config');
 const auth = require('./auth');
 const { Crm, HttpError } = require('./crm');
 const { Users } = require('./users');
+const { ZohoStatus } = require('./zohoStatus');
 const pwa = require('./pwa');
 const bulkStaff = require('./bulkStaff');
 const { MIN_AGE_HOURS } = require('./nudges');
@@ -76,6 +77,10 @@ function createCrmApp({
   app.locals.assetV = assetVersion(); // cache-busting ?v= on CSS/JS links
   const crm = new Crm(db);
   const users = new Users(db);
+  // Zoho sync status (K20). Without the bot's tenant registry (standalone CRM) it is simply off.
+  let registry = null;
+  try { registry = require('../../src/tenancy/registry'); } catch (e) { /* standalone */ }
+  const zoho = new ZohoStatus(db, registry || { config: () => ({}) });
   const analytics = new Analytics(db);
   const throttle = new auth.LoginThrottle();
   const branding = new Branding(db, () => (gymConfig ? gymConfig.gymName : ''));
@@ -283,7 +288,8 @@ function createCrmApp({
       activity: await crm.leadActivity(waId),
       outcomes: await crm.leadOutcomes(waId),
       staff: await crm.assignableUsers(req.user),
-      botPausedUntil: await botGuard.pausedUntil(waId)
+      botPausedUntil: await botGuard.pausedUntil(waId),
+      zoho: await zoho.forLead(waId)
     });
   }));
 
@@ -362,7 +368,8 @@ function createCrmApp({
     const { VERTICALS } = require('../../src/config/verticals');
     res.render('settings', {
       profile: gymConfig.profile, meta: await businessProfile.meta(), verticals: VERTICALS,
-      prompt: gymConfig.getSystemPrompt(), limits: businessProfile.LIMITS, brandForm: null, ...extra
+      prompt: gymConfig.getSystemPrompt(), limits: businessProfile.LIMITS, brandForm: null,
+      zoho: await zoho.summary(), ...extra
     });
   };
   app.get('/settings', allow(can.manageBusiness), h(async (req, res) => {

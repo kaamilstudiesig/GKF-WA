@@ -17,6 +17,7 @@ const { Crm, HttpError } = require('./crm');
 const { Users } = require('./users');
 const pwa = require('./pwa');
 const bulkStaff = require('./bulkStaff');
+const { Analytics } = require('./analytics');
 const { Branding } = require('./branding');
 const { can } = require('./permissions');
 const { LEAD_STATUSES, ROLE_LABELS, ROLES, OUTCOMES, LOST_REASONS, STAGES } = require('./constants');
@@ -74,6 +75,7 @@ function createCrmApp({
   app.locals.assetV = assetVersion(); // cache-busting ?v= on CSS/JS links
   const crm = new Crm(db);
   const users = new Users(db);
+  const analytics = new Analytics(db);
   const throttle = new auth.LoginThrottle();
   const branding = new Branding(db, () => (gymConfig ? gymConfig.gymName : ''));
 
@@ -332,7 +334,10 @@ function createCrmApp({
   // ---- reports ----
   app.get('/reports', allow(can.viewReports), h(async (req, res) => {
     const days = [7, 30, 90].includes(Number(req.query.days)) ? Number(req.query.days) : 30;
-    res.render('reports', { r: await crm.reports(req.user, { days, includeAiCost: can.viewAiCost(req.user), usdToInr }) });
+    res.render('reports', {
+      r: await crm.reports(req.user, { days, includeAiCost: can.viewAiCost(req.user), usdToInr }),
+      a: await analytics.summary(req.user, { days, names: res.locals.OUTCOMES })
+    });
   }));
   app.get('/reports/leads.csv', allow(can.exportLeads), h(async (req, res) => {
     const cols = ['wa_id', 'phone', 'username', 'display_name', 'status', 'interest', 'source', 'assignee_name', 'needs_human', 'handoff_reason',

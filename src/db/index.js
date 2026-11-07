@@ -281,7 +281,6 @@ async function useMigrationRole() {
   if (d.kind === 'pglite') await d.exec('RESET ROLE');
 }
 
-/** True when row-level security applies to this connection's role (not a superuser, not BYPASSRLS). */
 /**
  * Calls fn(payload) for every NOTIFY on `channel` (all tenants: the payload says which).
  * onReconnect() runs after the connection dropped and LISTEN works again: anything sent in
@@ -293,6 +292,7 @@ async function listen(channel, fn, opts = {}) {
   return d.listen(channel, fn, opts);
 }
 
+/** True when row-level security applies to this connection's role (not a superuser, not BYPASSRLS). */
 async function checkRlsActive() {
   const row = await tenancy.runAsSystem(() => one('SELECT rolsuper, rolbypassrls FROM pg_roles WHERE rolname = current_user'));
   return Boolean(row) && !row.rolsuper && !row.rolbypassrls;

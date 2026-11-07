@@ -73,7 +73,7 @@ Status: K14–K17 are built and K18 is written (PR `k14-k18-new-client`). R12 is
 **Review of Krishna's 6 open PRs (#33-#38): merge all, fix after.** Each passes all tests merged with `main`; security and client separation are right. They were branched from the same point, so they conflict with each other in `crm/src/app.js` and the docs: rebase and merge one at a time, in this order: R5 (#33) → R11 (#34) → R4 (#36) → Zoho status (#38) → R2 (#35) → R3 (#37). Fixes:
 
 1. R2: the owner's auto-assign switch does nothing until K19 (bot side). Show it as "needs the bot update" until K19 is merged.
-2. R5: speed to lead in working minutes (reuse `workingMinutes` from `crm/src/queue.js`, so after R2).
+2. R5 (definitions in [crm/README.md](../crm/README.md#analytics-r5)): speed to lead in working minutes (reuse `workingMinutes` from `crm/src/queue.js`, so after R2).
 3. R3: every inbound message pings every open board, and each viewer reloads the whole board. Send at most one ping per client every 5 seconds.
 4. R4: iPhones ignore SVG icons; with no uploaded logo the home-screen icon is a screenshot. Serve a PNG `apple-touch-icon`, or tell the owner on Brand settings to upload a square PNG.
 5. Zoho status: the "Open in Zoho" link format is unverified; check it on the first real connection and note the result in the PR.
@@ -175,7 +175,7 @@ Off by default, so nothing changes for GKF until the owner turns it on in **Busi
 | --- | --- | --- | --- |
 | K2 | Alert on outbound send failures (Telegram + Sentry) and on `account_update` webhooks | Kaamil | After the 30 Oct token incident |
 | K7b | Turn on the Conversions API in production (dataset, `whatsapp_business_manage_events`), verify events in Events Manager | Kaamil | |
-| R5 | Analytics: funnel, speed to lead, **logging rate**, per salesperson, lost reasons | Krishna | Baseline numbers for the GKF case study |
+| R5 | ✅ Analytics: funnel, speed to lead, **logging rate**, per salesperson, lost reasons | Krishna | Baseline numbers for the GKF case study |
 
 ### 2. Proof of sale
 

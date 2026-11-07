@@ -38,6 +38,33 @@
   <button class="btn btn-primary w-full sm:w-auto" type="submit">Save lead queue</button>
 </form>
 
+<section class="<%= card %> mb-4" id="zoho">
+  <div class="flex items-center justify-between gap-2">
+    <h2>Zoho CRM</h2>
+    <span class="badge <%= zoho.on ? 'badge-success' : 'badge-ghost' %> badge-soft"><%= zoho.on ? 'Connected' : 'Off' %></span>
+  </div>
+  <% if (!zoho.on) { %>
+  <p class="text-sm text-base-content/60">If your sales team works in Zoho CRM, leads and sales can sync both ways: new leads and outcomes go to Zoho, and deals won or lost there come back here. Ask your setup contact to connect it (it takes a few minutes with your Zoho admin).</p>
+  <% } else { const c = zoho.counts; %>
+  <p class="text-sm text-base-content/60">New leads and outcomes go to Zoho within a minute. Changes in Zoho are read every 5 minutes<% if (zoho.pulledUntil) { %>, last up to <strong class="text-base-content"><%= util.timeAgo(zoho.pulledUntil) %></strong><% } else { %>, not read yet<% } %>.</p>
+  <% if (zoho.readError) { %><div role="alert" class="alert alert-warning alert-soft text-sm">Reading from Zoho failed: <%= zoho.readError %></div><% } %>
+  <div class="grid grid-cols-2 gap-2 sm:grid-cols-4">
+    <% for (const [label, n, cls] of [['In sync', c.synced, ''], ['Waiting to send', c.waiting, ''], ['Retrying', c.retrying, c.retrying ? 'text-warning' : ''], ['Not sent', c.notSent, c.notSent ? 'text-error' : '']]) { %>
+    <div class="rounded-field bg-base-200 p-3"><div class="text-xs text-base-content/60"><%= label %></div><div class="text-2xl font-bold tabular-nums <%= cls %>"><%= n %></div></div>
+    <% } %>
+  </div>
+  <% if (zoho.notSent.length) { %>
+  <div>
+    <p class="mb-1 text-sm font-medium">Zoho refused these leads</p>
+    <ul class="list rounded-field bg-base-200 text-sm">
+      <% for (const x of zoho.notSent) { %><li class="list-row"><div class="min-w-0"><a class="link link-hover font-medium" href="/leads/<%= x.waId %>"><%= x.name %></a><div class="truncate text-xs text-base-content/60"><%= x.error %></div></div></li><% } %>
+    </ul>
+  </div>
+  <% } %>
+  <% if (zoho.domain) { %><a class="link link-primary text-sm" href="<%= zoho.domain %>/crm" target="_blank" rel="noopener noreferrer">Open Zoho CRM</a><% } %>
+  <% } %>
+</section>
+
 <form method="post" action="/settings/brand" id="brand" class="<%= card %> mb-4 scroll-mt-20" data-brand-form>
   <%- include('partials/csrf') %>
   <div class="flex items-center gap-3">
@@ -55,6 +82,7 @@
       <input type="file" accept="image/png,image/jpeg,image/webp" class="file-input w-full" data-logo-file aria-label="Logo image">
       <input type="hidden" name="logo" data-logo-data>
       <p class="label whitespace-normal" data-logo-hint>Square PNG, JPEG or WebP under 40 KB. Replaces the letters.</p>
+      <% if (!brand.logoUrl) { %><p class="label whitespace-normal text-warning">For the app icon on iPhones, upload a square PNG (180×180 or larger). Without one, iPhones show a plain tile in your brand colour.</p><% } %>
       <% if (brand.logoUrl) { %><label class="label mt-1 cursor-pointer gap-2"><input type="checkbox" name="remove_logo" value="1" class="checkbox checkbox-sm"> Remove the current logo</label><% } %>
     </fieldset>
   </div>

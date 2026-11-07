@@ -30,8 +30,12 @@
           <li><a href="<%= href %>" class="tap <%= isActive(href) ? 'menu-active' : '' %>"><%- include('icon', { name: icon }) %><%= label %></a></li>
         <% } %>
       </ul>
+      <div class="mt-auto space-y-2">
+        <button type="button" class="btn btn-primary btn-block" data-install hidden><%- include('icon', { name: 'download', cls: 'size-4' }) %>Install app</button>
+        <p class="rounded-box bg-base-200 p-3 text-xs text-base-content/70" data-ios-install hidden>Install on iPhone: tap <strong>Share</strong>, then <strong>Add to Home Screen</strong>.</p>
+      </div>
       <% if (user.role === 'sales') { %>
-      <form method="post" action="/account/accepting" class="mt-auto rounded-box bg-base-200 p-3">
+      <form method="post" action="/account/accepting" class="rounded-box bg-base-200 p-3">
         <input type="hidden" name="_csrf" value="<%= csrfToken %>">
         <label class="flex cursor-pointer items-center justify-between gap-3">
           <span><span class="block font-semibold">Taking leads</span><span class="block text-xs text-base-content/60"><%= user.accepting ? 'New hand-offs can come to you.' : 'Off: new hand-offs go to others.' %></span></span>
@@ -40,7 +44,7 @@
         <button class="btn btn-sm btn-primary mt-2 w-full js-hide" type="submit">Save</button>
       </form>
       <% } %>
-      <div class="<%= user.role === 'sales' ? '' : 'mt-auto ' %>rounded-box bg-base-200 p-3">
+      <div class="rounded-box bg-base-200 p-3">
         <div class="flex items-center gap-3">
           <div class="avatar avatar-placeholder"><div class="w-10 rounded-full bg-neutral text-neutral-content"><span><%= (user.name || '?').split(' ').map(s => s[0]).join('').slice(0, 2).toUpperCase() %></span></div></div>
           <div class="min-w-0"><div class="truncate font-semibold"><%= user.name %></div><div class="text-xs text-base-content/60"><%= ROLE_LABELS[user.role] %></div></div>

@@ -2,6 +2,9 @@
 <%
   const card = 'rounded-box bg-base-100 p-4';
   const bar = (label, value, max) => ({ label, value, pct: max ? (value / max * 100).toFixed(1) : 0 });
+  const inr = v => '₹' + Number(v || 0).toLocaleString('en-IN');
+  const pctText = v => (v === null || v === undefined ? '—' : v + '%');
+  const minText = v => (v === null || v === undefined ? '—' : v < 60 ? v + ' min' : (v / 60).toFixed(1) + ' h');
 %>
 <div class="mb-4 flex flex-wrap items-end justify-between gap-3">
   <div><p class="text-sm text-base-content/60"><%= user.role === 'owner' ? 'All of ' + brand.name : 'My team and unassigned leads' %></p><h1 class="page-title max-lg:hidden">Reports</h1></div>
@@ -18,6 +21,64 @@
   <div class="<%= card %>"><div class="text-xs text-base-content/60"><%= label %></div><div class="mt-1 text-3xl font-bold tabular-nums <%= cls %>"><%= value %></div><% if (hint) { %><div class="text-[11px] text-base-content/50"><%= hint %></div><% } %></div>
   <% } %>
 </div>
+
+<h2 class="mb-2 mt-6 text-sm font-semibold text-base-content/60">Sales follow-up, last <%= a.days %> days</h2>
+<div class="mb-4 grid grid-cols-2 gap-3 lg:grid-cols-4">
+  <div class="<%= card %>"><div class="text-xs text-base-content/60">Speed to lead</div>
+    <div class="mt-1 text-3xl font-bold tabular-nums <%= a.speedToLead.medianMinutes !== null && a.speedToLead.medianMinutes <= 5 ? 'text-success' : a.speedToLead.medianMinutes !== null ? 'text-warning' : '' %>"><%= minText(a.speedToLead.medianMinutes) %></div>
+    <div class="text-[11px] text-base-content/50">median, hand-off to first contact · <%= pctText(a.speedToLead.withinFiveMinutes) %> within 5 min</div></div>
+  <div class="<%= card %>"><div class="text-xs text-base-content/60">Logging rate</div>
+    <div class="mt-1 text-3xl font-bold tabular-nums <%= a.logging.rate === null ? '' : a.logging.rate >= 80 ? 'text-success' : 'text-warning' %>"><%= pctText(a.logging.rate) %></div>
+    <div class="text-[11px] text-base-content/50">hand-offs with an outcome within 24 h (<%= a.logging.loggedWithin24h %> of <%= a.logging.handoffs %>)</div></div>
+  <div class="<%= card %>"><div class="text-xs text-base-content/60">Not contacted yet</div>
+    <div class="mt-1 text-3xl font-bold tabular-nums <%= a.speedToLead.notContacted ? 'text-error' : '' %>"><%= a.speedToLead.notContacted %></div>
+    <div class="text-[11px] text-base-content/50">of <%= a.speedToLead.handoffs %> hand-offs</div></div>
+  <div class="<%= card %>"><div class="text-xs text-base-content/60">Revenue</div>
+    <div class="mt-1 text-3xl font-bold tabular-nums text-primary"><%= inr(a.funnel.revenueInr) %></div>
+    <div class="text-[11px] text-base-content/50"><%= a.logging.salesRecorded %> sales logged<% if (a.logging.salesRecorded) { %> · <%= pctText(a.logging.autoRate) %> by payment link<% } %></div></div>
+</div>
+
+<div class="mb-4 grid gap-4 lg:grid-cols-2">
+  <section class="<%= card %>">
+    <h2 class="mb-1">Funnel</h2>
+    <p class="mb-3 text-xs text-base-content/50">Leads who first messaged in the last <%= a.days %> days, by the furthest step they reached.</p>
+    <% if (!a.funnel.leads) { %><p class="text-sm text-base-content/60">No new leads in this period.</p><% } else { %>
+    <div class="space-y-2">
+      <% for (const s of a.funnel.stages) { %>
+      <div class="grid grid-cols-[7.5rem_1fr_4.5rem] items-center gap-2 text-sm">
+        <span class="truncate text-base-content/70"><%= s.label %></span>
+        <progress class="progress progress-primary" value="<%= s.ofLeads || 0 %>" max="100" aria-label="<%= s.label %>: <%= s.count %>"></progress>
+        <span class="text-right tabular-nums"><%= s.count %><% if (s.fromPrevious !== null) { %> <span class="text-xs text-base-content/50"><%= s.fromPrevious %>%</span><% } %></span>
+      </div>
+      <% } %>
+    </div>
+    <p class="mt-2 text-xs text-base-content/50">Small % = share of the step before. Won: <%= pctText(a.funnel.winRate) %> of leads.</p>
+    <% } %>
+  </section>
+  <section class="<%= card %>">
+    <h2 class="mb-3">Why leads were lost (<%= a.days %>d)</h2>
+    <% if (!a.lostReasons.length) { %><p class="text-sm text-base-content/60">No leads marked lost in this period.</p><% } else { const maxL = Math.max(...a.lostReasons.map(x => x.count)); %>
+    <div class="space-y-2"><% for (const x of a.lostReasons) { const b = bar(x.label, x.count, maxL); %>
+      <div class="grid grid-cols-[8.5rem_1fr_4.5rem] items-center gap-2 text-sm"><span class="truncate text-base-content/70"><%= x.label %></span><progress class="progress progress-error" value="<%= b.pct %>" max="100"></progress><span class="text-right tabular-nums"><%= x.count %> <span class="text-xs text-base-content/50"><%= x.share %>%</span></span></div>
+    <% } %></div><% } %>
+  </section>
+</div>
+
+<section class="<%= card %> mb-4">
+  <h2 class="mb-3">Sales team (<%= a.days %>d)</h2>
+  <% if (!a.people.length) { %><p class="text-sm text-base-content/60">No staff to show.</p><% } else { %>
+  <div class="overflow-x-auto"><table class="table table-sm">
+    <thead><tr><th>Name</th><th class="text-right">First contacts</th><th class="text-right">Median time</th><th class="text-right">Logging rate</th><th class="text-right">Outcomes</th><th class="text-right"><%= OUTCOMES.joined %></th><th class="text-right">₹</th><th class="text-right">Lost</th></tr></thead>
+    <tbody><% for (const p of a.people) { %>
+      <tr><td><div class="font-medium"><%= p.name %></div><div class="text-xs text-base-content/50"><%= ROLE_LABELS[p.role] %></div></td>
+        <td class="text-right"><%= p.firstContacts %></td>
+        <td class="text-right <%= p.medianMinutes !== null && p.medianMinutes > 5 ? 'text-warning' : '' %>"><%= minText(p.medianMinutes) %></td>
+        <td class="text-right <%= p.loggingRate !== null && p.loggingRate < 80 ? 'text-warning' : '' %>"><%= pctText(p.loggingRate) %></td>
+        <td class="text-right"><%= p.outcomes %></td><td class="text-right"><%= p.won %></td><td class="text-right"><%= inr(p.revenueInr) %></td><td class="text-right"><%= p.lost %></td></tr>
+    <% } %></tbody>
+  </table></div>
+  <p class="mt-2 text-xs text-base-content/50">First contact: the first CRM reply or logged outcome after a hand-off. Logging rate: hand-offs on their leads with an outcome within 24 h.</p><% } %>
+</section>
 
 <div class="grid gap-4 lg:grid-cols-2">
   <section class="<%= card %>">
@@ -54,21 +115,21 @@
   <section class="<%= card %>">
     <h2 class="mb-3">Lead sources (<%= r.days %>d)</h2>
     <% if (!r.sources.length) { %><p class="text-sm text-base-content/60">No leads in this period.</p><% } else { %>
-    <div class="overflow-x-auto"><table class="table table-sm"><thead><tr><th>Source</th><th class="text-right">Leads</th><th class="text-right">Joined</th><th class="text-right">Rate</th></tr></thead><tbody>
+    <div class="overflow-x-auto"><table class="table table-sm"><thead><tr><th>Source</th><th class="text-right">Leads</th><th class="text-right"><%= OUTCOMES.joined %></th><th class="text-right">Rate</th></tr></thead><tbody>
       <% for (const s of r.sources) { %><tr><td class="capitalize"><%= util.humanize(s.source) %></td><td class="text-right"><%= s.c %></td><td class="text-right"><%= s.converted %></td><td class="text-right"><%= s.c ? Math.round(s.converted / s.c * 100) + '%' : '—' %></td></tr><% } %>
     </tbody></table></div><% } %>
   </section>
   <section class="<%= card %>">
     <h2 class="mb-3">Ads (<%= r.days %>d)</h2>
     <% if (!r.ads.length) { %><p class="text-sm text-base-content/60">No leads from Instagram or Facebook ads yet. They appear here once people message from a Click-to-WhatsApp ad.</p><% } else { %>
-    <div class="overflow-x-auto"><table class="table table-sm"><thead><tr><th>Ad</th><th class="text-right">Leads</th><th class="text-right">Warm</th><th class="text-right">Joined</th></tr></thead><tbody>
+    <div class="overflow-x-auto"><table class="table table-sm"><thead><tr><th>Ad</th><th class="text-right">Leads</th><th class="text-right">Warm</th><th class="text-right"><%= OUTCOMES.joined %></th></tr></thead><tbody>
       <% for (const a of r.ads) { %><tr><td><span class="badge badge-ghost badge-xs capitalize"><%= a.platform || 'meta' %></span> <%= a.headline || ('Ad ' + (a.ad_id || 'unknown')) %></td><td class="text-right"><%= a.c %></td><td class="text-right"><%= a.warm %></td><td class="text-right"><%= a.converted %></td></tr><% } %>
     </tbody></table></div><% } %>
   </section>
 </div>
 
 <section class="<%= card %> mt-4">
-  <h2 class="mb-3">Team performance</h2>
+  <h2 class="mb-3">Workload now</h2>
   <% if (!r.reps.length) { %><p class="text-sm text-base-content/60">No staff to show.</p><% } else { %>
   <div class="overflow-x-auto"><table class="table table-sm">
     <thead><tr><th>Name</th><th class="text-right">Assigned</th><th class="text-right">Hot</th><th class="text-right">Won</th><th class="text-right">Lost</th><th class="text-right">Open tasks</th><th class="text-right">Overdue</th><th class="text-right">Actions</th></tr></thead>

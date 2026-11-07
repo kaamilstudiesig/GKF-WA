@@ -310,7 +310,7 @@ Every PR gets a Claude review, started by the PR itself (no session waits or pol
 3. **Re-review after fixes:** add the label `claude-review` to the PR (pushes alone don't re-run it, to save usage).
 4. **Merging stays with Kaamil.** Claude never approves or merges.
 
-Usage: reviews run on Sonnet with a turn cap and only on the events above; `@claude` runs use the default model. Both run on Kaamil's Claude subscription (`CLAUDE_CODE_OAUTH_TOKEN`), so they count against its usage limits, plus GitHub Actions minutes. Without the secret both workflows skip and stay green. The same review runs locally with `/pr-review <number>` (needs `gh`).
+Usage: reviews run on Sonnet with a turn cap and only on the events above; `@claude` runs use the default model. Both run on Kaamil's Claude subscription (`CLAUDE_CODE_OAUTH_TOKEN`), so they count against its usage limits, plus GitHub Actions minutes. If only an `ANTHROPIC_API_KEY` secret is set, they use it instead (billed per use); once `CLAUDE_CODE_OAUTH_TOKEN` is added they switch to it and the key can be deleted. Without either, both workflows skip and stay green. The same review runs locally with `/pr-review <number>` (needs `gh`).
 
 ## Using Claude Code on this repo
 

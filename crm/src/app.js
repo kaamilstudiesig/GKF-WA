@@ -169,6 +169,12 @@ function createCrmApp({
     res.set('Cache-Control', 'no-cache');
     res.send(pwa.iconSvg(res.locals.brand, { pad: req.query.maskable === '1' }));
   });
+  // iPhones need a PNG home-screen icon; head.ejs uses the uploaded logo when there is one.
+  app.get('/brand/apple-touch-icon.png', (req, res) => {
+    res.set('Content-Type', 'image/png');
+    res.set('Cache-Control', 'no-cache');
+    res.send(pwa.solidPng(res.locals.brand.color));
+  });
   app.get('/offline', (req, res) => res.render('offline'));
 
   // ---- auth ----

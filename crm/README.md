@@ -68,7 +68,7 @@ Staff install the CRM on their phone from their own CRM host. It opens full scre
 
 - `/manifest.webmanifest`: name and short name from the business name, `start_url` `/`, standalone, dark theme colour, shortcuts (Leads, Follow-ups, Pipeline). Icons: `/brand/icon.svg` (logo letters on the brand colour, plus a maskable version for Android) and the uploaded logo when it is a square PNG.
 - `/sw.js` (`crm/public/sw.js` with the deploy's asset version): caches only the CSS, JS and `/offline`. **Pages and lead data are never cached** (shared phones, private data). Offline, a page shows **You're offline** instead of the browser's error. A deploy changes the version, so phones pick up new CSS/JS on the next visit.
-- Menu: **Install app** appears when the browser offers it (Android Chrome); on iPhone a short hint (Share → Add to Home Screen), since Safari has no install prompt. Both hide once installed. iPhones use the uploaded logo as the home-screen icon (`apple-touch-icon`); without one, iOS uses a screenshot.
+- Menu: **Install app** appears when the browser offers it (Android Chrome); on iPhone a short hint (Share → Add to Home Screen), since Safari has no install prompt. Both hide once installed. iPhones ignore SVG icons: they use the uploaded logo as the home-screen icon (`apple-touch-icon`), else `/brand/apple-touch-icon.png`, a plain 180×180 tile in the brand colour (built with zlib, no image library). Brand settings tells the owner to upload a square PNG for a proper iPhone icon.
 
 ## Roles
 

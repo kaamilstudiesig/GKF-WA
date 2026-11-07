@@ -10,7 +10,7 @@
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black">
   <meta name="apple-mobile-web-app-title" content="<%= brand.name.length <= 12 ? brand.name : brand.mark %>">
-  <% if (brand.logoUrl) { %><link rel="apple-touch-icon" href="<%= brand.logoUrl %>"><% } %>
+  <link rel="apple-touch-icon" href="<%= brand.logoUrl || '/brand/apple-touch-icon.png' %>">
   <title><%= typeof title !== 'undefined' ? title + ' · ' : '' %><%= brand.name %></title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>

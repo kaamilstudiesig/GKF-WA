@@ -30,6 +30,11 @@ test('manifest, icon, service worker and offline page are public and per client'
     const loginPage = await app.get('/login');
     assert.match(loginPage.text, /<link rel="manifest" href="\/manifest.webmanifest">/);
     assert.match(loginPage.text, /apple-mobile-web-app-capable/);
+    // No logo yet: iPhones get a PNG tile in the brand colour (they ignore SVG icons).
+    assert.match(loginPage.text, /<link rel="apple-touch-icon" href="\/brand\/apple-touch-icon.png">/);
+    const tile = await app.get('/brand/apple-touch-icon.png').buffer(true).parse((res, cb) => { const b = []; res.on('data', d => b.push(d)); res.on('end', () => cb(null, Buffer.concat(b))); });
+    assert.strictEqual(tile.headers['content-type'], 'image/png');
+    assert.deepStrictEqual(pngSize(tile.body), { width: 180, height: 180 });
 
     const m = await app.get('/manifest.webmanifest');
     assert.strictEqual(m.status, 200);
@@ -53,6 +58,9 @@ test('manifest, icon, service worker and offline page are public and per client'
     assert.doesNotMatch(sw.text, /__ASSET_VERSION__/);
     assert.match(sw.text, /const VERSION = '[0-9a-f]{10}'/);
     assert.doesNotMatch(sw.text, /cache\.put|caches\.open\(CACHE\)\.then\(c => c\.put/); // never stores pages
+
+    const ownerForHint = await login(ctx.app, 'owner');
+    assert.match((await ownerForHint.agent.get('/settings')).text, /For the app icon on iPhones, upload a square PNG/);
 
     const offline = await app.get('/offline');
     assert.strictEqual(offline.status, 200);

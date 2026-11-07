@@ -195,6 +195,13 @@ class LeadQueue {
   }
 }
 
+/**
+ * Only the bot assigns leads when a hand-off opens (K19 calls autoAssign). Until that
+ * ships, Business settings shows auto-assign as "needs the bot update" and won't turn it
+ * on, so an owner never thinks it's working. K19 sets LeadQueue.botWired = true.
+ */
+LeadQueue.botWired = false;
+
 class QueueError extends Error {}
 
 module.exports = { LeadQueue, QueueError, workingMinutes, parseTime, DEFAULTS, TIMEZONES, LEVELS };

@@ -198,6 +198,16 @@ test('screens: owner turns the queue on; Taking leads off and deactivation hand 
   try {
     const owner = await login(ctx.app, 'owner');
     assert.match((await owner.agent.get('/settings')).text, /action="\/settings\/queue"/);
+
+    // Until the bot assigns hand-offs (K19), the switch says so and can't be turned on.
+    LeadQueue.botWired = false;
+    const before = (await owner.agent.get('/settings')).text;
+    assert.match(before, /Needs the WhatsApp bot update/);
+    assert.match(before, /name="auto_assign" value="1" class="toggle toggle-primary"\s+disabled/);
+    await owner.agent.post('/settings/queue').type('form').send({ _csrf: owner.csrf, auto_assign: '1', work_start: '09:00', work_end: '21:00', timezone: 'Asia/Kolkata' });
+    assert.strictEqual((await db.one('SELECT auto_assign FROM crm_settings')).auto_assign, false);
+    LeadQueue.botWired = true; // as after K19
+    assert.doesNotMatch((await owner.agent.get('/settings')).text, /Needs the WhatsApp bot update/);
     const bad = await owner.agent.post('/settings/queue').type('form').send({ _csrf: owner.csrf, auto_assign: '1', work_start: '09:00', work_end: '09:00', timezone: 'Asia/Kolkata' });
     assert.strictEqual(bad.status, 400);
     assert.match(bad.text, /different start and end/);
@@ -236,5 +246,5 @@ test('screens: owner turns the queue on; Taking leads off and deactivation hand 
       .send({ _csrf: owner.csrf, name: bala.name, email: bala.email, role: 'sales', manager_id: String(ids.manager) });
     assert.match(decodeURIComponent(deact.headers.location.replace(/\+/g, " ")), /3 leads went to someone else/);
     assert.deepStrictEqual([await assignee(db, w1), await assignee(db, w2), await assignee(db, w3)], [S, S, S]);
-  } finally { await ctx.cleanup(); }
+  } finally { LeadQueue.botWired = false; await ctx.cleanup(); }
 });

@@ -66,7 +66,7 @@ Every lead page starts with **Log outcome** (`#outcome`, also where Telegram's "
 
 `crm/src/queue.js` (contract and K19 wiring in `docs/TEAM.md`, "R2 details"). Storage is platform migration 3 `lead_queue`: `crm_users.accepting`, `crm_lead_assignments.escalation_level` and the per-client `crm_settings` table.
 
-- **Business settings → Lead queue** (owner): auto-assign on/off (off by default), working hours and time zone (India or UAE). Turning it on sets `auto_assign_since`; older assignments never escalate.
+- **Business settings → Lead queue** (owner): auto-assign on/off (off by default; shown as **Needs the WhatsApp bot update** and kept off until K19 sets `LeadQueue.botWired = true`, since only the bot assigns hand-offs as they open), working hours and time zone (India or UAE). Turning it on sets `auto_assign_since`; older assignments never escalate.
 - `autoAssign(waId, { exclude })`: keeps an active, accepting assignee (and restarts their clock), else the sales person with the oldest latest assignment, the previous assignee's team first. Same writes as a manual assignment, logged as `auto_assigned` with no user. Per-client advisory lock, so two at once pick different people.
 - `release(userId)`: hands back leads with an open hand-off that the person hasn't picked up (no CRM reply, no outcome since assignment). Called by the **Taking leads** switch in a sales person's menu and when an owner deactivates someone.
 - `sweep(now)`: 5 working minutes not picked up → their manager (owners if none); 15 → every owner; each level once. Returns who to alert; the bot sends (K19).

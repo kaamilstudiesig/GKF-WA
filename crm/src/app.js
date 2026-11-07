@@ -357,7 +357,7 @@ function createCrmApp({
     res.render('settings', {
       profile: gymConfig.profile, meta: await businessProfile.meta(), verticals: VERTICALS,
       prompt: gymConfig.getSystemPrompt(), limits: businessProfile.LIMITS, brandForm: null,
-      queueSettings: await queue.settings(), TIMEZONES, ...extra
+      queueSettings: await queue.settings(), TIMEZONES, queueBotWired: LeadQueue.botWired, ...extra
     });
   };
   app.get('/settings', allow(can.manageBusiness), h(async (req, res) => {
@@ -380,7 +380,8 @@ function createCrmApp({
   // Branding (R12): logo letters, colour and logo image, on the Business settings page.
   // R2: lead queue settings (auto-assign, working hours, time zone).
   app.post('/settings/queue', allow(can.manageBusiness), h(async (req, res) => {
-    const input = { autoAssign: req.body.auto_assign === '1', workStart: req.body.work_start, workEnd: req.body.work_end, timezone: req.body.timezone };
+    // Until the bot calls autoAssign (K19), turning it on would do nothing: keep it off.
+    const input = { autoAssign: LeadQueue.botWired && req.body.auto_assign === '1', workStart: req.body.work_start, workEnd: req.body.work_end, timezone: req.body.timezone };
     try {
       await queue.saveSettings(input, req.user.email);
     } catch (err) {

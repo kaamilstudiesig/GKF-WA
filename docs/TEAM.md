@@ -135,7 +135,7 @@ Off by default, so nothing changes for GKF until the owner turns it on in **Busi
 
 *Built as agreed, with one detail:* when `autoAssign` keeps the current assignee for a new hand-off, it restarts their clock (`assigned_at` now, level 0), so the 5/15 minutes count from this hand-off, not from an old assignment.
 
-*Bot side (Kaamil, K19)*: `handoffRepository.open` calls `autoAssign` before `notifyService` / `staffAlerts`, so "their leads only" alerts reach the new assignee, wrapped so a queue error never blocks the hand-off. The minute housekeeping timer runs `sweep()` per tenant in `tenancy.run` and sends a `not_picked_up` alert for each result; the text uses `level` ("not picked up in 5 min" / "15 min").
+*Bot side (Kaamil, K19)*: set `require('../../crm/src/queue').LeadQueue.botWired = true` where the bot wires it in (until then Business settings shows auto-assign as "needs the bot update" and keeps it off). `handoffRepository.open` calls `autoAssign` before `notifyService` / `staffAlerts`, so "their leads only" alerts reach the new assignee, wrapped so a queue error never blocks the hand-off. The minute housekeeping timer runs `sweep()` per tenant in `tenancy.run` and sends a `not_picked_up` alert for each result; the text uses `level` ("not picked up in 5 min" / "15 min").
 
 **Kaamil, in this order**
 

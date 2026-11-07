@@ -24,7 +24,10 @@
   <%- include('partials/csrf') %>
   <h2>Lead queue</h2>
   <p class="text-sm text-base-content/60">When the bot hands a lead to a person, give it to a sales person straight away, in turn. If nobody replies or logs an outcome, their manager is alerted after 5 working minutes and the owners after 15.</p>
-  <label class="label tap cursor-pointer gap-3 text-base-content"><input type="checkbox" name="auto_assign" value="1" class="toggle toggle-primary" <%= qs.auto_assign ? 'checked' : '' %>> Auto-assign hand-offs</label>
+  <% if (!queueBotWired) { %>
+  <div role="status" class="alert alert-warning alert-soft text-sm"><span><strong>Needs the WhatsApp bot update.</strong> Auto-assign starts working once the bot assigns hand-offs as they open. Until then, assign leads by hand. You can set working hours now.</span></div>
+  <% } %>
+  <label class="label tap gap-3 text-base-content <%= queueBotWired ? 'cursor-pointer' : 'opacity-60' %>"><input type="checkbox" name="auto_assign" value="1" class="toggle toggle-primary" <%= qs.auto_assign && queueBotWired ? 'checked' : '' %> <%= queueBotWired ? '' : 'disabled' %>> Auto-assign hand-offs</label>
   <div class="grid grid-cols-2 gap-2 sm:grid-cols-[9rem_9rem_1fr]">
     <fieldset class="<%= field %>"><legend class="fieldset-legend">Working from</legend><input type="time" name="work_start" value="<%= qs.work_start %>" required class="input w-full"></fieldset>
     <fieldset class="<%= field %>"><legend class="fieldset-legend">Until</legend><input type="time" name="work_end" value="<%= qs.work_end %>" required class="input w-full"></fieldset>

@@ -8,7 +8,8 @@ const { Params } = require('./util');
  * - it is still open (not converted, lost or cold),
  * - it needed a person: the bot opened a hand-off (open or already resolved), or it is hot,
  * - nobody has logged an outcome since then ("since" = the latest hand-off, or
- *   the first message for a hot lead with no hand-off),
+ *   the first message for a hot lead with no hand-off; leads don't store when they turned
+ *   hot, so such a lead is tracked only for 30 days after its first message),
  * - that was at least MIN_AGE_HOURS ago (a fresh hand-off is not overdue yet)
  *   and not more than LOOKBACK_DAYS ago (old leads stop nagging).
  * The same rule feeds the dashboard, the Leads filter and the daily list.

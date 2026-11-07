@@ -126,3 +126,16 @@ test('Leads chips: with both "Needs human" and "No outcome" on, neither single c
     assert.ok(chip((await owner.agent.get('/leads?needs_human=1')).text, 'Needs human'));
   } finally { await ctx.cleanup(); }
 });
+
+test('limit: a hot lead with no hand-off is tracked only for 30 days after its first message', async () => {
+  const ctx = await setup();
+  try {
+    const NOW = new Date('2030-05-10T12:00:00Z');
+    const daysAgo = d => new Date(NOW.getTime() - d * 86400000).toISOString();
+    await ctx.db.query("INSERT INTO leads (wa_id, status, first_contact_at) VALUES ('917900000001', 'hot', $1)", [daysAgo(10)]);
+    await ctx.db.query("INSERT INTO leads (wa_id, status, first_contact_at) VALUES ('917900000002', 'hot', $1)", [daysAgo(35)]);
+    const ids = (await new Nudges(ctx.db).daily(NOW)).flatMap(g => g.leads.map(l => l.waId));
+    assert.ok(ids.includes('917900000001'));
+    assert.ok(!ids.includes('917900000002')); // documented limit (crm/README.md)
+  } finally { await ctx.cleanup(); }
+});

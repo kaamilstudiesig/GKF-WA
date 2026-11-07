@@ -86,7 +86,7 @@ Scope follows the user like every other page (owner: all; manager: their team an
 - **Leads:** the **No outcome** chip and checkbox (`?waiting=1`), and the sort **Waiting longest for an outcome** (`sort=waiting`).
 - `Nudges.daily(now)`: the per-person morning list the bot sends (contract in `docs/TEAM.md`).
 
-Each person sees only their own leads, as everywhere else. Logging any outcome takes the lead off the list until the bot opens a new hand-off. A hand-off staff resolved without logging an outcome still counts (that is the gap this closes); the 2-hour and 30-day bounds are inclusive.
+Each person sees only their own leads, as everywhere else. Logging any outcome takes the lead off the list until the bot opens a new hand-off. A hand-off staff resolved without logging an outcome still counts (that is the gap this closes); the 2-hour and 30-day bounds are inclusive. **Limit:** a hot lead with no hand-off is timed from its first message (we don't store when it turned hot), so it is tracked only for 30 days after first contact; one that first wrote 5 weeks ago and turned hot yesterday doesn't show. Leads that need a person almost always get a hand-off from the bot, which restarts the clock.
 
 ## Roles
 

@@ -54,6 +54,22 @@ prefixed `crm_`.
 
 Every lead page starts with **Log outcome** (`#outcome`, also where Telegram's "✅ Log outcome" button lands): one tap for *Called, spoke · No answer · WhatsApp sent · Visited · No-show*, and short forms for *Visit booked* (date/time), *Joined* (plan + ₹ paid) and *Lost* (reason). Each outcome updates the lead's status, resolves the bot's hand-off once someone has actually been in touch, and books the next follow-up automatically (no answer → retry in 2h, next day, 3 days, weekly). The rules are in `docs/TEAM.md` under "Lead outcomes".
 
+## Analytics (R5)
+
+`crm/src/analytics.js`: `new Analytics(db).summary(user, { days, now, names })` returns plain objects (the Reports page renders them; K21 and scripts can call it with no user for the whole business, inside `tenancy.run`). `names` is `namesFor(type).OUTCOMES`, so stage labels follow the business type (real estate: Site visit booked, Booked).
+
+| Number | Definition |
+| --- | --- |
+| Funnel | Leads whose first message is in the period, by the furthest step reached: Leads → Contacted → Qualified → Visit booked → Visited → Won. Outcomes decide (No answer is not contact; No-show still counts as booked); the lead's status fills in for leads with no outcome. Each step shows its share of the step before |
+| First contact | The first staff reply sent from the CRM or the first outcome logged after a hand-off opened (a logged No answer counts: someone tried). Bot replies don't count |
+| Speed to lead | Median minutes from hand-off to first contact, for hand-offs opened in the period; plus the share within 5 minutes and how many are not contacted yet |
+| Logging rate | Hand-offs with an outcome within 24 h. A hand-off younger than 24 h counts only once it has one. Target 80%+ |
+| Sales recorded automatically | Won outcomes in the period that a paid payment link logged (K11) |
+| Lost reasons | Lost outcomes logged in the period, by reason, with share |
+| Per person (not owners) | First contacts made and their median time, outcomes logged, won, ₹, lost, and the logging rate of hand-offs on leads assigned to them |
+
+Scope follows the user like every other page (owner: all; manager: their team and unassigned leads).
+
 ## Adding many staff (R13)
 
 **Staff → Add many** (owner only, `/users/bulk`, `crm/src/bulkStaff.js`). Paste CSV (commas, or tabs from a spreadsheet; a header line is skipped) and/or fill rows of `name, email, role, manager email, WhatsApp number`. Role is owner, manager or sales (empty = sales). Up to 100 people at a time.

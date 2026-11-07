@@ -78,6 +78,14 @@ Scope follows the user like every other page (owner: all; manager: their team an
 - Then all are saved in one transaction: managers first, so sales can point to a manager from the same list. A WhatsApp number turns on alerts for their own leads (`alert_mode = 'mine'`).
 - Each person gets a random one-time password (`auth.oneTimePassword`, also used by `crm:owner`), shown once on the result page (`Cache-Control: no-store`) with a CSV download. Only the hash is stored; everyone must change it at first login.
 
+## Installable app (R4)
+
+Staff install the CRM on their phone from their own CRM host. It opens full screen like an app, with the client's name and icon (`crm/src/pwa.js`, all public so the browser can fetch them before login):
+
+- `/manifest.webmanifest`: name and short name from the business name, `start_url` `/`, standalone, dark theme colour, shortcuts (Leads, Follow-ups, Pipeline). Icons: `/brand/icon.svg` (logo letters on the brand colour, plus a maskable version for Android) and the uploaded logo when it is a square PNG.
+- `/sw.js` (`crm/public/sw.js` with the deploy's asset version): caches only the CSS, JS and `/offline`. **Pages and lead data are never cached** (shared phones, private data). Offline, a page shows **You're offline** instead of the browser's error. A deploy changes the version, so phones pick up new CSS/JS on the next visit.
+- Menu: **Install app** appears when the browser offers it (Android Chrome); on iPhone a short hint (Share → Add to Home Screen), since Safari has no install prompt. Both hide once installed. iPhones ignore SVG icons: they use the uploaded logo as the home-screen icon (`apple-touch-icon`), else `/brand/apple-touch-icon.png`, a plain 180×180 tile in the brand colour (built with zlib, no image library). Brand settings tells the owner to upload a square PNG for a proper iPhone icon.
+
 ## Waiting for an outcome (R11)
 
 `crm/src/nudges.js`: a lead is waiting when it is still open, needed a person (a bot hand-off, or status hot) and nobody has logged an outcome since, for 2 hours to 30 days (`MIN_AGE_HOURS`, `LOOKBACK_DAYS`). `waitingSql(q, now)` is the SQL used by:

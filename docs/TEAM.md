@@ -182,7 +182,7 @@ Off by default, so nothing changes for GKF until the owner turns it on in **Busi
 | K11 | ✅ **Payment links:** staff send a Razorpay/UPI link from the CRM; the `payment_link.paid` webhook logs Won + ₹ on the lead and triggers the Conversions API event | Kaamil | The lead key goes in the link's `reference_id`/`notes` |
 | K13 | ✅ **AI-suggested outcomes:** the reply call also returns a suggested outcome ("paid", "visit booked Sat 7am"); staff confirm with one tap. The AI never logs a sale on its own | Kaamil | Still one AI call per reply |
 | R3 | **Live board:** server-sent events so the kanban pipeline updates for everyone in real time; overdue cards red | Krishna | No websockets or extra services |
-| R4 | **PWA:** manifest + service worker so sales installs the CRM on their phone | Krishna | |
+| R4 | ✅ **PWA:** manifest + service worker so sales installs the CRM on their phone | Krishna | Per-client name and icon from the branding; no lead data cached |
 | R11 | Unlogged-lead nudges: daily list per salesperson of hot leads with no outcome | Krishna | CRM side built (dashboard, Leads filter, `Nudges.daily()`). **Open until R11b:** the morning send (Kaamil, contract below) |
 
 ### 3. Revenue per ad

@@ -15,6 +15,7 @@ const config = require('./config');
 const auth = require('./auth');
 const { Crm, HttpError } = require('./crm');
 const { Users } = require('./users');
+const pwa = require('./pwa');
 const bulkStaff = require('./bulkStaff');
 const { MIN_AGE_HOURS } = require('./nudges');
 const { Analytics } = require('./analytics');
@@ -154,6 +155,31 @@ function createCrmApp({
     res.set('Cache-Control', req.query.v ? 'public, max-age=31536000, immutable' : 'no-cache');
     res.send(logo.data);
   }));
+
+  // ---- installable app (R4). Public: the browser fetches these before anyone logs in. ----
+  const SW_SOURCE = fs.readFileSync(path.join(__dirname, '..', 'public', 'sw.js'), 'utf8').replace('__ASSET_VERSION__', app.locals.assetV);
+  app.get('/sw.js', (req, res) => {
+    res.set('Content-Type', 'text/javascript; charset=utf-8');
+    res.set('Cache-Control', 'no-cache'); // browsers must see a new version right after a deploy
+    res.send(SW_SOURCE);
+  });
+  app.get('/manifest.webmanifest', h(async (req, res) => {
+    res.set('Content-Type', 'application/manifest+json; charset=utf-8');
+    res.set('Cache-Control', 'no-cache');
+    res.send(JSON.stringify(pwa.manifest(res.locals.brand, await branding.logo())));
+  }));
+  app.get('/brand/icon.svg', (req, res) => {
+    res.set('Content-Type', 'image/svg+xml');
+    res.set('Cache-Control', 'no-cache');
+    res.send(pwa.iconSvg(res.locals.brand, { pad: req.query.maskable === '1' }));
+  });
+  // iPhones need a PNG home-screen icon; head.ejs uses the uploaded logo when there is one.
+  app.get('/brand/apple-touch-icon.png', (req, res) => {
+    res.set('Content-Type', 'image/png');
+    res.set('Cache-Control', 'no-cache');
+    res.send(pwa.solidPng(res.locals.brand.color));
+  });
+  app.get('/offline', (req, res) => res.render('offline'));
 
   // ---- auth ----
   app.get('/login', (req, res) => (req.user ? res.redirect('/') : res.render('login', { email: '' })));

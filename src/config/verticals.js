@@ -33,6 +33,8 @@ const gym = {
     bookButton: 'Book a trial',
     staffButton: 'Talk to a coach'
   },
+  // Lost reasons in this business's words (keys from LOST_REASONS in crm/src/constants.js).
+  lostReasons: { distance: 'Too far', timing: 'Timings don\'t suit', joined_elsewhere: 'Joined another gym' },
   // Names on the CRM and in the prompt. Missing keys fall back to the defaults in labelsFor().
   labels: {},
   examples(profile) {
@@ -126,6 +128,10 @@ const realestate = {
     bookButton: 'Book site visit',
     staffButton: 'Talk to advisor'
   },
+  lostReasons: {
+    price: 'Budget', distance: 'Location', timing: 'Not ready to buy yet', joined_elsewhere: 'Bought elsewhere',
+    no_response: 'Stopped replying', not_interested: 'Not interested'
+  },
   labels: {
     programs: 'Projects and properties', plans: 'Unit types and prices', planName: '2 BHK', planPrice: '₹85L onwards',
     visit_booked: 'Site visit booked', visited: 'Site visited', no_show: 'Missed site visit', joined: 'Booked'
@@ -153,4 +159,11 @@ function labelsFor(type) {
   return { ...DEFAULT_LABELS, ...(v.labels || {}) };
 }
 
-module.exports = { VERTICALS, verticalFor: type => VERTICALS[type] || gym, labelsFor };
+/** Lost-reason wording for a business type, by key; missing keys use the neutral defaults. */
+function lostReasonsFor(type) {
+  const { LOST_REASONS } = require('../../crm/src/constants');
+  const v = VERTICALS[type] || gym;
+  return { ...LOST_REASONS, ...(v.lostReasons || {}) };
+}
+
+module.exports = { VERTICALS, verticalFor: type => VERTICALS[type] || gym, labelsFor, lostReasonsFor };

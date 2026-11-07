@@ -25,11 +25,14 @@ const OUTCOMES = {
   joined: 'Joined',
   lost: 'Lost'
 };
+// Why a lead was lost. The keys never change (stored outcomes, AI suggestions and Zoho use
+// them); the wording here is neutral, and each business type can reword them
+// (lostReasons in src/config/verticals.js, e.g. real estate "Bought elsewhere").
 const LOST_REASONS = {
   price: 'Price too high',
-  distance: 'Too far',
-  timing: 'Timings don\'t suit',
-  joined_elsewhere: 'Joined another gym',
+  distance: 'Location',
+  timing: 'Timing doesn\'t suit',
+  joined_elsewhere: 'Went with someone else',
   no_response: 'Stopped replying',
   not_interested: 'Not interested',
   other: 'Other'

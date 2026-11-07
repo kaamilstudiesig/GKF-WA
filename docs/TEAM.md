@@ -77,7 +77,7 @@ Status: K14–K17 are built and K18 is written (PR `k14-k18-new-client`). R12 is
 3. R3: every inbound message pings every open board, and each viewer reloads the whole board. Send at most one ping per client every 5 seconds.
 4. R4: iPhones ignore SVG icons; with no uploaded logo the home-screen icon is a screenshot. Serve a PNG `apple-touch-icon`, or tell the owner on Brand settings to upload a square PNG.
 5. Zoho status: the "Open in Zoho" link format is unverified; check it on the first real connection and note the result in the PR.
-6. Lost reasons are gym wording ("Joined another gym") for every business. Move the labels into the business-type packs (`labels` in `src/config/verticals.js`), with real estate wording ("Bought elsewhere", "Budget", "Location").
+6. ✅ (PR `lost-reasons-per-type`) Lost reasons are gym wording ("Joined another gym") for every business. Move the labels into the business-type packs (`labels` in `src/config/verticals.js`), with real estate wording ("Bought elsewhere", "Budget", "Location").
 
 **Krishna, in this order** (one PR each; a contract PR first where marked):
 
@@ -251,7 +251,7 @@ Off until `RAZORPAY_KEY_ID`, `RAZORPAY_KEY_SECRET` and `RAZORPAY_WEBHOOK_SECRET`
 
 ## Business types (K16 + real estate)
 
-`src/config/verticals.js` has one pack per business type: `gym`, `services` (general), `realestate`. A pack sets how the AI sells (qualify questions, examples), the words in the free fixed replies and buttons (`words`), and display names (`labels`): settings field names, outcome and stage names (real estate: Site visit booked, Site visited, Booked). The CRM reads them per request (`namesFor` in `crm/src/app.js`); internal keys (`joined`, `visit_booked`) never change, so reports, K7 and K11 work the same for every type. Packs hold no personal data: no names, addresses or phone numbers in examples. Sales up to ₹10 crore can be logged (payment links stay at ₹10 lakh).
+`src/config/verticals.js` has one pack per business type: `gym`, `services` (general), `realestate`. **Lost reasons** keep the same keys everywhere (`LOST_REASONS` in `crm/src/constants.js`: neutral wording); a pack's `lostReasons` rewords them (real estate: Budget, Location, Not ready to buy yet, Bought elsewhere), read with `lostReasonsFor(type)` for the lead page, pipeline and reports. A pack sets how the AI sells (qualify questions, examples), the words in the free fixed replies and buttons (`words`), and display names (`labels`): settings field names, outcome and stage names (real estate: Site visit booked, Site visited, Booked). The CRM reads them per request (`namesFor` in `crm/src/app.js`); internal keys (`joined`, `visit_booked`) never change, so reports, K7 and K11 work the same for every type. Packs hold no personal data: no names, addresses or phone numbers in examples. Sales up to ₹10 crore can be logged (payment links stay at ₹10 lakh).
 
 ## Staff WhatsApp alerts (built)
 

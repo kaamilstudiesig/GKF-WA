@@ -1,9 +1,47 @@
 // Small progressive enhancements; every page still works without this file.
 document.documentElement.classList.add('js');
 
+// R4: installable app. The service worker only caches CSS/JS and an offline page (see /sw.js).
+if ('serviceWorker' in navigator && window.isSecureContext) {
+  window.addEventListener('load', () => navigator.serviceWorker.register('/sw.js').catch(() => {}));
+}
+// Android/desktop Chrome: keep the install prompt for our own "Install app" button.
+let installPrompt = null;
+window.addEventListener('beforeinstallprompt', e => {
+  e.preventDefault();
+  installPrompt = e;
+  document.querySelectorAll('[data-install]').forEach(b => { b.hidden = false; });
+});
+window.addEventListener('appinstalled', () => {
+  installPrompt = null;
+  document.querySelectorAll('[data-install]').forEach(b => { b.hidden = true; });
+});
+
 document.addEventListener('DOMContentLoaded', () => {
+  // "Install app" (shown once the browser offers it) and the iPhone hint (Safari has no prompt).
+  const standalone = window.matchMedia('(display-mode: standalone)').matches || navigator.standalone === true;
+  document.querySelectorAll('[data-install]').forEach(b => {
+    b.hidden = standalone || !installPrompt;
+    b.addEventListener('click', async () => {
+      if (!installPrompt) return;
+      installPrompt.prompt();
+      await installPrompt.userChoice.catch(() => null);
+      installPrompt = null;
+      b.hidden = true;
+    });
+  });
+  const isIos = /iphone|ipad|ipod/i.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+  document.querySelectorAll('[data-ios-install]').forEach(el => { el.hidden = standalone || !isIos; });
+
   // Keep the conversation scrolled to the latest message.
   document.querySelectorAll('[data-chat]').forEach(el => { el.scrollTop = el.scrollHeight; });
+
+  // Auto-submit checkboxes marked with data-autosubmit ("Taking leads" switch); hide their Save button.
+  document.querySelectorAll('input[type=checkbox][data-autosubmit]').forEach(box => {
+    box.addEventListener('change', () => box.form.submit());
+    const btn = box.form.querySelector('.js-hide');
+    if (btn) btn.hidden = true;
+  });
 
   // Auto-submit selects marked with data-autosubmit (pipeline status changes).
   document.querySelectorAll('select[data-autosubmit]').forEach(sel => {

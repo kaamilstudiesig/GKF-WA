@@ -87,7 +87,57 @@ document.addEventListener('DOMContentLoaded', () => {
     openDialog(link.closest('.kanban-card'), link.dataset.move);
   });
 
+  // ---- overdue follow-ups: cards turn red when their next follow-up is due (checked every minute) ----
+  const markOverdue = () => {
+    const now = new Date().toISOString();
+    board.querySelectorAll('.kanban-card').forEach(card => {
+      const late = Boolean(card.dataset.due) && card.dataset.due < now;
+      card.classList.toggle('border-error', late);
+      card.classList.toggle('border-base-300', !late);
+      const badge = card.querySelector('[data-overdue]');
+      if (badge) badge.hidden = !late;
+    });
+  };
+  setInterval(markOverdue, 60000);
+
+  // ---- live board (R3): the server pings when anyone changes a lead; reload the cards ----
+  let dragging = false;
+  let pending = false;
+  const busy = () => dragging || dialog?.open || sheet?.open || board.querySelector('details[open]');
+  const refresh = async () => {
+    if (busy()) { pending = true; return; }
+    pending = false;
+    try {
+      const res = await fetch(location.pathname + location.search, { credentials: 'same-origin', headers: { Accept: 'text/html' } });
+      if (!res.ok || res.redirected) return;
+      const doc = new DOMParser().parseFromString(await res.text(), 'text/html');
+      const fresh = doc.querySelector('[data-kanban]');
+      if (!fresh || busy()) { pending = true; return; }
+      const scroll = board.scrollLeft;
+      board.innerHTML = fresh.innerHTML;
+      board.scrollLeft = scroll;
+      const summary = doc.querySelector('[data-board-summary]');
+      const mine = document.querySelector('[data-board-summary]');
+      if (summary && mine) { mine.innerHTML = summary.innerHTML; mine.querySelector('[data-live]').hidden = false; }
+      markOverdue();
+      initDrag();
+    } catch (e) { pending = true; }
+  };
+  setInterval(() => { if (pending) refresh(); }, 2000); // catch up after a drag or dialog
+  if (window.EventSource) {
+    const live = document.querySelector('[data-live]');
+    let timer = null;
+    const stream = new EventSource('/events');
+    stream.addEventListener('ready', e => {
+      try { if (live) live.hidden = !JSON.parse(e.data).live; } catch (err) { /* stays hidden */ }
+    });
+    stream.addEventListener('board', () => { clearTimeout(timer); timer = setTimeout(refresh, 300); });
+    stream.onerror = () => { if (live) live.hidden = true; }; // the browser reconnects by itself
+    window.addEventListener('pagehide', () => stream.close());
+  }
+
   // ---- drag-and-drop on devices with a mouse/trackpad ----
+  function initDrag() {
   if (!window.Sortable || !window.matchMedia('(pointer: fine)').matches) return;
 
   const move = async (card, stage) => {
@@ -112,7 +162,9 @@ document.addEventListener('DOMContentLoaded', () => {
       ghostClass: 'kanban-ghost',
       chosenClass: 'kanban-chosen',
       dragClass: 'kanban-drag',
+      onStart: () => { dragging = true; },
       onEnd: async evt => {
+        dragging = false;
         if (evt.from === evt.to) return;
         const card = evt.item;
         const stage = evt.to.dataset.stage;
@@ -132,4 +184,6 @@ document.addEventListener('DOMContentLoaded', () => {
       }
     });
   });
+  }
+  initDrag();
 });

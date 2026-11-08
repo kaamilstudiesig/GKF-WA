@@ -6,10 +6,11 @@
   const revenue = columns.find(c => c.stage === 'joined').revenue;
   const initials = l => (l.display_name || '#').split(' ').map(s => s[0]).join('').slice(0, 2).toUpperCase();
   const cap = s => (s ? s[0].toUpperCase() + s.slice(1) : s);
+  const nowIso = new Date().toISOString();
 %>
 <div class="mb-4 flex flex-wrap items-end justify-between gap-3">
   <div>
-    <p class="text-sm text-base-content/60"><%= totalLeads %> leads<% if (revenue) { %> · <span class="text-success">₹<%= revenue.toLocaleString('en-IN') %> joined</span><% } %></p>
+    <p class="text-sm text-base-content/60" data-board-summary><span class="badge badge-success badge-soft badge-xs mr-1 align-middle" data-live hidden title="Updates by itself when anyone changes a lead">Live</span><%= totalLeads %> leads<% if (revenue) { %> · <span class="text-success">₹<%= revenue.toLocaleString('en-IN') %> joined</span><% } %></p>
     <h1 class="page-title max-lg:hidden">Pipeline</h1>
   </div>
   <p class="text-xs text-base-content/50"><span class="max-lg:hidden">Drag a card to another stage.</span><span class="lg:hidden">Swipe across stages · tap Move to change a lead's stage.</span></p>
@@ -25,7 +26,8 @@
     <% if (col.stage === 'joined' && col.revenue) { %><p class="-mt-1 px-3 pb-2 text-xs text-success">₹<%= col.revenue.toLocaleString('en-IN') %></p><% } %>
     <div class="kanban-list flex min-h-24 flex-1 flex-col gap-2 px-2 pb-3" data-stage="<%= col.stage %>">
       <% for (const l of col.leads) { %>
-      <article class="kanban-card group rounded-field border border-base-300 bg-base-200 p-3" data-wa="<%= l.wa_id %>" data-name="<%= util.leadTitle(l) %>">
+      <% const overdue = l.next_followup_at && l.next_followup_at < nowIso; %>
+      <article class="kanban-card group rounded-field border bg-base-200 p-3 <%= overdue ? 'border-error' : 'border-base-300' %>" data-wa="<%= l.wa_id %>" data-name="<%= util.leadTitle(l) %>" data-due="<%= l.next_followup_at || '' %>">
         <div class="flex items-start gap-2">
           <div class="avatar avatar-placeholder"><div class="w-8 rounded-full <%= l.needs_human ? 'bg-primary text-primary-content' : 'bg-neutral text-neutral-content' %>"><span class="text-[11px] font-semibold"><%= initials(l) %></span></div></div>
           <div class="min-w-0 flex-1">
@@ -35,6 +37,8 @@
         </div>
         <div class="mt-2 flex flex-wrap items-center gap-1">
           <% if (l.needs_human) { %><span class="badge badge-primary badge-xs">Needs human</span><% } %>
+          <span class="badge badge-error badge-soft badge-xs" data-overdue <%= overdue ? '' : 'hidden' %>>Follow-up overdue</span>
+          <%- include('partials/clock', { clock: l.clock }) %>
           <% if (l.visit_outcome === 'no_show') { %><span class="badge badge-warning badge-soft badge-xs">No-show</span><% } %>
           <% if (col.stage === 'visit_booked' && l.visit_at) { %><span class="badge badge-ghost badge-xs"><%= util.fmtDate(l.visit_at) %></span><% } %>
           <% if (col.stage === 'joined' && l.joined_amount) { %><span class="badge badge-success badge-soft badge-xs">₹<%= Number(l.joined_amount).toLocaleString('en-IN') %></span><% } %>

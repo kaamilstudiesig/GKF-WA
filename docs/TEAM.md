@@ -133,7 +133,9 @@ Off by default, so nothing changes for GKF until the owner turns it on in **Busi
 
 *Tests (Krishna)*: round-robin order; two `autoAssign` calls at once pick different people; old leads not escalated after turning on; no alerts outside working hours; `release` moves only not-picked-up leads; one client's queue never sees another client's staff.
 
-*Bot side (Kaamil, K19)*: `handoffRepository.open` calls `autoAssign` before `notifyService` / `staffAlerts`, so "their leads only" alerts reach the new assignee, wrapped so a queue error never blocks the hand-off. The minute housekeeping timer runs `sweep()` per tenant in `tenancy.run` and sends a `not_picked_up` alert for each result; the text uses `level` ("not picked up in 5 min" / "15 min").
+*Built as agreed, with one detail:* when `autoAssign` keeps the current assignee for a new hand-off, it restarts their clock (`assigned_at` now, level 0), so the 5/15 minutes count from this hand-off, not from an old assignment.
+
+*Bot side (Kaamil, K19)*: set `require('../../crm/src/queue').LeadQueue.botWired = true` where the bot wires it in (until then Business settings shows auto-assign as "needs the bot update" and keeps it off). `handoffRepository.open` calls `autoAssign` before `notifyService` / `staffAlerts`, so "their leads only" alerts reach the new assignee, wrapped so a queue error never blocks the hand-off. The minute housekeeping timer runs `sweep()` per tenant in `tenancy.run` and sends a `not_picked_up` alert for each result; the text uses `level` ("not picked up in 5 min" / "15 min").
 
 **Kaamil, in this order**
 
@@ -181,9 +183,9 @@ Off by default, so nothing changes for GKF until the owner turns it on in **Busi
 | --- | --- | --- | --- |
 | K11 | ✅ **Payment links:** staff send a Razorpay/UPI link from the CRM; the `payment_link.paid` webhook logs Won + ₹ on the lead and triggers the Conversions API event | Kaamil | The lead key goes in the link's `reference_id`/`notes` |
 | K13 | ✅ **AI-suggested outcomes:** the reply call also returns a suggested outcome ("paid", "visit booked Sat 7am"); staff confirm with one tap. The AI never logs a sale on its own | Kaamil | Still one AI call per reply |
-| R3 | **Live board:** server-sent events so the kanban pipeline updates for everyone in real time; overdue cards red | Krishna | No websockets or extra services |
-| R4 | **PWA:** manifest + service worker so sales installs the CRM on their phone | Krishna | |
-| R11 | Unlogged-lead nudges: daily list per salesperson of hot leads with no outcome | Krishna | |
+| R3 | ✅ **Live board:** server-sent events so the kanban pipeline updates for everyone in real time; overdue cards red | Krishna | No websockets or extra services; Postgres triggers + `db.listen`, works with several dynos |
+| R4 | ✅ **PWA:** manifest + service worker so sales installs the CRM on their phone | Krishna | Per-client name and icon from the branding; no lead data cached |
+| R11 | Unlogged-lead nudges: daily list per salesperson of hot leads with no outcome | Krishna | CRM side built (dashboard, Leads filter, `Nudges.daily()`). **Open until R11b:** the morning send (Kaamil, contract below) |
 
 ### 3. Revenue per ad
 
@@ -215,6 +217,13 @@ Both: line up a partner agency with a few paying clients (any industry) while th
 ### 7. Compounding
 
 Cross-client benchmarks, score trained on every client's outcomes, outcome-based pricing pilot, win-back templates, Instagram capture (comment/DM → WhatsApp). Owners decided when we get there.
+
+## Contract: R11 daily reminder (Krishna built the CRM side; Kaamil sends it as R11b)
+
+`crm/src/nudges.js` decides which leads are **waiting for an outcome**: open (not converted, lost or cold), needed a person (a hand-off, or status hot), and no outcome logged since the latest hand-off (a hand-off staff resolved without logging an outcome still counts: that is the gap R11 closes) (or the first message, for a hot lead with no hand-off), for 2 hours to 30 days. The dashboard tile and list, and the **No outcome** filter on Leads, use the same rule.
+
+- `new Nudges(db).daily(now)` → `[{ user: { id, name, email, role, alertPhone, alertMode } | null, leads: [{ waId, name, since, hours }] }]`: one item per active person with waiting leads assigned (oldest first), then one item with `user: null` for unassigned leads (or leads assigned to someone disabled). Runs inside `tenancy.run`; no tenant filter. Sends nothing.
+- **Kaamil:** once a day per tenant (morning, display timezone), post each person's list to the staff Telegram group, and to their WhatsApp when `alertPhone` is set and `alertMode` is not `'off'` (a template with an **Open in CRM** button to `/leads?waiting=1&sort=waiting`). Send the `user: null` list to managers and owners. Skip people with an empty list.
 
 ## Contract: the outcome link (K4 ↔ R1)
 
@@ -260,6 +269,8 @@ Next to the Telegram group, each staff member can get alerts on their own WhatsA
 ## Zoho CRM sync (K20, built)
 
 For clients who already run their sales in Zoho CRM. Off until connected per client (`npm run zoho -- --tenant <slug> connect`, steps in [ONBOARDING.md](ONBOARDING.md#manual-flow-today-until-embedded-signup)). The refresh token and client secret are stored encrypted on the tenant; the accounts URL and API domain are per client, since Zoho runs separate data centres (India, UAE, Saudi, US, EU...). Zoho API v8.
+
+**In the CRM** (Krishna, PR `zoho-crm-status`, see [crm/README.md](../crm/README.md#zoho-crm-status)): sync status on Business settings and "Open in Zoho" on the lead page. **To check on the first real connection:** the record link `https://crm.zoho.<dc>/crm/tab/<Module>/<id>` has no `org<id>` segment; if it doesn't open the record, add the org id (read from `/org` at connect) and note the result on the PR.
 
 **Out (us → Zoho).** A database trigger marks a lead in `zoho_links` when it is created, its name, phone, interest or status changes, or an outcome is logged; a new message alone does not. CRM code needs no Zoho calls. `src/workers/zohoWorker.js` sends it:
 

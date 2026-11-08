@@ -2,6 +2,7 @@ const { Params } = require('./util');
 const { leadScope, staffScope } = require('./permissions');
 const { OUTCOMES, LOST_REASONS } = require('./constants');
 const { LeadQueue, workingMinutes } = require('./queue');
+const { lostReasonsFor } = require('../../src/config/verticals');
 
 /**
  * R5 analytics: the numbers for the Reports page, the GKF case study and the
@@ -68,13 +69,16 @@ class Analytics {
   constructor(db) { this.db = db; }
 
   /** Everything at once, for the Reports page and K21. */
-  async summary(user = SYSTEM, { days = 30, now = new Date(), names = {} } = {}) {
+  async summary(user = SYSTEM, { days = 30, now = new Date(), names = {}, lostNames = null, type = null } = {}) {
     const hours = await new LeadQueue(this.db).settings(); // working hours and time zone
     const range = { days, since: new Date(now.getTime() - days * DAY_MS), now, hours };
+    // Lost-reason words follow the business type: lostNames (namesFor(type).LOST_REASONS), else the
+    // type given, else the current client's own type from its business profile.
+    const lost = lostNames || lostReasonsFor(type || require('../../src/config/gymConfig').profile.type);
     // One after another: requests run inside a tenant's transaction context.
     const funnel = await this.funnel(user, range, names);
     const handoffs = await this.handoffStats(user, range);
-    const lostReasons = await this.lostReasons(user, range);
+    const lostReasons = await this.lostReasons(user, range, lost);
     const people = await this.people(user, range);
     return {
       days, since: range.since.toISOString(), until: now.toISOString(),
@@ -174,8 +178,8 @@ class Analytics {
     return { salesRecorded: r.won, revenueInr: Number(r.revenue), salesRecordedAutomatically: r.auto, autoRate: pct(r.auto, r.won) };
   }
 
-  /** Lost outcomes logged in the period, by reason. */
-  async lostReasons(user = SYSTEM, { since, now }) {
+  /** Lost outcomes logged in the period, by reason. lostNames = the business type's wording (lostReasonsFor). */
+  async lostReasons(user = SYSTEM, { since, now }, lostNames = {}) {
     const q = new Params();
     const rows = await this.db.many(`
       SELECT COALESCE(x.lost_reason, 'other') AS reason, COUNT(*)::int AS count
@@ -183,7 +187,7 @@ class Analytics {
       WHERE ${leadScope(user, q)} AND x.outcome = 'lost' AND x.created_at >= ${q.p(since.toISOString())} AND x.created_at < ${q.p(now.toISOString())}
       GROUP BY 1 ORDER BY count DESC, reason`, q.values);
     const total = rows.reduce((s, r) => s + r.count, 0);
-    return rows.map(r => ({ reason: r.reason, label: LOST_REASONS[r.reason] || r.reason, count: r.count, share: pct(r.count, total) }));
+    return rows.map(r => ({ reason: r.reason, label: lostNames[r.reason] || LOST_REASONS[r.reason] || r.reason, count: r.count, share: pct(r.count, total) }));
   }
 
   /**

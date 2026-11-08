@@ -25,15 +25,8 @@ const OUTCOMES = {
   joined: 'Joined',
   lost: 'Lost'
 };
-const LOST_REASONS = {
-  price: 'Price too high',
-  distance: 'Too far',
-  timing: 'Timings don\'t suit',
-  joined_elsewhere: 'Joined another gym',
-  no_response: 'Stopped replying',
-  not_interested: 'Not interested',
-  other: 'Other'
-};
+// Why a lead was lost: shared with the bot, see src/config/lostReasons.js.
+const { LOST_REASONS } = require('../../src/config/lostReasons');
 
 // Pipeline board columns: the real sales journey, worked out from status + the latest visit outcome.
 const STAGES = {

@@ -53,13 +53,13 @@ function profileFromForm(b) {
 const util = require('./util');
 const razorpay = require('../../src/services/razorpay');
 const botGuard = require('../../src/services/botGuard');
-const { labelsFor } = require('../../src/config/verticals');
+const { labelsFor, lostReasonsFor } = require('../../src/config/verticals');
 
 /** Outcome, stage and settings names for the business type (real estate says "Booked", not "Joined"). */
 function namesFor(type) {
   const l = labelsFor(type);
   const pick = base => Object.fromEntries(Object.entries(base).map(([k, v]) => [k, l[k] || v]));
-  return { OUTCOMES: pick(OUTCOMES), STAGES: pick(STAGES), LABELS: l };
+  return { OUTCOMES: pick(OUTCOMES), STAGES: pick(STAGES), LABELS: l, LOST_REASONS: lostReasonsFor(type) };
 }
 
 /** Express 4 does not catch rejected promises; pass them to the error handler. */
@@ -386,7 +386,7 @@ function createCrmApp({
     const days = [7, 30, 90].includes(Number(req.query.days)) ? Number(req.query.days) : 30;
     res.render('reports', {
       r: await crm.reports(req.user, { days, includeAiCost: can.viewAiCost(req.user), usdToInr }),
-      a: await analytics.summary(req.user, { days, names: res.locals.OUTCOMES })
+      a: await analytics.summary(req.user, { days, names: res.locals.OUTCOMES, lostNames: res.locals.LOST_REASONS })
     });
   }));
   app.get('/reports/leads.csv', allow(can.exportLeads), h(async (req, res) => {

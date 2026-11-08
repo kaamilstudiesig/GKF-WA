@@ -33,7 +33,9 @@ class LiveBoard {
 
   start() {
     if (!this.listening && this.enabled) {
-      this.listening = this.db.listen(CHANNEL, payload => this.notified(payload)).catch(err => {
+      // Each time LISTEN starts (first connect or after a drop), changes before it were never announced: refresh every board.
+      const onReconnect = () => { for (const tenantId of this.clients.keys()) this.ping(tenantId); };
+      this.listening = this.db.listen(CHANNEL, payload => this.notified(payload), { onReconnect }).catch(err => {
         this.listening = null; // try again with the next viewer
         console.error('Live board: LISTEN failed', err.message);
       });
@@ -66,6 +68,11 @@ class LiveBoard {
   notified(payload) {
     let tenantId;
     try { tenantId = Number(JSON.parse(payload).t); } catch (e) { return; }
+    this.ping(tenantId);
+  }
+
+  /** Pings one tenant's open boards, debounced and rate-limited as described above. */
+  ping(tenantId) {
     if (!this.clients.has(tenantId) || this.timers.has(tenantId)) return;
     const sinceLast = Date.now() - (this.lastPing.get(tenantId) || 0);
     const wait = Math.max(this.debounceMs, this.minIntervalMs - sinceLast);

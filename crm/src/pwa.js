@@ -11,6 +11,7 @@
  */
 
 const zlib = require('zlib');
+const { shortName } = require('./branding');
 
 const BG = '#0e0e0e'; // the theme's base-200, as in head.ejs
 
@@ -58,6 +59,9 @@ function pngSize(buf) {
 /** The web app manifest for this client. `logo` = { type, data } when one is uploaded. */
 function manifest(brand, logo = null) {
   const icons = [
+    // PNG sizes Chrome needs to offer "Install app" (a brand-colour tile; an uploaded square PNG logo comes first).
+    { src: '/brand/icon-192.png', sizes: '192x192', type: 'image/png', purpose: 'any maskable' },
+    { src: '/brand/icon-512.png', sizes: '512x512', type: 'image/png', purpose: 'any maskable' },
     { src: '/brand/icon.svg', sizes: 'any', type: 'image/svg+xml', purpose: 'any' },
     { src: '/brand/icon.svg?maskable=1', sizes: 'any', type: 'image/svg+xml', purpose: 'maskable' }
   ];
@@ -66,7 +70,7 @@ function manifest(brand, logo = null) {
   return {
     id: '/',
     name: brand.name,
-    short_name: brand.name.length <= 12 ? brand.name : brand.first.length <= 12 && brand.first ? brand.first : brand.mark,
+    short_name: brand.shortName || shortName(brand),
     description: `Leads, follow-ups and sales for the ${brand.name} team.`,
     start_url: '/',
     scope: '/',

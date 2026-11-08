@@ -26,7 +26,7 @@
 <div class="mb-4 grid grid-cols-2 gap-3 lg:grid-cols-4">
   <div class="<%= card %>"><div class="text-xs text-base-content/60">Speed to lead</div>
     <div class="mt-1 text-3xl font-bold tabular-nums <%= a.speedToLead.medianMinutes !== null && a.speedToLead.medianMinutes <= 5 ? 'text-success' : a.speedToLead.medianMinutes !== null ? 'text-warning' : '' %>"><%= minText(a.speedToLead.medianMinutes) %></div>
-    <div class="text-[11px] text-base-content/50">median, hand-off to first contact · <%= pctText(a.speedToLead.withinFiveMinutes) %> within 5 min</div></div>
+    <div class="text-[11px] text-base-content/50">median working minutes, hand-off to first contact · <%= pctText(a.speedToLead.withinFiveMinutes) %> within 5 min</div></div>
   <div class="<%= card %>"><div class="text-xs text-base-content/60">Logging rate</div>
     <div class="mt-1 text-3xl font-bold tabular-nums <%= a.logging.rate === null ? '' : a.logging.rate >= 80 ? 'text-success' : 'text-warning' %>"><%= pctText(a.logging.rate) %></div>
     <div class="text-[11px] text-base-content/50">hand-offs with an outcome within 24 h (<%= a.logging.loggedWithin24h %> of <%= a.logging.handoffs %>)</div></div>
@@ -34,8 +34,8 @@
     <div class="mt-1 text-3xl font-bold tabular-nums <%= a.speedToLead.notContacted ? 'text-error' : '' %>"><%= a.speedToLead.notContacted %></div>
     <div class="text-[11px] text-base-content/50">of <%= a.speedToLead.handoffs %> hand-offs</div></div>
   <div class="<%= card %>"><div class="text-xs text-base-content/60">Revenue</div>
-    <div class="mt-1 text-3xl font-bold tabular-nums text-primary"><%= inr(a.funnel.revenueInr) %></div>
-    <div class="text-[11px] text-base-content/50"><%= a.logging.salesRecorded %> sales logged<% if (a.logging.salesRecorded) { %> · <%= pctText(a.logging.autoRate) %> by payment link<% } %></div></div>
+    <div class="mt-1 text-3xl font-bold tabular-nums text-primary"><%= inr(a.logging.revenueInr) %></div>
+    <div class="text-[11px] text-base-content/50"><%= a.logging.salesRecorded %> sales logged in these <%= a.days %> days<% if (a.logging.salesRecorded) { %> · <%= pctText(a.logging.autoRate) %> by payment link<% } %></div></div>
 </div>
 
 <div class="mb-4 grid gap-4 lg:grid-cols-2">

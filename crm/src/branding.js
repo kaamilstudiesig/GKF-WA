@@ -57,6 +57,19 @@ function nameParts(name) {
   return words.length > 1 ? { first: words.slice(0, -1).join(' '), last: words[words.length - 1] } : { first: words[0] || '', last: '' };
 }
 
+/** The app name under the home-screen icon (Android and iPhone use the same one): the name, else its first part, else the letters. */
+function shortName({ name, first, mark }) {
+  if (name.length <= 12) return name;
+  return first && first.length <= 12 ? first : mark;
+}
+
+/** True when the bytes are a PNG with the same width and height (what iPhones and the manifest want). */
+function isSquarePng(type, data) {
+  const b = data ? Buffer.from(data) : null;
+  if (type !== 'image/png' || !b || b.length < 24 || b.readUInt32BE(0) !== 0x89504e47) return false;
+  return b.readUInt32BE(16) === b.readUInt32BE(20);
+}
+
 /** "Sunrise Dental" -> "sunrise-dental" (file names). */
 const slug = name => cleanName(name).toLowerCase().normalize('NFKD').replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 40) || 'crm';
 
@@ -100,10 +113,16 @@ class Branding {
     const color = normalizeColor(r.color) || DEFAULT_COLOR;
     const custom = color !== DEFAULT_COLOR;
     const version = r.updated_at ? crypto.createHash('sha1').update(String(new Date(r.updated_at).getTime())).digest('hex').slice(0, 8) : '';
+    const mark = r.mark || initials(name);
+    const parts = nameParts(name);
     return {
       name,
-      ...nameParts(name),
-      mark: r.mark || initials(name),
+      ...parts,
+      mark,
+      shortName: shortName({ name, first: parts.first, mark }),
+      // Changes whenever anything the phone app shows changes (the service worker re-caches its offline page).
+      key: crypto.createHash('sha1').update([name, color, mark, version].join('|')).digest('hex').slice(0, 8),
+      logoSquarePng: Boolean(r.logo_data) && isSquarePng(r.logo_type, r.logo_data),
       markIsDefault: !r.mark,
       color,
       contentColor: custom ? contentColor(color) : DEFAULT_CONTENT,
@@ -144,4 +163,4 @@ class Branding {
   }
 }
 
-module.exports = { Branding, initials, normalizeColor, contentColor, nameParts, slug, parseLogo, DEFAULT_COLOR, DEFAULT_CONTENT, LOGO_MAX_BYTES };
+module.exports = { Branding, shortName, isSquarePng, initials, normalizeColor, contentColor, nameParts, slug, parseLogo, DEFAULT_COLOR, DEFAULT_CONTENT, LOGO_MAX_BYTES };

@@ -248,3 +248,32 @@ test('screens: owner turns the queue on; Taking leads off and deactivation hand 
     assert.deepStrictEqual([await assignee(db, w1), await assignee(db, w2), await assignee(db, w3)], [S, S, S]);
   } finally { LeadQueue.botWired = false; await ctx.cleanup(); }
 });
+
+test('R2 review fixes: role change hands leads back, only sales use Taking leads, hand-assigned leads also escalate', async () => {
+  const { login } = require('./helpers');
+  const { ctx, db, ids, queue, lead } = await queueSetup();
+  try {
+    // An owner makes Asha a manager: her leads nobody picked up go to someone else.
+    const w = await lead();
+    await queue.autoAssign(w);
+    assert.strictEqual(await assignee(db, w), ids.a);
+    const owner = await login(ctx.app, 'owner');
+    const asha = await db.one('SELECT * FROM crm_users WHERE id = $1', [ids.a]);
+    const res = await owner.agent.post(`/users/${ids.a}`).type('form').send({ _csrf: owner.csrf, name: asha.name, email: asha.email, role: 'manager', active: '1' });
+    assert.match(decodeURIComponent(res.headers.location.replace(/\+/g, ' ')), /1 lead went to someone else/);
+    assert.notStrictEqual(await assignee(db, w), ids.a);
+
+    // Owners and managers can't flip a Taking leads flag that means nothing for them.
+    assert.strictEqual((await owner.agent.post('/account/accepting').type('form').send({ _csrf: owner.csrf })).status, 403);
+    assert.strictEqual((await db.one("SELECT accepting FROM crm_users WHERE role = 'owner' LIMIT 1")).accepting, true);
+
+    // A lead a manager assigns by hand after auto-assign is on also escalates (the customer is waiting either way).
+    const w2 = await lead();
+    const { Crm } = require('../../crm/src/crm');
+    const mgr = await db.one('SELECT * FROM crm_users WHERE id = $1', [ids.manager]);
+    await new Crm(db).assign(mgr, w2, ids.b);
+    const t0 = new Date((await db.one('SELECT assigned_at FROM crm_lead_assignments WHERE wa_id = $1', [w2])).assigned_at);
+    const alerts = await queue.sweep(new Date(t0.getTime() + 6 * 60000));
+    assert.deepStrictEqual(alerts.filter(x => x.waId === w2).map(x => [x.userId, x.level]), [[ids.manager, 1]]);
+  } finally { await ctx.cleanup(); }
+});

@@ -57,10 +57,28 @@ test('manifest, icon, service worker and offline page are public and per client'
     assert.strictEqual(sw.headers['cache-control'], 'no-cache');
     assert.doesNotMatch(sw.text, /__ASSET_VERSION__/);
     assert.match(sw.text, /const VERSION = '[0-9a-f]{10}'/);
-    assert.doesNotMatch(sw.text, /cache\.put|caches\.open\(CACHE\)\.then\(c => c\.put/); // never stores pages
+    // The worker may only ever store the offline page, the CSS and the JS: never lead pages.
+    const shell = /const SHELL = \[([^\]]*)\]/.exec(sw.text)[1].split(',').map(x => x.trim());
+    assert.deepStrictEqual(shell, ['OFFLINE', '`/static/css/app.css?v=${VERSION}`', '`/static/js/app.js?v=${VERSION}`']);
+    assert.doesNotMatch(sw.text, /\.put\(|cache\.add\(|addAll\((?!SHELL\))/);
+    assert.doesNotMatch(sw.text, /__BRAND_VERSION__/);
+
+    // Android install icons.
+    for (const size of [192, 512]) {
+      const png = await app.get(`/brand/icon-${size}.png`).buffer(true).parse((res, cb) => { const b = []; res.on('data', d => b.push(d)); res.on('end', () => cb(null, Buffer.concat(b))); });
+      assert.deepStrictEqual(pngSize(png.body), { width: size, height: size });
+      assert.ok(json.icons.some(i => i.src === `/brand/icon-${size}.png` && i.sizes === `${size}x${size}`));
+    }
+    // Same short name on Android (manifest) and iPhone (apple title).
+    assert.match(loginPage.text, new RegExp(`apple-mobile-web-app-title" content="${json.short_name}"`));
 
     const ownerForHint = await login(ctx.app, 'owner');
     assert.match((await ownerForHint.agent.get('/settings')).text, /For the app icon on iPhones, upload a square PNG/);
+
+    // Changing the brand colour changes the worker, so phones re-cache the offline page.
+    await ownerForHint.agent.post('/settings/brand').type('form').send({ _csrf: ownerForHint.csrf, mark: '', color: '#1e3a8a' });
+    const sw2 = await app.get('/sw.js');
+    assert.notStrictEqual(/const BRAND = '([^']*)'/.exec(sw2.text)[1], /const BRAND = '([^']*)'/.exec(sw.text)[1]);
 
     const offline = await app.get('/offline');
     assert.strictEqual(offline.status, 200);
@@ -74,6 +92,12 @@ test('manifest, icon, service worker and offline page are public and per client'
     assert.deepStrictEqual(withLogo.icons[0].sizes, '1x1');
     assert.match(withLogo.icons[0].src, /^\/brand\/logo\?v=/);
     assert.match((await app.get('/login')).text, /<link rel="apple-touch-icon" href="\/brand\/logo\?v=/);
+
+    // A JPEG (or any non-square) logo is not used on iPhones: the brand tile is, and the owner is told why.
+    const JPEG = Buffer.concat([Buffer.from([0xff, 0xd8, 0xff, 0xe0]), Buffer.alloc(60)]);
+    await owner.agent.post('/settings/brand').type('form').send({ _csrf: owner.csrf, mark: '', color: '#d4af37', logo: `data:image/jpeg;base64,${JPEG.toString('base64')}` });
+    assert.match((await app.get('/login')).text, /<link rel="apple-touch-icon" href="\/brand\/apple-touch-icon.png">/);
+    assert.match((await owner.agent.get('/settings')).text, /Your logo is not a square PNG/);
   } finally { await ctx.cleanup(); gymConfig.resetToDefault(); }
 });
 

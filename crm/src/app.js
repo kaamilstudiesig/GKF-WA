@@ -91,7 +91,7 @@ function createCrmApp({
   };
   // Zoho sync status (K20). Without the bot's tenant registry (standalone CRM) it is simply off.
   let registry = null;
-  try { registry = require('../../src/tenancy/registry'); } catch (e) { /* standalone */ }
+  try { registry = require('../../src/tenancy/registry'); } catch (e) { if (e.code !== 'MODULE_NOT_FOUND') throw e; /* standalone */ }
   const zoho = new ZohoStatus(db, registry || { config: () => ({}) });
   const analytics = new Analytics(db);
   const throttle = new auth.LoginThrottle();
@@ -103,7 +103,7 @@ function createCrmApp({
   app.disable('x-powered-by');
   app.locals.crm = crm;
   // Used if a page renders before the session middleware has loaded the real branding (early errors).
-  app.locals.brand = { name: 'Staff CRM', first: 'Staff CRM', last: '', mark: 'CR', color: '#d4af37', contentColor: '#141106', style: '', logoUrl: null, fileSlug: 'crm' };
+  app.locals.brand = { name: 'Staff CRM', first: 'Staff CRM', last: '', mark: 'CR', color: '#d4af37', contentColor: '#141106', style: '', logoUrl: null, logoSquarePng: false, shortName: 'Staff CRM', key: '', fileSlug: 'crm' };
 
   app.use((req, res, next) => {
     res.setHeader('X-Content-Type-Options', 'nosniff');
@@ -177,8 +177,8 @@ function createCrmApp({
   const SW_SOURCE = fs.readFileSync(path.join(__dirname, '..', 'public', 'sw.js'), 'utf8').replace('__ASSET_VERSION__', app.locals.assetV);
   app.get('/sw.js', (req, res) => {
     res.set('Content-Type', 'text/javascript; charset=utf-8');
-    res.set('Cache-Control', 'no-cache'); // browsers must see a new version right after a deploy
-    res.send(SW_SOURCE);
+    res.set('Cache-Control', 'no-cache'); // browsers must see a new version right after a deploy or a brand change
+    res.send(SW_SOURCE.replace('__BRAND_VERSION__', res.locals.brand.key || ''));
   });
   app.get('/manifest.webmanifest', h(async (req, res) => {
     res.set('Content-Type', 'application/manifest+json; charset=utf-8');
@@ -195,6 +195,12 @@ function createCrmApp({
     res.set('Content-Type', 'image/png');
     res.set('Cache-Control', 'no-cache');
     res.send(pwa.solidPng(res.locals.brand.color));
+  });
+  // Android install icons (Chrome wants 192 and 512 PNGs).
+  app.get(['/brand/icon-192.png', '/brand/icon-512.png'], (req, res) => {
+    res.set('Content-Type', 'image/png');
+    res.set('Cache-Control', 'no-cache');
+    res.send(pwa.solidPng(res.locals.brand.color, req.path.includes('512') ? 512 : 192));
   });
   app.get('/offline', (req, res) => res.render('offline'));
 
@@ -248,6 +254,8 @@ function createCrmApp({
   // R2: a sales person switches "Taking leads" off (on leave, busy, end of shift). Their
   // leads nobody has picked up yet go back into the queue.
   app.post('/account/accepting', h(async (req, res) => {
+    // Only sales people take leads from the queue; the switch means nothing for anyone else.
+    if (req.user.role !== 'sales') return res.status(403).render('error', { status: 403, message: 'Only sales people take leads from the queue.' });
     const on = req.body.accepting === '1';
     await db.query('UPDATE crm_users SET accepting = $1, updated_at = now() WHERE id = $2', [on, req.user.id]);
     const moved = on ? 0 : await queue.release(req.user.id);
@@ -491,8 +499,9 @@ function createCrmApp({
       const updated = await users.update(req.user, req.params.id, {
         name: req.body.name, email: req.body.email, role: req.body.role, managerId: req.body.manager_id || null, active: req.body.active === '1'
       });
-      // R2: a deactivated person's leads nobody has picked up go back into the queue.
-      const moved = updated.active ? 0 : await queue.release(updated.id);
+      // R2: leads nobody has picked up go back into the queue when the person is deactivated
+      // or stops being sales (managers and owners are not in the round-robin).
+      const moved = updated.active && updated.role === 'sales' ? 0 : await queue.release(updated.id);
       res.redirect('/users?ok=' + encodeURIComponent(`User updated.${moved ? ` ${moved} lead${moved === 1 ? '' : 's'} went to someone else.` : ''}`));
     } catch (err) {
       if (!(err instanceof HttpError)) throw err;

@@ -54,7 +54,8 @@ npm run demo -- --tenant <slug> --preset realestate --region ae
 - Writes the business profile (3 projects, unit types with prices, policies) while the profile is still the blank starter, or always with `--profile`. The business name is kept.
 - **Safe to run twice:** the same data each time (seeded by the slug), existing leads and staff are skipped. `--reset` deletes only rows marked `metadata.demo` and recreates them with fresh dates (run it before a demo so nothing looks a week old). The team and any real leads stay.
 - **Never leaves the database:** outcomes are marked `meta_status = 'skipped'` (not sent to Meta), staff replies are stored as already sent (not queued for WhatsApp), no alerts are sent.
-- **Production:** only for a client whose settings have `"demo": true` (`npm run tenant -- add` / `set` with `settings.demo`), never tenant 1. Locally it runs for any client.
+- **Safety:** never tenant 1 (the live business), even locally. On any database other than local PGlite (for example a laptop pointed at Heroku's `DATABASE_URL`), only a client whose settings have `"demo": true` (`npm run tenant -- add` / `set` with `settings.demo`); `NODE_ENV` is not trusted for this. If the run fails part-way, nothing is saved, staff included.
+- **Business profile:** written while it is still the blank starter. A profile the client has edited is only replaced with `--profile`, and the output says so in capitals.
 - Amounts are stored in the business's currency (AED for `ae`); until R15 the CRM still shows them with ₹.
 
 Health checks: `GET /health` (process up) and `GET /health/ready` (database reachable) on the bot host; `GET /health` on the CRM host checks the CRM tables.

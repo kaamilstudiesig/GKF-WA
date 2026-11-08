@@ -41,12 +41,13 @@ test('the plan: 60 leads through every step, test phone numbers, same every run'
   assert.notDeepStrictEqual(planLeads({ slug: 'other', region: 'ae', now: NOW }).map(l => l.kind), plan.map(l => l.kind));
 });
 
-test('guard: in production only clients marked as demos, never tenant 1', () => {
+test('guard: never tenant 1; off local PGlite only clients marked as demos, whatever NODE_ENV says', () => {
   const demo = { slug: 'palmcrest', demo: true, isDefault: false };
-  assert.doesNotThrow(() => assertAllowed(demo, 'production'));
-  assert.throws(() => assertAllowed({ ...demo, demo: false }, 'production'), /not marked as a demo/);
-  assert.throws(() => assertAllowed({ ...demo, isDefault: true }, 'production'), /not marked as a demo/);
-  assert.doesNotThrow(() => assertAllowed({ ...demo, demo: false }, 'development'));
+  assert.doesNotThrow(() => assertAllowed(demo, { dbKind: 'pg' }));
+  assert.throws(() => assertAllowed({ ...demo, demo: false }, { dbKind: 'pg' }), /not marked as a demo/); // a laptop pointed at Heroku
+  assert.throws(() => assertAllowed({ ...demo, isDefault: true, slug: 'gkf' }, { dbKind: 'pg' }), /tenant 1/);
+  assert.throws(() => assertAllowed({ ...demo, isDefault: true, slug: 'gkf' }, { dbKind: 'pglite' }), /tenant 1/); // even locally
+  assert.doesNotThrow(() => assertAllowed({ ...demo, demo: false }, { dbKind: 'pglite' })); // local playground
 });
 
 test('seeding a demo client: realistic data, safe to run twice, --reset, other clients untouched', async () => {
@@ -101,6 +102,42 @@ test('seeding a demo client: realistic data, safe to run twice, --reset, other c
 
   // GKF (tenant 1) untouched.
   assert.strictEqual((await db.one('SELECT COUNT(*)::int AS n FROM leads')).n, gkfLeadsBefore);
+
+  // An edited profile is kept without --profile, and replacing it is reported.
+  const businessProfile = require('../src/services/businessProfile');
+  await tenancy.run(t.id, async () => {
+    const p = (await db.one('SELECT profile FROM business_profile')).profile;
+    await businessProfile.save({ ...p, hours: 'Sun-Thu 9-6 (edited by the client)' }, 'owner');
+  });
+  const kept = await run();
+  assert.deepStrictEqual([kept.profileWritten, kept.profileReplaced], [false, false]);
+  assert.match([].concat((await inTenant('SELECT profile FROM business_profile'))[0].profile.hours).join(' '), /edited by the client/);
+  const replaced = await run({ writeProfile: true });
+  assert.deepStrictEqual([replaced.profileWritten, replaced.profileReplaced], [true, true]);
+
+  // --reset only deletes this client's own AI usage rows: "demo_palmcrest_" must not match "demo_palmcrestX".
+  await tenancy.run(t.id, () => db.query("INSERT INTO ai_usage (request_id, model, success) VALUES ('demo_palmcrestX1', 'm', true)"));
+  await run({ reset: true });
+  assert.strictEqual((await inTenant("SELECT COUNT(*)::int AS n FROM ai_usage WHERE request_id = 'demo_palmcrestX1'"))[0].n, 1);
+  await db.close();
+});
+
+test('a failed seed creates no staff (passwords would never be shown)', async () => {
+  await db.close();
+  await migrateAll();
+  const t = await registry.create({ slug: 'lakeview', name: 'Lakeview Homes', phoneNumberId: '1000200030666', settings: { demo: true } });
+  // A failure part-way through the leads (here: the third chat message) must roll back the staff too.
+  const plan = planLeads({ slug: 'lakeview', region: 'ae', now: NOW });
+  const orig = db.query;
+  let calls = 0;
+  db.query = async (sql, p) => { if (/INSERT INTO messages/.test(sql) && ++calls === 3) throw new Error('disk full'); return orig(sql, p); };
+  try {
+    await assert.rejects(tenancy.run(t.id, () => seedDemo(db, { slug: 'lakeview', name: 'Lakeview Homes', region: 'ae', now: NOW })), /disk full/);
+  } finally { db.query = orig; }
+  const staff = await tenancy.run(t.id, () => db.many("SELECT id FROM crm_users WHERE email LIKE '%@demo-lakeview.test'"));
+  assert.strictEqual(staff.length, 0);
+  assert.strictEqual((await tenancy.run(t.id, () => db.many('SELECT wa_id FROM leads'))).length, 0);
+  assert.ok(plan.length > 0);
   await db.close();
 });
 

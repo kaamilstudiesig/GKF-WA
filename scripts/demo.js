@@ -8,8 +8,9 @@
  *   add --reset to delete this client's demo leads first and recreate them with fresh dates.
  *
  * Safe:
- * - In production it only runs for a client marked as a demo (tenant setting demo: true),
- *   never for tenant 1. Locally (NODE_ENV not production) it runs for any client.
+ * - Never for tenant 1 (the live business). On any database other than local PGlite, only for a
+ *   client marked as a demo (tenant setting demo: true), whatever NODE_ENV says: a laptop pointed
+ *   at Heroku's DATABASE_URL is treated like production.
  * - Same data every run (seeded by the client's slug): lead keys and staff emails repeat,
  *   so a second run adds nothing. --reset touches only rows marked metadata.demo.
  * - Phones are test ranges only (+971 50 000 xxxx, +91 98000 xxxxx), names are made up.
@@ -150,7 +151,7 @@ async function resetDemo(db, { slug }) {
     }
     await db.query('DELETE FROM leads WHERE wa_id = ANY($1::text[])', [ids]);
   }
-  await db.query('DELETE FROM ai_usage WHERE request_id LIKE $1', [`demo_${slug}_%`]);
+  await db.query('DELETE FROM ai_usage WHERE left(request_id, length($1)) = $1', [`demo_${slug}_`]); // no LIKE: _ is a wildcard
   return ids.length;
 }
 
@@ -162,21 +163,26 @@ async function seedDemo(db, { slug, name, region = 'ae', preset = 'realestate', 
   if (!PRESETS[preset]) throw new Error(`Unknown preset "${preset}". Available: ${Object.keys(PRESETS).join(', ')}`);
   if (!PRESETS[preset][region]) throw new Error(`Unknown region "${region}". Available: ${Object.keys(PRESETS[preset]).join(', ')}`);
   const businessProfile = require('../src/services/businessProfile');
-  let profileWritten = false;
+  let profileWritten = false; let profileReplaced = false;
   const current = await db.one('SELECT profile FROM business_profile');
-  if (writeProfile || !current || current.profile.address === businessProfile.starterProfile().address) {
+  const isStarter = !current || current.profile.address === businessProfile.starterProfile().address;
+  if (writeProfile || isStarter) {
+    profileReplaced = !isStarter; // an edited profile is only replaced with --profile, and the output says so
     // Keep the business name the client already has (a new client's starter profile carries it).
     await businessProfile.save(buildProfile((current && current.profile.name) || name, region), 'demo');
     profileWritten = true;
   }
   const removed = reset ? await resetDemo(db, { slug }) : 0;
-  const team = await ensureStaff(db, { slug, region, preset });
   const plan = planLeads({ slug, region, now, preset });
-  const repEmail = {};
-  for (const r of await db.many('SELECT id, email FROM crm_users WHERE id = ANY($1::int[])', [team.reps])) repEmail[r.id] = r.email;
+  const pack = PRESETS[preset][region];
 
-  let added = 0;
+  let added = 0; let team;
   await db.tx(async () => {
+    // Staff in the same transaction as the leads: if anything fails, nobody is created whose
+    // one-time password was never shown.
+    team = await ensureStaff(db, { slug, region, preset });
+    const repEmail = {};
+    for (const r of await db.many('SELECT id, email FROM crm_users WHERE id = ANY($1::int[])', [team.reps])) repEmail[r.id] = r.email;
     for (const l of plan) {
       const lastIn = [...l.chat].reverse().find(c => c[0] === 'in')[2];
       const lastOut = [...l.chat].reverse().find(c => c[0] === 'out')[2];
@@ -202,7 +208,7 @@ async function seedDemo(db, { slug, name, region = 'ae', preset = 'realestate', 
         const status = openHandoff ? (userId ? 'assigned' : 'pending') : 'resolved';
         await db.query(`INSERT INTO handoffs (wa_id, status, reason, summary, assigned_to, resolved_at, created_at, updated_at)
           VALUES ($1, $2, 'ready_to_book', $3, $4, $5, $6, $6)`,
-        [l.waId, status, `Wants a site visit: ${l.interest}`, userId ? repEmail[userId] : null,
+        [l.waId, status, pack.handoffSummary(l.interest), userId ? repEmail[userId] : null,
           status === 'resolved' ? (l.contactAt || l.handoffAt).toISOString() : null, l.handoffAt.toISOString()]);
       }
       if (userId && l.handoffAt) {
@@ -217,7 +223,7 @@ async function seedDemo(db, { slug, name, region = 'ae', preset = 'realestate', 
           // A staff reply from the CRM, stored as already sent (never queued for WhatsApp).
           await db.query(`INSERT INTO outbound_messages (dedup_key, wa_id, text, status, sent_at, metadata, created_at)
             VALUES ($1, $2, $3, 'sent', $4, $5::jsonb, $4)`,
-          [`crm:demo_${l.waId}`, l.waId, 'Hi, this is your property advisor. Sharing the brochure and price list now.', o.at.toISOString(),
+          [`crm:demo_${l.waId}`, l.waId, pack.staffReply, o.at.toISOString(),
             JSON.stringify({ source: 'crm', user_id: userId, demo: true })]);
         }
       }
@@ -231,7 +237,7 @@ async function seedDemo(db, { slug, name, region = 'ae', preset = 'realestate', 
           [l.waId, userId, new Date(l.visitAt.getTime() + 2 * HOUR).toISOString()]);
       }
     }
-    const { n } = await db.one('SELECT COUNT(*)::int AS n FROM ai_usage WHERE request_id LIKE $1', [`demo_${slug}_%`]);
+    const { n } = await db.one('SELECT COUNT(*)::int AS n FROM ai_usage WHERE left(request_id, length($1)) = $1', [`demo_${slug}_`]);
     if (n === 0) {
       for (let i = 0; i < 30; i++) {
         await db.query(`INSERT INTO ai_usage (request_id, model, input_tokens, output_tokens, cost_usd, latency_ms, success, created_at)
@@ -240,13 +246,16 @@ async function seedDemo(db, { slug, name, region = 'ae', preset = 'realestate', 
       }
     }
   });
-  return { added, removed, staff: team.created, profileWritten };
+  return { added, removed, staff: team.created, profileWritten, profileReplaced };
 }
 
-/** Production guard: only clients marked as demos, never tenant 1. */
-function assertAllowed(tenant, nodeEnv = process.env.NODE_ENV || 'development') {
-  if (nodeEnv !== 'production') return;
-  if (tenant.isDefault || !tenant.demo) {
+/**
+ * Guard: never tenant 1 (the live business), and on any database other than local PGlite only
+ * clients marked as demos. NODE_ENV is not trusted: a laptop with Heroku's DATABASE_URL counts as live.
+ */
+function assertAllowed(tenant, { dbKind } = {}) {
+  if (tenant.isDefault) throw new Error(`Refusing: "${tenant.slug}" is tenant 1, the live business. Demo data only goes into a separate demo client.`);
+  if (dbKind !== 'pglite' && !tenant.demo) {
     throw new Error(`Refusing: "${tenant.slug}" is not marked as a demo client. Set its "demo" setting to true first (npm run tenant -- set ${tenant.slug} <file>).`);
   }
 }
@@ -261,14 +270,15 @@ if (require.main === module) {
     try {
       await migrateAll();
       const { tenant, args } = await tenantFromArgs();
-      assertAllowed(tenant);
+      assertAllowed(tenant, { dbKind: db.driverKind() });
       const preset = flag(args, '--preset') || 'realestate';
       const region = flag(args, '--region') || 'ae';
       const r = await tenancy.run(tenant.id, () => seedDemo(db, {
         slug: tenant.slug, name: tenant.name, region, preset, reset: args.includes('--reset'), writeProfile: args.includes('--profile')
       }));
       console.log(`Demo data for ${tenant.name} (${tenant.slug}, ${preset}, ${region}):`);
-      if (r.profileWritten) console.log('- business profile: projects, unit prices and policies written');
+      if (r.profileReplaced) console.log('- business profile REPLACED (it had been edited): the name is kept; projects, unit prices, hours and policies are now sample data');
+      else if (r.profileWritten) console.log('- business profile: projects, unit prices and policies written');
       if (r.removed) console.log(`- removed ${r.removed} old demo leads`);
       console.log(r.added ? `- added ${r.added} leads with chats, hand-offs, site visits, bookings and follow-ups` : '- demo leads are already there (use --reset for fresh dates)');
       if (r.staff.length) {

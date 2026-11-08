@@ -154,3 +154,34 @@ test('India region: rupee prices and Bengaluru projects', async () => {
   await assert.rejects(tenancy.run(t.id, () => seedDemo(db, { slug: 'lakeview', name: 'x', region: 'uk' })), /Unknown region/);
   await db.close();
 });
+
+test('rollback and starter detection: a failed --reset run changes nothing; an edited starter is not overwritten', async () => {
+  await db.close();
+  await migrateAll();
+  const businessProfile = require('../src/services/businessProfile');
+  const { isStarterProfile } = require('../scripts/demo');
+  const t = await registry.create({ slug: 'harbour', name: 'Harbour Homes', phoneNumberId: '1000200030777', settings: { demo: true } });
+  const run = opts => tenancy.run(t.id, () => seedDemo(db, { slug: 'harbour', name: 'Harbour Homes', region: 'ae', now: NOW, ...opts }));
+  const inTenant = (sql, p) => tenancy.run(t.id, () => db.many(sql, p));
+
+  // A client who edited hours but never filled in an address is not a "starter" any more.
+  const starter = businessProfile.starterProfile({ name: 'Harbour Homes', type: 'realestate' });
+  assert.ok(isStarterProfile(starter, businessProfile.starterProfile));
+  await tenancy.run(t.id, () => businessProfile.save({ ...starter, hours: ['Sat-Thu 10-7'] }, 'owner'));
+  assert.ok(!isStarterProfile((await inTenant('SELECT profile FROM business_profile'))[0].profile, businessProfile.starterProfile));
+  const first = await run();
+  assert.deepStrictEqual([first.added > 0, first.profileWritten], [true, false]);
+  assert.deepStrictEqual((await inTenant('SELECT profile FROM business_profile'))[0].profile.hours, ['Sat-Thu 10-7']);
+
+  // --reset with --profile, failing part-way: the old demo leads and the profile are still there.
+  const leadsBefore = (await inTenant('SELECT COUNT(*)::int AS n FROM leads'))[0].n;
+  const orig = db.query;
+  let calls = 0;
+  db.query = async (sql, p) => { if (/INSERT INTO messages/.test(sql) && ++calls === 5) throw new Error('disk full'); return orig(sql, p); };
+  try {
+    await assert.rejects(run({ reset: true, writeProfile: true }), /disk full/);
+  } finally { db.query = orig; }
+  assert.strictEqual((await inTenant('SELECT COUNT(*)::int AS n FROM leads'))[0].n, leadsBefore);
+  assert.deepStrictEqual((await inTenant('SELECT profile FROM business_profile'))[0].profile.hours, ['Sat-Thu 10-7']);
+  await db.close();
+});

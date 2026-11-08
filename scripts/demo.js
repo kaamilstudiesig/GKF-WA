@@ -155,6 +155,17 @@ async function resetDemo(db, { slug }) {
   return ids.length;
 }
 
+/** Same keys and values in any order (for comparing saved JSON with a freshly built one). */
+const stable = v => (Array.isArray(v) ? v.map(stable) : v && typeof v === 'object'
+  ? Object.fromEntries(Object.keys(v).sort().map(k => [k, stable(v[k])])) : v);
+
+/** True when a saved profile is still the untouched starter (name and type aside). */
+function isStarterProfile(profile, starterProfile) {
+  const starter = starterProfile({ name: profile.name, type: profile.type });
+  const strip = p => { const { name, type, ...rest } = p; return JSON.stringify(stable(rest)); };
+  return strip(profile) === strip(starter);
+}
+
 /**
  * Fills the current tenant (run inside tenancy.run) with demo data. Returns
  * { added, removed, staff, profileWritten }. Skips leads that already exist.
@@ -163,21 +174,20 @@ async function seedDemo(db, { slug, name, region = 'ae', preset = 'realestate', 
   if (!PRESETS[preset]) throw new Error(`Unknown preset "${preset}". Available: ${Object.keys(PRESETS).join(', ')}`);
   if (!PRESETS[preset][region]) throw new Error(`Unknown region "${region}". Available: ${Object.keys(PRESETS[preset]).join(', ')}`);
   const businessProfile = require('../src/services/businessProfile');
-  let profileWritten = false; let profileReplaced = false;
   const current = await db.one('SELECT profile FROM business_profile');
-  const isStarter = !current || current.profile.address === businessProfile.starterProfile().address;
-  if (writeProfile || isStarter) {
-    profileReplaced = !isStarter; // an edited profile is only replaced with --profile, and the output says so
-    // Keep the business name the client already has (a new client's starter profile carries it).
-    await businessProfile.save(buildProfile((current && current.profile.name) || name, region), 'demo');
-    profileWritten = true;
-  }
-  const removed = reset ? await resetDemo(db, { slug }) : 0;
+  // The blank starter profile is replaced freely; anything the client edited (hours, plans,
+  // policies, address...) only with --profile, and the output says so.
+  const isStarter = !current || isStarterProfile(current.profile, businessProfile.starterProfile);
+  const profileWritten = writeProfile || isStarter;
+  const profileReplaced = profileWritten && !isStarter;
   const plan = planLeads({ slug, region, now, preset });
   const pack = PRESETS[preset][region];
 
-  let added = 0; let team;
+  // Everything in one transaction: if any step fails, nothing changes (no leads deleted by
+  // --reset, no profile replaced, no staff whose one-time passwords were never shown).
+  let added = 0; let team; let removed = 0;
   await db.tx(async () => {
+    if (reset) removed = await resetDemo(db, { slug });
     // Staff in the same transaction as the leads: if anything fails, nobody is created whose
     // one-time password was never shown.
     team = await ensureStaff(db, { slug, region, preset });
@@ -229,12 +239,12 @@ async function seedDemo(db, { slug, name, region = 'ae', preset = 'realestate', 
       }
       // Open follow-ups: retries after no answer (some overdue), "did they come?" after a booked visit.
       if (userId && l.kind === 'no_answer') {
-        await db.query(`INSERT INTO crm_follow_ups (wa_id, user_id, title, due_at, source) VALUES ($1, $2, 'Call again (no answer)', $3, 'outcome')`,
-          [l.waId, userId, new Date(l.contactAt.getTime() + 2 * HOUR).toISOString()]);
+        await db.query(`INSERT INTO crm_follow_ups (wa_id, user_id, title, due_at, source) VALUES ($1, $2, $3, $4, 'outcome')`,
+          [l.waId, userId, pack.followUps.noAnswer, new Date(l.contactAt.getTime() + 2 * HOUR).toISOString()]);
       }
       if (userId && l.kind === 'visit_booked') {
-        await db.query(`INSERT INTO crm_follow_ups (wa_id, user_id, title, due_at, source) VALUES ($1, $2, 'Did they come for the site visit?', $3, 'outcome')`,
-          [l.waId, userId, new Date(l.visitAt.getTime() + 2 * HOUR).toISOString()]);
+        await db.query(`INSERT INTO crm_follow_ups (wa_id, user_id, title, due_at, source) VALUES ($1, $2, $3, $4, 'outcome')`,
+          [l.waId, userId, pack.followUps.visit, new Date(l.visitAt.getTime() + 2 * HOUR).toISOString()]);
       }
     }
     const { n } = await db.one('SELECT COUNT(*)::int AS n FROM ai_usage WHERE left(request_id, length($1)) = $1', [`demo_${slug}_`]);
@@ -245,6 +255,9 @@ async function seedDemo(db, { slug, name, region = 'ae', preset = 'realestate', 
         [`demo_${slug}_${i}`, 1100 + i * 9, 140 + i, 0.00025 + (i % 5) * 0.00004, 900 + i * 11, new Date(now.getTime() - i * 23 * HOUR).toISOString()]);
       }
     }
+    // Last, so a failure above leaves the profile (and its in-memory copy) untouched.
+    // Keep the business name the client already has (a new client's starter profile carries it).
+    if (profileWritten) await businessProfile.save(buildProfile((current && current.profile.name) || name, region), 'demo');
   });
   return { added, removed, staff: team.created, profileWritten, profileReplaced };
 }
@@ -291,4 +304,4 @@ if (require.main === module) {
   })().catch(err => { console.error(err.message); process.exit(1); });
 }
 
-module.exports = { seedDemo, planLeads, resetDemo, assertAllowed, ensureStaff, JOURNEYS, LEADS };
+module.exports = { seedDemo, planLeads, resetDemo, assertAllowed, ensureStaff, isStarterProfile, JOURNEYS, LEADS };

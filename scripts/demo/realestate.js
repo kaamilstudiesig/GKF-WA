@@ -39,6 +39,7 @@ const REGIONS = {
     lastNames: ['Al Nuaimi', 'Haddad', 'Menon', 'Saleh', 'Kapoor', 'Rahman', 'Pillai', 'Farouk', 'Iyer', 'Mansour', 'Shetty', 'Qasim'],
     handoffSummary: interest => `Wants a site visit: ${interest}`,
     staffReply: 'Hi, this is your property advisor. Sharing the brochure and price list now.',
+    followUps: { noAnswer: 'Call again (no answer)', visit: 'Did they come for the site visit?' },
     staff: { manager: ['Lina', 'Hamdan'], sales: [['Karan', 'Desai'], ['Dana', 'Khoury'], ['Imran', 'Sheikh'], ['Meera', 'Nair']] },
     ads: [
       { platform: 'instagram', id: '120240001', headline: '2BR in Dubai Hills from AED 1.8M' },
@@ -98,6 +99,7 @@ const REGIONS = {
     lastNames: ['Sharma', 'Rao', 'Reddy', 'Iyer', 'Gowda', 'Nair', 'Kulkarni', 'Hegde', 'Menon', 'Shetty', 'Joshi', 'Patil'],
     handoffSummary: interest => `Wants a site visit: ${interest}`,
     staffReply: 'Hi, this is your property advisor. Sharing the brochure and price list now.',
+    followUps: { noAnswer: 'Call again (no answer)', visit: 'Did they come for the site visit?' },
     staff: { manager: ['Ramesh', 'Kamath'], sales: [['Nisha', 'Bhat'], ['Varun', 'Pai'], ['Deepak', 'Murthy'], ['Asha', 'Prabhu']] },
     ads: [
       { platform: 'instagram', id: '120240101', headline: '2 BHK on Sarjapur Road from ₹85L' },

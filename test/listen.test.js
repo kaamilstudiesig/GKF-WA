@@ -49,3 +49,18 @@ test('LISTEN refreshes boards on every successful connect: after a failed start,
   await sleep(30);
   assert.strictEqual(made.length, 3); // stopped: no new connection
 });
+
+test('stopping while a connect is still in flight closes that connection', async () => {
+  let release;
+  const c = new EventEmitter();
+  c.connect = () => new Promise(r => { release = r; });
+  c.query = async () => {};
+  c.end = async () => { c.ended = true; };
+  let refreshes = 0;
+  const stop = listenLoop(() => c, 'crm_board', () => {}, { onReconnect: () => refreshes++, minDelayMs: 5 });
+  await stop(); // the board stops during start-up
+  release(); // now the connect finishes
+  await sleep(20);
+  assert.ok(c.ended);
+  assert.strictEqual(refreshes, 0);
+});

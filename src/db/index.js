@@ -112,7 +112,8 @@ function listenLoop(makeClient, channel, fn, { onReconnect, minDelayMs = 1000, m
     c.on('error', retry);
     c.on('end', () => retry(null));
     c.connect().then(() => c.query(`LISTEN ${channel}`)).then(() => {
-      if (stopped || dead) return;
+      if (dead) return; // retry() already ended it
+      if (stopped) { Promise.resolve().then(() => c.end()).catch(() => {}); return; } // stopped while connecting
       client = c; delay = minDelayMs;
       if (onReconnect) {
         try { onReconnect(); } catch (err) { logger.warn('LISTEN onReconnect failed', { channel, error: err.message }); }

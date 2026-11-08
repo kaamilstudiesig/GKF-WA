@@ -3,7 +3,10 @@
  * responses: lead data is private and phones are shared. When offline, pages show
  * /offline instead of the browser's error. */
 const VERSION = '__ASSET_VERSION__';
-const CACHE = `crm-${VERSION}`;
+// The client's branding version: renaming the business or changing its colour changes this file,
+// so the phone installs a new worker and re-caches the offline page with the new name and colour.
+const BRAND = '__BRAND_VERSION__';
+const CACHE = `crm-${VERSION}-${BRAND}`;
 const OFFLINE = '/offline';
 const SHELL = [OFFLINE, `/static/css/app.css?v=${VERSION}`, `/static/js/app.js?v=${VERSION}`];
 

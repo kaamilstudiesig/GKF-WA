@@ -70,7 +70,7 @@ test('analytics: funnel, speed to lead, logging rate, lost reasons, per person',
 
     assert.deepStrictEqual(a.speedToLead, { handoffs: 4, contacted: 2, notContacted: 2, medianMinutes: 16, withinFiveMinutes: 25 });
     assert.deepStrictEqual(a.logging, {
-      handoffs: 3, loggedWithin24h: 2, rate: 66.7, salesRecorded: 1, salesRecordedAutomatically: 1, autoRate: 100
+      handoffs: 3, loggedWithin24h: 2, rate: 66.7, salesRecorded: 1, revenueInr: 5000, salesRecordedAutomatically: 1, autoRate: 100
     });
     assert.deepStrictEqual(a.lostReasons.map(r => [r.reason, r.count, r.share]), [['price', 1, 50], ['timing', 1, 50]]);
 
@@ -95,6 +95,56 @@ test('analytics: funnel, speed to lead, logging rate, lost reasons, per person',
     assert.strictEqual(empty.funnel.winRate, null);
     assert.strictEqual(empty.speedToLead.medianMinutes, null);
     assert.strictEqual(empty.logging.rate, null);
+  } finally { await ctx.cleanup(); }
+});
+
+test('analytics review fixes: working minutes, fair 5-minute rate, lost leads keep their stage, sales logged in the period, manager scope, names', async () => {
+  const ctx = await setup();
+  try {
+    const db = ctx.db;
+    const salesId = await ctx.userId('sales'); // in the seeded manager's team
+    const managerId = await ctx.userId('manager');
+    const other = await db.one(`INSERT INTO crm_users (email, name, role, password_hash, active) VALUES ('other@x.com', 'Other', 'sales', 'x', true) RETURNING id`);
+    const lead = (waId, status, first) => db.query('INSERT INTO leads (wa_id, status, first_contact_at) VALUES ($1, $2, $3)', [waId, status, first]);
+    const handoff = (waId, created) => db.query("INSERT INTO handoffs (wa_id, reason, status, created_at) VALUES ($1, 'ready_to_book', 'assigned', $2)", [waId, created]);
+    const assign = (waId, uid) => db.query("INSERT INTO crm_lead_assignments (wa_id, user_id, assigned_at) VALUES ($1, $2, '2030-03-01T00:00:00Z')", [waId, uid]);
+    const now = new Date('2030-03-20T12:00:00Z'); // 17:30 in India
+
+    // Night lead: hand-off at 01:30 IST, first outcome at 09:10 IST = 10 working minutes (460 on the clock).
+    await lead('918100000001', 'contacted', '2030-03-10T19:55:00Z');
+    await handoff('918100000001', '2030-03-10T20:00:00Z');
+    await db.query("INSERT INTO crm_lead_outcomes (wa_id, user_id, outcome, created_at) VALUES ('918100000001', $1, 'called_connected', '2030-03-11T03:40:00Z')", [salesId]);
+    await assign('918100000001', salesId);
+    // A hand-off opened one minute ago, not contacted yet: must not lower "within 5 minutes".
+    await lead('918100000002', 'new', '2030-03-20T11:58:00Z');
+    await handoff('918100000002', '2030-03-20T11:59:00Z');
+    // Qualified, then lost (status history in the activity log): still counts as qualified.
+    await lead('918100000003', 'lost', '2030-03-12T09:00:00Z');
+    await db.query(`INSERT INTO crm_activity_log (wa_id, action, details, created_at) VALUES
+      ('918100000003', 'status_change', '{"from":"new","to":"qualified"}', '2030-03-12T10:00:00Z'),
+      ('918100000003', 'status_change', '{"from":"qualified","to":"lost"}', '2030-03-13T10:00:00Z')`);
+    // A lead from last year that pays this month: in the period's revenue, not in the cohort's.
+    await lead('918100000004', 'converted', '2029-12-01T09:00:00Z');
+    await db.query("INSERT INTO crm_lead_outcomes (wa_id, user_id, outcome, amount_inr, created_at) VALUES ('918100000004', $1, 'joined', 9000, '2030-03-15T10:00:00Z')", [salesId]);
+    await assign('918100000004', salesId);
+    // A lead assigned to someone outside the manager's team: the manager must not see it.
+    await lead('918100000005', 'hot', '2030-03-14T09:00:00Z');
+    await handoff('918100000005', '2030-03-14T09:30:00Z');
+    await assign('918100000005', other.id);
+
+    const all = await new Analytics(db).summary(undefined, { days: 30, now, names: { visit_booked: 'Site visit booked', visited: 'Site visited' } });
+    assert.strictEqual(all.speedToLead.medianMinutes, 10); // working minutes, not 460
+    assert.strictEqual(all.speedToLead.handoffs, 3);
+    assert.strictEqual(all.speedToLead.withinFiveMinutes, 0); // 0 of 2 due; the 1-minute-old hand-off is left out
+    assert.strictEqual(all.funnel.stages.find(s => s.key === 'qualified').count, 2); // the hot lead, and the lost lead that was qualified
+    assert.strictEqual(all.funnel.revenueInr, 0); // cohort: leads first seen in the period
+    assert.strictEqual(all.logging.revenueInr, 9000); // sales logged in the period
+    assert.deepStrictEqual(all.funnel.stages.filter(s => s.key.startsWith('visit')).map(s => s.label), ['Site visit booked', 'Site visited']);
+
+    const manager = await db.one('SELECT * FROM crm_users WHERE id = $1', [managerId]);
+    const team = await new Analytics(db).summary(manager, { days: 30, now });
+    assert.strictEqual(team.funnel.leads, 3); // not 4: the other team's lead is out
+    assert.ok(!team.people.some(p => p.id === other.id));
   } finally { await ctx.cleanup(); }
 });
 

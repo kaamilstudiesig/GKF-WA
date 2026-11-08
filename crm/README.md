@@ -60,9 +60,10 @@ Every lead page starts with **Log outcome** (`#outcome`, also where Telegram's "
 
 | Number | Definition |
 | --- | --- |
-| Funnel | Leads whose first message is in the period, by the furthest step reached: Leads → Contacted → Qualified → Visit booked → Visited → Won. Outcomes decide (No answer is not contact; No-show still counts as booked); the lead's status fills in for leads with no outcome. Each step shows its share of the step before |
+| Funnel | Leads whose first message is in the period, by the furthest step reached: Leads → Contacted → Qualified → Visit booked → Visited → Won. Outcomes decide (No answer is not contact; No-show still counts as booked), plus statuses the lead moved through in the CRM (a lost lead that was qualified still counts as qualified); the lead's status fills in for leads with no outcome. Each step shows its share of the step before |
 | First contact | The first staff reply sent from the CRM or the first outcome logged after a hand-off opened (a logged No answer counts: someone tried). Bot replies don't count |
-| Speed to lead | Median minutes from hand-off to first contact, for hand-offs opened in the period; plus the share within 5 minutes and how many are not contacted yet |
+| Speed to lead | Median **working** minutes from hand-off to first contact (the client's working hours and time zone from **Business settings → Lead queue**; a lead at 2 AM starts counting when the shift starts), for hand-offs opened in the period; plus the share within 5 minutes (only hand-offs that were contacted or have been open 5 working minutes count) and how many are not contacted yet |
+| Revenue (tile) | Won amounts **logged in the period**, whatever month the lead came in. The funnel's revenue is different: money from leads first seen in the period |
 | Logging rate | Hand-offs with an outcome within 24 h. A hand-off younger than 24 h counts only once it has one. Target 80%+ |
 | Sales recorded automatically | Won outcomes in the period that a paid payment link logged (K11) |
 | Lost reasons | Lost outcomes logged in the period, by reason, with share |
@@ -112,8 +113,9 @@ Local testing: turning Zoho on locally (even with fake credentials) starts the r
 Staff install the CRM on their phone from their own CRM host. It opens full screen like an app, with the client's name and icon (`crm/src/pwa.js`, all public so the browser can fetch them before login):
 
 - `/manifest.webmanifest`: name and short name from the business name, `start_url` `/`, standalone, dark theme colour, shortcuts (Leads, Follow-ups, Pipeline). Icons: `/brand/icon.svg` (logo letters on the brand colour, plus a maskable version for Android) and the uploaded logo when it is a square PNG.
-- `/sw.js` (`crm/public/sw.js` with the deploy's asset version): caches only the CSS, JS and `/offline`. **Pages and lead data are never cached** (shared phones, private data). Offline, a page shows **You're offline** instead of the browser's error. A deploy changes the version, so phones pick up new CSS/JS on the next visit.
+- `/sw.js` (`crm/public/sw.js` with the deploy's asset version and the client's brand version, so renaming the business or changing its colour makes phones re-cache the offline page): caches only the CSS, JS and `/offline`. **Pages and lead data are never cached** (shared phones, private data). Offline, a page shows **You're offline** instead of the browser's error. A deploy changes the version, so phones pick up new CSS/JS on the next visit.
 - Menu: **Install app** appears when the browser offers it (Android Chrome); on iPhone a short hint (Share → Add to Home Screen), since Safari has no install prompt. Both hide once installed. iPhones ignore SVG icons: they use the uploaded logo as the home-screen icon (`apple-touch-icon`), else `/brand/apple-touch-icon.png`, a plain 180×180 tile in the brand colour (built with zlib, no image library). Brand settings tells the owner to upload a square PNG for a proper iPhone icon.
+- Icons: PNG `/brand/icon-192.png` and `/brand/icon-512.png` (brand-colour tiles; Chrome needs them to offer **Install app**), the SVG letters, and an uploaded logo when it is a square PNG. iPhones use the logo only when it is a square PNG, otherwise `/brand/apple-touch-icon.png`; Brand settings says so. The short app name is the same on Android and iPhone (`shortName` in `crm/src/branding.js`).
 
 ## Waiting for an outcome (R11)
 

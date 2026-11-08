@@ -72,8 +72,9 @@ class Analytics {
   async summary(user = SYSTEM, { days = 30, now = new Date(), names = {}, lostNames = null, type = null } = {}) {
     const hours = await new LeadQueue(this.db).settings(); // working hours and time zone
     const range = { days, since: new Date(now.getTime() - days * DAY_MS), now, hours };
-    // Lost-reason words follow the business type: pass lostNames (namesFor(type).LOST_REASONS) or the type.
-    const lost = lostNames || lostReasonsFor(type);
+    // Lost-reason words follow the business type: lostNames (namesFor(type).LOST_REASONS), else the
+    // type given, else the current client's own type from its business profile.
+    const lost = lostNames || lostReasonsFor(type || require('../../src/config/gymConfig').profile.type);
     // One after another: requests run inside a tenant's transaction context.
     const funnel = await this.funnel(user, range, names);
     const handoffs = await this.handoffStats(user, range);

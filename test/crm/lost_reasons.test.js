@@ -54,7 +54,9 @@ test('lost reasons: summary by business type, neutral fallback, and the AI promp
     const a = new Analytics(ctx.db);
     assert.strictEqual((await a.summary(undefined, { now, type: 'realestate' })).lostReasons[0].label, 'Bought elsewhere');
     assert.strictEqual((await a.summary(undefined, { now, type: 'gym' })).lostReasons[0].label, 'Joined another gym');
-    assert.strictEqual((await a.summary(undefined, { now })).lostReasons[0].label, 'Joined another gym'); // no type: the default pack
+    gymConfig.setProfile({ ...gymConfig.DEFAULT_PROFILE, type: 'realestate' });
+    assert.strictEqual((await a.summary(undefined, { now })).lostReasons[0].label, 'Bought elsewhere'); // no option: this client's own type
+    gymConfig.resetToDefault();
     assert.strictEqual((await a.summary(undefined, { now, lostNames: { joined_elsewhere: 'Custom' } })).lostReasons[0].label, 'Custom');
 
     gymConfig.setProfile({ ...gymConfig.DEFAULT_PROFILE, type: 'realestate' });

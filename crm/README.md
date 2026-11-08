@@ -56,7 +56,7 @@ Every lead page starts with **Log outcome** (`#outcome`, also where Telegram's "
 
 ## Analytics (R5)
 
-`crm/src/analytics.js`: `new Analytics(db).summary(user, { days, now, names, lostNames | type })` returns plain objects (the Reports page renders them; K21 and scripts can call it with no user for the whole business, inside `tenancy.run`). `names` is `namesFor(type).OUTCOMES`, so stage labels follow the business type (real estate: Site visit booked, Booked). Lost reasons use the business type's words: pass `lostNames` (`namesFor(type).LOST_REASONS`, as the Reports page does) or `type`; with neither, the neutral wording from `src/config/lostReasons.js` is used.
+`crm/src/analytics.js`: `new Analytics(db).summary(user, { days, now, names, lostNames | type })` returns plain objects (the Reports page renders them; K21 and scripts can call it with no user for the whole business, inside `tenancy.run`). `names` is `namesFor(type).OUTCOMES`, so stage labels follow the business type (real estate: Site visit booked, Booked). Lost reasons use the business type's words: pass `lostNames` (`namesFor(type).LOST_REASONS`, as the Reports page does) or `type`; with neither, the current client's own business type (from its business profile) is used.
 
 | Number | Definition |
 | --- | --- |

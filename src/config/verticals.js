@@ -1,3 +1,4 @@
+const { LOST_REASONS } = require('./lostReasons');
 /**
  * Vertical packs: how the assistant sells for a type of business. The business's own
  * facts come from its profile (src/config/gymConfig.js); this is the selling method.
@@ -33,7 +34,7 @@ const gym = {
     bookButton: 'Book a trial',
     staffButton: 'Talk to a coach'
   },
-  // Lost reasons in this business's words (keys from LOST_REASONS in crm/src/constants.js).
+  // Lost reasons in this business's words (keys from LOST_REASONS in src/config/lostReasons.js).
   lostReasons: { distance: 'Too far', timing: 'Timings don\'t suit', joined_elsewhere: 'Joined another gym' },
   // Names on the CRM and in the prompt. Missing keys fall back to the defaults in labelsFor().
   labels: {},
@@ -161,7 +162,6 @@ function labelsFor(type) {
 
 /** Lost-reason wording for a business type, by key; missing keys use the neutral defaults. */
 function lostReasonsFor(type) {
-  const { LOST_REASONS } = require('../../crm/src/constants');
   const v = VERTICALS[type] || gym;
   return { ...LOST_REASONS, ...(v.lostReasons || {}) };
 }

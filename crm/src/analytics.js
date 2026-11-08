@@ -1,6 +1,8 @@
 const { Params } = require('./util');
 const { leadScope, staffScope } = require('./permissions');
 const { OUTCOMES, LOST_REASONS } = require('./constants');
+const { LeadQueue, workingMinutes } = require('./queue');
+const { lostReasonsFor } = require('../../src/config/verticals');
 
 /**
  * R5 analytics: the numbers for the Reports page, the GKF case study and the
@@ -14,10 +16,15 @@ const { OUTCOMES, LOST_REASONS } = require('./constants');
  *   the furthest outcome logged on it (or its status, for leads the bot marked).
  * - First contact: the first staff reply sent from the CRM or the first outcome logged,
  *   after the hand-off was opened. A logged "No answer" counts: someone tried.
- * - Speed to lead: minutes from hand-off to first contact, for hand-offs opened in the period.
+ * - Speed to lead: working minutes (the client's working hours and time zone, from the lead queue
+ *   settings) from hand-off to first contact, for hand-offs opened in the period. A lead that writes
+ *   at 2 AM starts counting when the shift starts. "Within 5 minutes" counts only hand-offs that
+ *   were contacted or have been open for 5 working minutes, so a brand-new hand-off never lowers it.
  * - Logging rate: share of those hand-offs with an outcome within 24 hours. Hand-offs
  *   younger than 24 hours count only once they have one, so a fresh hand-off never drags it down.
  * - Sales recorded automatically: won outcomes created by a paid payment link (K11).
+ * - Revenue (logging.revenueInr): won outcomes logged in the period, whatever month the lead came in.
+ *   The funnel's revenueInr is different: money from leads first seen in the period (a cohort).
  *
  * Scope: the same as the rest of the CRM. `user` limits the leads and staff
  * (owner: all; manager: their team and unassigned; sales: their own). Pass no
@@ -62,12 +69,15 @@ class Analytics {
   constructor(db) { this.db = db; }
 
   /** Everything at once, for the Reports page and K21. */
-  async summary(user = SYSTEM, { days = 30, now = new Date(), names = {}, lostNames = {} } = {}) {
-    const range = { days, since: new Date(now.getTime() - days * DAY_MS), now };
+  async summary(user = SYSTEM, { days = 30, now = new Date(), names = {}, lostNames = null, type = null } = {}) {
+    const hours = await new LeadQueue(this.db).settings(); // working hours and time zone
+    const range = { days, since: new Date(now.getTime() - days * DAY_MS), now, hours };
+    // Lost-reason words follow the business type: pass lostNames (namesFor(type).LOST_REASONS) or the type.
+    const lost = lostNames || lostReasonsFor(type);
     // One after another: requests run inside a tenant's transaction context.
     const funnel = await this.funnel(user, range, names);
     const handoffs = await this.handoffStats(user, range);
-    const lostReasons = await this.lostReasons(user, range, lostNames);
+    const lostReasons = await this.lostReasons(user, range, lost);
     const people = await this.people(user, range);
     return {
       days, since: range.since.toISOString(), until: now.toISOString(),
@@ -81,6 +91,8 @@ class Analytics {
     const q = new Params();
     const rows = await this.db.many(`
       SELECT l.status, ARRAY_REMOVE(ARRAY_AGG(DISTINCT x.outcome), NULL) AS outcomes,
+        ARRAY(SELECT DISTINCT y.details ->> 'from' FROM crm_activity_log y
+          WHERE y.wa_id = l.wa_id AND y.action = 'status_change' AND y.details ->> 'from' IS NOT NULL) AS past,
         COALESCE(SUM(x.amount_inr) FILTER (WHERE x.outcome = 'joined'), 0)::bigint AS revenue
       FROM leads l LEFT JOIN crm_lead_assignments a ON a.wa_id = l.wa_id
         LEFT JOIN crm_lead_outcomes x ON x.wa_id = l.wa_id
@@ -90,7 +102,11 @@ class Analytics {
     const reached = Object.fromEntries(STAGE_ORDER.map(s => [s, 0]));
     let revenue = 0; let lost = 0;
     for (const r of rows) {
-      const stages = [STATUS_STAGE[r.status] || 'leads', ...r.outcomes.map(o => OUTCOME_STAGE[o]).filter(Boolean)];
+      // A lead's furthest stage: its status now, the statuses it moved through (a lost lead that was
+      // qualified still counts as qualified), and its outcomes. Status changes made by the bot are not
+      // in the history, so those count only through the current status.
+      const stages = [STATUS_STAGE[r.status] || 'leads', ...(r.past || []).map(st => STATUS_STAGE[st]).filter(Boolean),
+        ...r.outcomes.map(o => OUTCOME_STAGE[o]).filter(Boolean)];
       const top = Math.max(...stages.map(s => STAGE_ORDER.indexOf(s)));
       for (let i = 0; i <= top; i++) reached[STAGE_ORDER[i]]++;
       revenue += Number(r.revenue);
@@ -111,22 +127,30 @@ class Analytics {
   }
 
   /** Speed to lead and logging rate, from hand-offs opened in the period. */
-  async handoffStats(user = SYSTEM, { since, now }) {
+  async handoffStats(user = SYSTEM, { since, now, hours }) {
     const q = new Params();
     const rows = await this.db.many(`
       SELECT h.id, h.created_at, fc.t AS contact_at, fc.uid AS contact_by, fo.t AS outcome_at
       FROM handoffs h JOIN leads l ON l.wa_id = h.wa_id LEFT JOIN crm_lead_assignments a ON a.wa_id = l.wa_id
       ${FIRST_CONTACT}
       WHERE ${leadScope(user, q)} AND h.created_at >= ${q.p(since.toISOString())} AND h.created_at < ${q.p(now.toISOString())}`, q.values);
-    return this.summarizeHandoffs(rows, now);
+    return this.summarizeHandoffs(rows, now, hours);
   }
 
-  summarizeHandoffs(rows, now) {
+  /** Working minutes from a hand-off to its first contact (clock minutes without settings, e.g. in tests of this alone). */
+  static minutesToContact(r, hours) {
+    return hours ? workingMinutes(r.created_at, r.contact_at, hours) : (new Date(r.contact_at).getTime() - new Date(r.created_at).getTime()) / 60000;
+  }
+
+  summarizeHandoffs(rows, now, hours = null) {
     const mins = [];
-    let logged = 0; let due = 0;
+    let logged = 0; let due = 0; let fastDue = 0;
     for (const r of rows) {
       const opened = new Date(r.created_at).getTime();
-      if (r.contact_at) mins.push((new Date(r.contact_at).getTime() - opened) / 60000);
+      if (r.contact_at) mins.push(Analytics.minutesToContact(r, hours));
+      // "Within 5 minutes" only counts hand-offs that had their 5 minutes: contacted, or open that long.
+      const openMins = hours ? workingMinutes(r.created_at, now, hours) : (now.getTime() - opened) / 60000;
+      if (r.contact_at || openMins >= FAST_MINUTES) fastDue++;
       const loggedInTime = r.outcome_at && new Date(r.outcome_at).getTime() - opened <= DAY_MS;
       if (loggedInTime) logged++;
       if (loggedInTime || now.getTime() - opened >= DAY_MS) due++;
@@ -135,7 +159,7 @@ class Analytics {
       speed: {
         handoffs: rows.length, contacted: mins.length, notContacted: rows.length - mins.length,
         medianMinutes: round1(median(mins)),
-        withinFiveMinutes: pct(mins.filter(m => m <= FAST_MINUTES).length, rows.length)
+        withinFiveMinutes: pct(mins.filter(m => m <= FAST_MINUTES).length, fastDue)
       },
       logging: { handoffs: due, loggedWithin24h: logged, rate: pct(logged, due) }
     };
@@ -145,12 +169,12 @@ class Analytics {
   async autoRecorded(user = SYSTEM, { since, now }) {
     const q = new Params();
     const r = await this.db.one(`
-      SELECT COUNT(*)::int AS won,
+      SELECT COUNT(*)::int AS won, COALESCE(SUM(x.amount_inr), 0)::bigint AS revenue,
         COUNT(*) FILTER (WHERE EXISTS (SELECT 1 FROM crm_payment_links p WHERE p.wa_id = x.wa_id AND p.status = 'paid'
           AND p.paid_at BETWEEN x.created_at - interval '5 minutes' AND x.created_at + interval '5 minutes'))::int AS auto
       FROM crm_lead_outcomes x JOIN leads l ON l.wa_id = x.wa_id LEFT JOIN crm_lead_assignments a ON a.wa_id = l.wa_id
       WHERE ${leadScope(user, q)} AND x.outcome = 'joined' AND x.created_at >= ${q.p(since.toISOString())} AND x.created_at < ${q.p(now.toISOString())}`, q.values);
-    return { salesRecorded: r.won, salesRecordedAutomatically: r.auto, autoRate: pct(r.auto, r.won) };
+    return { salesRecorded: r.won, revenueInr: Number(r.revenue), salesRecordedAutomatically: r.auto, autoRate: pct(r.auto, r.won) };
   }
 
   /** Lost outcomes logged in the period, by reason. lostNames = the business type's wording (lostReasonsFor). */
@@ -169,7 +193,7 @@ class Analytics {
    * Per salesperson (and manager), for the period: first contacts made and how fast,
    * outcomes logged, won and ₹, lost, and the logging rate of hand-offs on leads assigned to them.
    */
-  async people(user = SYSTEM, { since, now }) {
+  async people(user = SYSTEM, { since, now, hours }) {
     const q = new Params();
     const sinceP = q.p(since.toISOString()); const nowP = q.p(now.toISOString());
     const staff = await this.db.many(`
@@ -183,17 +207,21 @@ class Analytics {
       GROUP BY u.id ORDER BY u.role, u.name`, q.values);
     if (!staff.length) return [];
 
+    // Hand-offs on the in-scope staff's leads (assigned to them or first contacted by them) only.
+    // Results are only ever read per person in `staff`, which is already scoped to what this user may see.
     const hq = new Params();
+    const ids = hq.p(staff.map(s => s.id));
     const handoffs = await this.db.many(`
       SELECT h.created_at, fc.t AS contact_at, fc.uid AS contact_by, fo.t AS outcome_at, a.user_id AS assignee
       FROM handoffs h JOIN leads l ON l.wa_id = h.wa_id LEFT JOIN crm_lead_assignments a ON a.wa_id = l.wa_id
       ${FIRST_CONTACT}
-      WHERE h.created_at >= ${hq.p(since.toISOString())} AND h.created_at < ${hq.p(now.toISOString())}`, hq.values);
+      WHERE h.created_at >= ${hq.p(since.toISOString())} AND h.created_at < ${hq.p(now.toISOString())}
+        AND (a.user_id = ANY(${ids}::int[]) OR fc.uid = ANY(${ids}::int[]))`, hq.values);
 
     return staff.map(s => {
       const contacts = handoffs.filter(h => h.contact_by === s.id)
-        .map(h => (new Date(h.contact_at).getTime() - new Date(h.created_at).getTime()) / 60000);
-      const own = this.summarizeHandoffs(handoffs.filter(h => h.assignee === s.id), now);
+        .map(h => Analytics.minutesToContact(h, hours));
+      const own = this.summarizeHandoffs(handoffs.filter(h => h.assignee === s.id), now, hours);
       return {
         id: s.id, name: s.name, role: s.role,
         firstContacts: contacts.length, medianMinutes: round1(median(contacts)),

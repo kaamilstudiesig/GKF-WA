@@ -5,7 +5,7 @@
   <div class="avatar avatar-placeholder"><div class="w-9 rounded-full <%= lead.needs_human ? 'bg-primary text-primary-content' : 'bg-neutral text-neutral-content' %>"><span class="text-xs font-semibold"><%= initials %></span></div></div>
   <button type="button" class="min-w-0 flex-1 px-2 text-left" data-tab-link="details" aria-label="Lead details">
     <div class="truncate text-[15px] font-semibold leading-tight"><%= util.leadTitle(lead) %></div>
-    <div class="truncate text-xs leading-tight text-base-content/60"><span class="capitalize"><%= lead.status %></span><% if (lead.needs_human) { %> · <span class="text-primary">needs human</span><% } %><% if (lead.assignee_name) { %> · <%= lead.assignee_name %><% } %></div>
+    <div class="truncate text-xs leading-tight text-base-content/60"><span class="capitalize"><%= lead.status %></span><% if (lead.needs_human) { %> · <span class="text-primary">needs human</span><% } %><% if (lead.assignee_name) { %> · <%= lead.assignee_name %><% } %><% if (typeof lead.clock === 'number') { %> · <span class="<%= lead.clock >= 5 ? 'text-error' : 'text-warning' %>">waiting <%= lead.clock %> min</span><% } %></div>
   </button>
   <% if (phone) { %><a href="tel:+<%= phone %>" class="btn btn-ghost btn-square" aria-label="Call"><%- include('icon', { name: 'phone' }) %></a><% } %>
   <a href="#outcome" class="btn btn-primary btn-sm mr-1 gap-1 px-3"><%- include('icon', { name: 'clipboard', cls: 'size-4' }) %>Log</a>

@@ -70,18 +70,11 @@ Status: K14–K17 are built and K18 is written (PR `k14-k18-new-client`). R12 is
 - Speed to lead counts **working hours** everywhere (the R2 rule), so night leads don't make staff look slow.
 - Krishna may own a feature end to end, `src/` included, once a small contract PR is agreed. Kaamil keeps Meta access and tokens, AI prompts, tenancy and deploys.
 
-**Review of Krishna's 6 open PRs (#33-#38): merge all, fix after.** Each passes all tests merged with `main`; security and client separation are right. They were branched from the same point, so they conflict with each other in `crm/src/app.js` and the docs: rebase and merge one at a time, in this order: R5 (#33) → R11 (#34) → R4 (#36) → Zoho status (#38) → R2 (#35) → R3 (#37). Fixes:
-
-1. R2: the owner's auto-assign switch does nothing until K19 (bot side). Show it as "needs the bot update" until K19 is merged.
-2. R5 (definitions in [crm/README.md](../crm/README.md#analytics-r5)): speed to lead in working minutes (reuse `workingMinutes` from `crm/src/queue.js`, so after R2).
-3. R3: every inbound message pings every open board, and each viewer reloads the whole board. Send at most one ping per client every 5 seconds.
-4. R4: iPhones ignore SVG icons; with no uploaded logo the home-screen icon is a screenshot. Serve a PNG `apple-touch-icon`, or tell the owner on Brand settings to upload a square PNG.
-5. Zoho status: the "Open in Zoho" link format is unverified; check it on the first real connection and note the result in the PR.
-6. ✅ (PR `lost-reasons-per-type`) Lost reasons are gym wording ("Joined another gym") for every business. Move the labels into the business-type packs (`labels` in `src/config/verticals.js`), with real estate wording ("Bought elsewhere", "Budget", "Location").
+**Built and merged (6–8 Nov):** R2 lead queue (waits for K19), R3 live board, R4 phone app, R5 analytics, R11 reminders in the CRM (waits for R11b), R13 bulk staff, Zoho status page, the follow-up fixes from every automatic review, and K20 Zoho sync. None of it is live until the next Heroku deploy.
 
 **Krishna, in this order** (one PR each; a contract PR first where marked):
 
-1. Merge the 6 PRs with the fixes above.
+1. **Finish #42 (R14 demo kit) and #43 (lost-reason wording)** from their review comments. #42 first: the portfolio demos wait for it.
 2. **R14 real estate demo kit** (portfolio, this week): `npm run demo -- --tenant <slug> --preset realestate` fills one client with realistic sample data: projects, about 60 leads over 30 days with chats in English and Hinglish/Arabic, hand-offs, site visits, bookings with amounts, lost reasons, staff with a manager, and some leads waiting, so every screen (pipeline, reports, R11, R2 timers) looks alive. No real names or phone numbers (use +91 98000 / +971 50 000 test ranges). Safe to run twice. Builds on `scripts/demo-data.js`.
 3. **R15 currency per business** (contract PR first, with Kaamil): a `currency` field in the business profile (INR default, AED for Dubai). The CRM shows amounts in it, and payment fields and reports use it. The `amount_inr` column keeps its name (it holds the amount in the business's currency); document that. Kaamil handles the Conversions API currency and keeps Razorpay INR-only.
 4. **R16 lead intake** (contract PR first): leads from portals and website forms. A signed `POST` endpoint per client plus a copy-paste website form snippet: create or match the lead (phone, else email), record the source, open a hand-off, and send the first WhatsApp message as an approved template (leads from forms haven't messaged us, so the 24-hour window is closed). Adapters for specific portals (Property Finder, Bayut, Dubizzle) come once the Dubai client confirms which ones.
@@ -133,7 +126,11 @@ Off by default, so nothing changes for GKF until the owner turns it on in **Busi
 
 *Tests (Krishna)*: round-robin order; two `autoAssign` calls at once pick different people; old leads not escalated after turning on; no alerts outside working hours; `release` moves only not-picked-up leads; one client's queue never sees another client's staff.
 
-*Bot side (Kaamil, K19)*: `handoffRepository.open` calls `autoAssign` before `notifyService` / `staffAlerts`, so "their leads only" alerts reach the new assignee, wrapped so a queue error never blocks the hand-off. The minute housekeeping timer runs `sweep()` per tenant in `tenancy.run` and sends a `not_picked_up` alert for each result; the text uses `level` ("not picked up in 5 min" / "15 min").
+*After review (8 Nov):* leads also go back to the queue when an owner changes a sales person to manager or owner (not only on deactivation); only sales people can use **Taking leads** (403 for others); and a lead a manager assigns **by hand** after auto-assign is on escalates like any other, because the customer is waiting either way.
+
+*Built as agreed, with one detail:* when `autoAssign` keeps the current assignee for a new hand-off, it restarts their clock (`assigned_at` now, level 0), so the 5/15 minutes count from this hand-off, not from an old assignment.
+
+*Bot side (Kaamil, K19)*: set `require('../../crm/src/queue').LeadQueue.botWired = true` where the bot wires it in (until then Business settings shows auto-assign as "needs the bot update" and keeps it off). `handoffRepository.open` calls `autoAssign` before `notifyService` / `staffAlerts`, so "their leads only" alerts reach the new assignee, wrapped so a queue error never blocks the hand-off. The minute housekeeping timer runs `sweep()` per tenant in `tenancy.run` and sends a `not_picked_up` alert for each result; the text uses `level` ("not picked up in 5 min" / "15 min").
 
 **Kaamil, in this order**
 
@@ -181,9 +178,9 @@ Off by default, so nothing changes for GKF until the owner turns it on in **Busi
 | --- | --- | --- | --- |
 | K11 | ✅ **Payment links:** staff send a Razorpay/UPI link from the CRM; the `payment_link.paid` webhook logs Won + ₹ on the lead and triggers the Conversions API event | Kaamil | The lead key goes in the link's `reference_id`/`notes` |
 | K13 | ✅ **AI-suggested outcomes:** the reply call also returns a suggested outcome ("paid", "visit booked Sat 7am"); staff confirm with one tap. The AI never logs a sale on its own | Kaamil | Still one AI call per reply |
-| R3 | **Live board:** server-sent events so the kanban pipeline updates for everyone in real time; overdue cards red | Krishna | No websockets or extra services |
-| R4 | **PWA:** manifest + service worker so sales installs the CRM on their phone | Krishna | |
-| R11 | Unlogged-lead nudges: daily list per salesperson of hot leads with no outcome | Krishna | |
+| R3 | ✅ **Live board:** server-sent events so the kanban pipeline updates for everyone in real time; overdue cards red | Krishna | No websockets or extra services; Postgres triggers + `db.listen`, works with several dynos |
+| R4 | ✅ **PWA:** manifest + service worker so sales installs the CRM on their phone | Krishna | Per-client name and icon from the branding; no lead data cached |
+| R11 | Unlogged-lead nudges: daily list per salesperson of hot leads with no outcome | Krishna | CRM side built (dashboard, Leads filter, `Nudges.daily()`). **Open until R11b:** the morning send (Kaamil, contract below) |
 
 ### 3. Revenue per ad
 
@@ -215,6 +212,13 @@ Both: line up a partner agency with a few paying clients (any industry) while th
 ### 7. Compounding
 
 Cross-client benchmarks, score trained on every client's outcomes, outcome-based pricing pilot, win-back templates, Instagram capture (comment/DM → WhatsApp). Owners decided when we get there.
+
+## Contract: R11 daily reminder (Krishna built the CRM side; Kaamil sends it as R11b)
+
+`crm/src/nudges.js` decides which leads are **waiting for an outcome**: open (not converted, lost or cold), needed a person (a hand-off, or status hot), and no outcome logged since the latest hand-off (a hand-off staff resolved without logging an outcome still counts: that is the gap R11 closes) (or the first message, for a hot lead with no hand-off), for 2 hours to 30 days. The dashboard tile and list, and the **No outcome** filter on Leads, use the same rule.
+
+- `new Nudges(db).daily(now)` → `[{ user: { id, name, email, role, alertPhone, alertMode } | null, leads: [{ waId, name, since, hours }] }]`: one item per active person with waiting leads assigned (oldest first), then one item with `user: null` for unassigned leads (or leads assigned to someone disabled). Runs inside `tenancy.run`; no tenant filter. Sends nothing.
+- **Kaamil:** once a day per tenant (morning, display timezone), post each person's list to the staff Telegram group, and to their WhatsApp when `alertPhone` is set and `alertMode` is not `'off'` (a template with an **Open in CRM** button to `/leads?waiting=1&sort=waiting`). Send the `user: null` list to managers and owners. Skip people with an empty list.
 
 ## Contract: the outcome link (K4 ↔ R1)
 
@@ -260,6 +264,8 @@ Next to the Telegram group, each staff member can get alerts on their own WhatsA
 ## Zoho CRM sync (K20, built)
 
 For clients who already run their sales in Zoho CRM. Off until connected per client (`npm run zoho -- --tenant <slug> connect`, steps in [ONBOARDING.md](ONBOARDING.md#manual-flow-today-until-embedded-signup)). The refresh token and client secret are stored encrypted on the tenant; the accounts URL and API domain are per client, since Zoho runs separate data centres (India, UAE, Saudi, US, EU...). Zoho API v8.
+
+**In the CRM** (Krishna, PR `zoho-crm-status`, see [crm/README.md](../crm/README.md#zoho-crm-status)): sync status on Business settings and "Open in Zoho" on the lead page. **To check on the first real connection:** the record link `https://crm.zoho.<dc>/crm/tab/<Module>/<id>` has no `org<id>` segment; if it doesn't open the record, add the org id (read from `/org` at connect) and note the result on the PR.
 
 **Out (us → Zoho).** A database trigger marks a lead in `zoho_links` when it is created, its name, phone, interest or status changes, or an outcome is logged; a new message alone does not. CRM code needs no Zoho calls. `src/workers/zohoWorker.js` sends it:
 
@@ -309,6 +315,12 @@ Every PR gets a Claude review, started by the PR itself (no session waits or pol
 2. **The author fixes:** paste that prompt into your own Claude, or comment `@claude fix findings 1 and 2 from the review` on the PR and Claude pushes the fixes itself (`.github/workflows/claude.yml`). CI runs on those pushes.
 3. **Re-review after fixes:** add the label `claude-review` to the PR (pushes alone don't re-run it, to save usage).
 4. **Merging stays with Kaamil.** Claude never approves or merges.
+
+Keep the loop fast:
+- **One open PR at a time per person**, or at least merge them in order. PRs branched from the same point conflict with each other in `crm/src/app.js`, `crm/README.md` and this file.
+- **Before adding the label, merge the latest `main`** (a merge commit, no rebase). GitHub runs no workflow on a PR with conflicts, so the review silently never starts.
+- **Don't push to a branch after its PR is merged.** Those commits never reach `main`; open a new PR instead.
+- "Merge after these fixes" with small notes can merge now and fix in a follow-up PR; anything about safety, data or client separation is fixed first.
 
 Usage: reviews run on Sonnet with a turn cap and only on the events above; `@claude` runs use the default model. Both run on Kaamil's Claude subscription (`CLAUDE_CODE_OAUTH_TOKEN`), so they count against its usage limits, plus GitHub Actions minutes. If only an `ANTHROPIC_API_KEY` secret is set, they use it instead (billed per use); once `CLAUDE_CODE_OAUTH_TOKEN` is added they switch to it and the key can be deleted. Without either, both workflows skip and stay green. The same review runs locally with `/pr-review <number>` (needs `gh`).
 

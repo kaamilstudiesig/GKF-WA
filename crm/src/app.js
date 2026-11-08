@@ -15,7 +15,13 @@ const config = require('./config');
 const auth = require('./auth');
 const { Crm, HttpError } = require('./crm');
 const { Users } = require('./users');
+const { LiveBoard } = require('./liveBoard');
+const tenancy = require('../../src/tenancy/context');
+const { ZohoStatus } = require('./zohoStatus');
+const pwa = require('./pwa');
 const bulkStaff = require('./bulkStaff');
+const { LeadQueue, QueueError, TIMEZONES } = require('./queue');
+const { MIN_AGE_HOURS } = require('./nudges');
 const { Analytics } = require('./analytics');
 const { Branding } = require('./branding');
 const { can } = require('./permissions');
@@ -74,6 +80,19 @@ function createCrmApp({
   app.locals.assetV = assetVersion(); // cache-busting ?v= on CSS/JS links
   const crm = new Crm(db);
   const users = new Users(db);
+  const liveBoard = new LiveBoard(db);
+  app.locals.liveBoard = liveBoard; // tests and shutdown
+  const queue = new LeadQueue(db);
+  // R2: "waiting N min" on leads assigned but not picked up yet (only while auto-assign is on).
+  const withClock = async leads => {
+    const clock = await queue.waitingClock(leads.map(l => l.wa_id));
+    for (const l of leads) l.clock = clock[l.wa_id] ?? null;
+    return leads;
+  };
+  // Zoho sync status (K20). Without the bot's tenant registry (standalone CRM) it is simply off.
+  let registry = null;
+  try { registry = require('../../src/tenancy/registry'); } catch (e) { if (e.code !== 'MODULE_NOT_FOUND') throw e; /* standalone */ }
+  const zoho = new ZohoStatus(db, registry || { config: () => ({}) });
   const analytics = new Analytics(db);
   const throttle = new auth.LoginThrottle();
   const branding = new Branding(db, () => (gymConfig ? gymConfig.gymName : ''));
@@ -84,7 +103,7 @@ function createCrmApp({
   app.disable('x-powered-by');
   app.locals.crm = crm;
   // Used if a page renders before the session middleware has loaded the real branding (early errors).
-  app.locals.brand = { name: 'Staff CRM', first: 'Staff CRM', last: '', mark: 'CR', color: '#d4af37', contentColor: '#141106', style: '', logoUrl: null, fileSlug: 'crm' };
+  app.locals.brand = { name: 'Staff CRM', first: 'Staff CRM', last: '', mark: 'CR', color: '#d4af37', contentColor: '#141106', style: '', logoUrl: null, logoSquarePng: false, shortName: 'Staff CRM', key: '', fileSlug: 'crm' };
 
   app.use((req, res, next) => {
     res.setHeader('X-Content-Type-Options', 'nosniff');
@@ -106,6 +125,7 @@ function createCrmApp({
     req.user = session ? session.user : null;
     req.csrfToken = session ? session.csrfToken : null;
     Object.assign(res.locals, {
+      MIN_AGE_HOURS,
       user: req.user, csrfToken: req.csrfToken, can, util, LEAD_STATUSES, ROLE_LABELS, ROLES, LOST_REASONS, PLAN_OPTIONS: planOptions(), PAYMENTS_ON: razorpay.enabled(),
       ...namesFor(gymConfig ? gymConfig.profile.type : 'gym'),
       path: req.path, query: req.query, flash: req.query.ok || null, error: req.query.err || null,
@@ -152,6 +172,37 @@ function createCrmApp({
     res.set('Cache-Control', req.query.v ? 'public, max-age=31536000, immutable' : 'no-cache');
     res.send(logo.data);
   }));
+
+  // ---- installable app (R4). Public: the browser fetches these before anyone logs in. ----
+  const SW_SOURCE = fs.readFileSync(path.join(__dirname, '..', 'public', 'sw.js'), 'utf8').replace('__ASSET_VERSION__', app.locals.assetV);
+  app.get('/sw.js', (req, res) => {
+    res.set('Content-Type', 'text/javascript; charset=utf-8');
+    res.set('Cache-Control', 'no-cache'); // browsers must see a new version right after a deploy or a brand change
+    res.send(SW_SOURCE.replace('__BRAND_VERSION__', res.locals.brand.key || ''));
+  });
+  app.get('/manifest.webmanifest', h(async (req, res) => {
+    res.set('Content-Type', 'application/manifest+json; charset=utf-8');
+    res.set('Cache-Control', 'no-cache');
+    res.send(JSON.stringify(pwa.manifest(res.locals.brand, await branding.logo())));
+  }));
+  app.get('/brand/icon.svg', (req, res) => {
+    res.set('Content-Type', 'image/svg+xml');
+    res.set('Cache-Control', 'no-cache');
+    res.send(pwa.iconSvg(res.locals.brand, { pad: req.query.maskable === '1' }));
+  });
+  // iPhones need a PNG home-screen icon; head.ejs uses the uploaded logo when there is one.
+  app.get('/brand/apple-touch-icon.png', (req, res) => {
+    res.set('Content-Type', 'image/png');
+    res.set('Cache-Control', 'no-cache');
+    res.send(pwa.solidPng(res.locals.brand.color));
+  });
+  // Android install icons (Chrome wants 192 and 512 PNGs).
+  app.get(['/brand/icon-192.png', '/brand/icon-512.png'], (req, res) => {
+    res.set('Content-Type', 'image/png');
+    res.set('Cache-Control', 'no-cache');
+    res.send(pwa.solidPng(res.locals.brand.color, req.path.includes('512') ? 512 : 192));
+  });
+  app.get('/offline', (req, res) => res.render('offline'));
 
   // ---- auth ----
   app.get('/login', (req, res) => (req.user ? res.redirect('/') : res.render('login', { email: '' })));
@@ -200,20 +251,43 @@ function createCrmApp({
     }
   }));
 
+  // R2: a sales person switches "Taking leads" off (on leave, busy, end of shift). Their
+  // leads nobody has picked up yet go back into the queue.
+  app.post('/account/accepting', h(async (req, res) => {
+    // Only sales people take leads from the queue; the switch means nothing for anyone else.
+    if (req.user.role !== 'sales') return res.status(403).render('error', { status: 403, message: 'Only sales people take leads from the queue.' });
+    const on = req.body.accepting === '1';
+    await db.query('UPDATE crm_users SET accepting = $1, updated_at = now() WHERE id = $2', [on, req.user.id]);
+    const moved = on ? 0 : await queue.release(req.user.id);
+    await crm.log(req.user, null, on ? 'taking_leads_on' : 'taking_leads_off', { moved });
+    const msg = on ? 'You are taking new leads.' : `You are not taking new leads.${moved ? ` ${moved} lead${moved === 1 ? '' : 's'} went to someone else.` : ''}`;
+    res.redirect(withOk(back(req, '/'), msg));
+  }));
+
   // ---- dashboard ----
-  app.get('/', h(async (req, res) => res.render('dashboard', { d: await crm.dashboard(req.user) })));
+  app.get('/', h(async (req, res) => {
+    const d = await crm.dashboard(req.user);
+    await withClock([...d.attention, ...d.recent]);
+    res.render('dashboard', { d });
+  }));
 
   // ---- leads ----
   app.get('/leads', h(async (req, res) => {
     const filters = {
       status: req.query.status || '', assignee: req.query.assignee || '', q: req.query.q || '',
-      needsHuman: req.query.needs_human === '1', sort: req.query.sort || 'attention', page: req.query.page || 1
+      needsHuman: req.query.needs_human === '1', waiting: req.query.waiting === '1', sort: req.query.sort || 'attention', page: req.query.page || 1
     };
-    res.render('leads', { result: await crm.listLeads(req.user, filters), filters, staff: await crm.assignableUsers(req.user) });
+    const result = await crm.listLeads(req.user, filters);
+    await withClock(result.leads);
+    res.render('leads', { result, filters, staff: await crm.assignableUsers(req.user) });
   }));
+
+  // R3: live board stream. Pings "board changed" for this client only; no lead data.
+  app.get('/events', (req, res) => liveBoard.subscribe(tenancy.tenantId(), req, res));
 
   app.get('/pipeline', h(async (req, res) => {
     const columns = (await crm.pipelineBoard(req.user)).map(c => ({ ...c, label: res.locals.STAGES[c.stage] || c.label }));
+    await withClock(columns.flatMap(c => c.leads || []));
     res.render('pipeline', { columns });
   }));
 
@@ -245,6 +319,7 @@ function createCrmApp({
     const waId = util.cleanWaId(req.params.waId);
     const lead = await crm.getLead(req.user, waId);
     if (!lead) return res.status(404).render('error', { status: 404, message: 'Lead not found, or it is not assigned to you.' });
+    await withClock([lead]);
     res.render('lead', {
       lead,
       messages: await crm.messages(waId),
@@ -255,7 +330,8 @@ function createCrmApp({
       activity: await crm.leadActivity(waId),
       outcomes: await crm.leadOutcomes(waId),
       staff: await crm.assignableUsers(req.user),
-      botPausedUntil: await botGuard.pausedUntil(waId)
+      botPausedUntil: await botGuard.pausedUntil(waId),
+      zoho: await zoho.forLead(waId)
     });
   }));
 
@@ -334,7 +410,9 @@ function createCrmApp({
     const { VERTICALS } = require('../../src/config/verticals');
     res.render('settings', {
       profile: gymConfig.profile, meta: await businessProfile.meta(), verticals: VERTICALS,
-      prompt: gymConfig.getSystemPrompt(), limits: businessProfile.LIMITS, brandForm: null, ...extra
+      prompt: gymConfig.getSystemPrompt(), limits: businessProfile.LIMITS, brandForm: null,
+      queueSettings: await queue.settings(), TIMEZONES, queueBotWired: LeadQueue.botWired,
+      zoho: await zoho.summary(), ...extra
     });
   };
   app.get('/settings', allow(can.manageBusiness), h(async (req, res) => {
@@ -355,6 +433,21 @@ function createCrmApp({
   }));
 
   // Branding (R12): logo letters, colour and logo image, on the Business settings page.
+  // R2: lead queue settings (auto-assign, working hours, time zone).
+  app.post('/settings/queue', allow(can.manageBusiness), h(async (req, res) => {
+    // Until the bot calls autoAssign (K19), turning it on would do nothing: keep it off.
+    const input = { autoAssign: LeadQueue.botWired && req.body.auto_assign === '1', workStart: req.body.work_start, workEnd: req.body.work_end, timezone: req.body.timezone };
+    try {
+      await queue.saveSettings(input, req.user.email);
+    } catch (err) {
+      if (!(err instanceof QueueError)) throw err;
+      res.status(400);
+      return settingsPage(res, { error: err.message, queueSettings: { auto_assign: input.autoAssign, work_start: input.workStart, work_end: input.workEnd, timezone: input.timezone } });
+    }
+    await crm.log(req.user, null, 'queue_settings_updated', { autoAssign: input.autoAssign });
+    res.redirect(withOk('/settings', input.autoAssign ? 'Lead queue saved. New hand-offs go to sales people in turn.' : 'Lead queue saved. Auto-assign is off.') + '#queue');
+  }));
+
   app.post('/settings/brand', allow(can.manageBusiness), h(async (req, res) => {
     if (!businessProfile) return res.status(404).render('error', { status: 404, message: 'Business settings need the WhatsApp bot.' });
     try {
@@ -403,10 +496,13 @@ function createCrmApp({
   }));
   app.post('/users/:id', allow(can.manageUsers), h(async (req, res) => {
     try {
-      await users.update(req.user, req.params.id, {
+      const updated = await users.update(req.user, req.params.id, {
         name: req.body.name, email: req.body.email, role: req.body.role, managerId: req.body.manager_id || null, active: req.body.active === '1'
       });
-      res.redirect('/users?ok=' + encodeURIComponent('User updated.'));
+      // R2: leads nobody has picked up go back into the queue when the person is deactivated
+      // or stops being sales (managers and owners are not in the round-robin).
+      const moved = updated.active && updated.role === 'sales' ? 0 : await queue.release(updated.id);
+      res.redirect('/users?ok=' + encodeURIComponent(`User updated.${moved ? ` ${moved} lead${moved === 1 ? '' : 's'} went to someone else.` : ''}`));
     } catch (err) {
       if (!(err instanceof HttpError)) throw err;
       res.status(err.status); await usersPage(res, { error: err.message });

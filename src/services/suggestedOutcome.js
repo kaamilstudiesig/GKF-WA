@@ -1,4 +1,5 @@
-const { OUTCOMES, LOST_REASONS } = require('../../crm/src/constants');
+const { OUTCOMES } = require('../../crm/src/constants');
+const { LOST_REASONS } = require('../config/lostReasons');
 const leadRepository = require('../db/leadRepository');
 const notifyService = require('./notifyService');
 const logger = require('../utils/logger');

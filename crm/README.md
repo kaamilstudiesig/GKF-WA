@@ -56,13 +56,14 @@ Every lead page starts with **Log outcome** (`#outcome`, also where Telegram's "
 
 ## Analytics (R5)
 
-`crm/src/analytics.js`: `new Analytics(db).summary(user, { days, now, names })` returns plain objects (the Reports page renders them; K21 and scripts can call it with no user for the whole business, inside `tenancy.run`). `names` is `namesFor(type).OUTCOMES`, so stage labels follow the business type (real estate: Site visit booked, Booked).
+`crm/src/analytics.js`: `new Analytics(db).summary(user, { days, now, names, lostNames | type })` returns plain objects (the Reports page renders them; K21 and scripts can call it with no user for the whole business, inside `tenancy.run`). `names` is `namesFor(type).OUTCOMES`, so stage labels follow the business type (real estate: Site visit booked, Booked). Lost reasons use the business type's words: pass `lostNames` (`namesFor(type).LOST_REASONS`, as the Reports page does) or `type`; with neither, the neutral wording from `src/config/lostReasons.js` is used.
 
 | Number | Definition |
 | --- | --- |
-| Funnel | Leads whose first message is in the period, by the furthest step reached: Leads → Contacted → Qualified → Visit booked → Visited → Won. Outcomes decide (No answer is not contact; No-show still counts as booked); the lead's status fills in for leads with no outcome. Each step shows its share of the step before |
+| Funnel | Leads whose first message is in the period, by the furthest step reached: Leads → Contacted → Qualified → Visit booked → Visited → Won. Outcomes decide (No answer is not contact; No-show still counts as booked), plus statuses the lead moved through in the CRM (a lost lead that was qualified still counts as qualified); the lead's status fills in for leads with no outcome. Each step shows its share of the step before |
 | First contact | The first staff reply sent from the CRM or the first outcome logged after a hand-off opened (a logged No answer counts: someone tried). Bot replies don't count |
-| Speed to lead | Median minutes from hand-off to first contact, for hand-offs opened in the period; plus the share within 5 minutes and how many are not contacted yet |
+| Speed to lead | Median **working** minutes from hand-off to first contact (the client's working hours and time zone from **Business settings → Lead queue**; a lead at 2 AM starts counting when the shift starts), for hand-offs opened in the period; plus the share within 5 minutes (only hand-offs that were contacted or have been open 5 working minutes count) and how many are not contacted yet |
+| Revenue (tile) | Won amounts **logged in the period**, whatever month the lead came in. The funnel's revenue is different: money from leads first seen in the period |
 | Logging rate | Hand-offs with an outcome within 24 h. A hand-off younger than 24 h counts only once it has one. Target 80%+ |
 | Sales recorded automatically | Won outcomes in the period that a paid payment link logged (K11) |
 | Lost reasons | Lost outcomes logged in the period, by reason, with share |
@@ -77,6 +78,54 @@ Scope follows the user like every other page (owner: all; manager: their team an
 - Every row is checked first: email format, already taken, repeated in the list, role, manager (an active manager here or a manager row in the same list, sales only), WhatsApp number with country code. One bad row means **nobody is added**; the rows come back editable with each problem under its row.
 - Then all are saved in one transaction: managers first, so sales can point to a manager from the same list. A WhatsApp number turns on alerts for their own leads (`alert_mode = 'mine'`).
 - Each person gets a random one-time password (`auth.oneTimePassword`, also used by `crm:owner`), shown once on the result page (`Cache-Control: no-store`) with a CSV download. Only the hash is stored; everyone must change it at first login.
+
+## Live board (R3)
+
+The pipeline updates by itself when anyone changes a lead (the bot, another person, Zoho), and shows **Live** while connected.
+
+- **Database:** platform migration 4 `live_board` adds triggers on `leads` (new lead; status, needs-human, last message, name or interest changed), `crm_lead_assignments`, `crm_lead_outcomes`, `crm_follow_ups` and `handoffs`. Each runs `pg_notify('crm_board', '{"t": <tenant id>}')`: sent on commit, repeats in one transaction folded into one.
+- **Servers:** `crm/src/liveBoard.js` LISTENs once per process through `db.listen` (`src/db/index.js`: a dedicated connection that reconnects; each time LISTEN starts, including the first, it pings every open board once, since changes before it were never announced; PGlite's own `listen` locally), so several web dynos all hear every change.
+- **Browsers:** the board opens `GET /events` (server-sent events, logged in). A change pings only that client's boards with **no lead data** (`event: board`): changes are gathered for 400 ms, and one client gets **at most one ping every 5 s** (busy ads mean many inbound messages, and each ping reloads every open board); a change inside the gap gets one trailing ping at its end, so the final state always arrives. The page then reloads the board through the normal role-scoped `/pipeline`, so a sales person still sees only their leads. It waits while a card is being dragged or a dialog is open, keeps the scroll position, and sets up drag-and-drop again. A heartbeat every 25 s keeps the connection open through Heroku's router.
+- **Overdue:** a card with an open follow-up past due gets a red border and **Follow-up overdue**; the page re-checks every minute, so cards turn red without a change.
+
+## Hot-lead queue (R2)
+
+`crm/src/queue.js` (contract and K19 wiring in `docs/TEAM.md`, "R2 details"). Storage is platform migration 3 `lead_queue`: `crm_users.accepting`, `crm_lead_assignments.escalation_level` and the per-client `crm_settings` table.
+
+- **Business settings → Lead queue** (owner): auto-assign on/off (off by default; shown as **Needs the WhatsApp bot update** and kept off until K19 sets `LeadQueue.botWired = true`, since only the bot assigns hand-offs as they open), working hours and time zone (India or UAE). Turning it on sets `auto_assign_since`; older assignments never escalate.
+- `autoAssign(waId, { exclude })`: keeps an active, accepting assignee (and restarts their clock), else the sales person with the oldest latest assignment, the previous assignee's team first. Same writes as a manual assignment, logged as `auto_assigned` with no user. Per-client advisory lock, so two at once pick different people.
+- `release(userId)`: hands back leads with an open hand-off that the person hasn't picked up (no CRM reply, no outcome since assignment). Called by the **Taking leads** switch in a sales person's menu and when an owner deactivates someone.
+- `sweep(now)`: 5 working minutes not picked up → their manager (owners if none); 15 → every owner; each level once. Returns who to alert; the bot sends (K19).
+- `workingMinutes(from, to, settings)`: minutes inside working hours in the client's time zone (shifts past midnight work). Nights don't count.
+- **Timers:** "Waiting N min" on lead cards, pipeline cards and the lead page while auto-assign is on and the lead isn't picked up; red from 5. Staff shows **Not taking leads**.
+
+## Zoho CRM status
+
+For clients with the Zoho sync on (K20, `docs/TEAM.md`). `crm/src/zohoStatus.js` reads only our tables (`zoho_links`, `zoho_cursors`) and the client's settings; it never calls Zoho.
+
+- **Business settings → Zoho CRM:** Connected or Off; when Zoho was last read; counts in sync / waiting to send / retrying / not sent; the last 5 leads Zoho refused, with Zoho's reason and a link to each lead; a link to the client's Zoho (`crm.zoho.<data centre>` from `zohoAccountsUrl`). When off, a short note on what it does. Secrets never reach the page.
+- **Lead page → Lead details:** "Open deal / contact / lead in Zoho" (the Deal if there is one, else Contact, else Lead; numeric ids only) and the sync state, with Zoho's error when it failed.
+
+Local testing: turning Zoho on locally (even with fake credentials) starts the real sync worker in `npm run dev`, which calls Zoho. Keep it off locally; the tests cover the screens without the worker.
+
+## Installable app (R4)
+
+Staff install the CRM on their phone from their own CRM host. It opens full screen like an app, with the client's name and icon (`crm/src/pwa.js`, all public so the browser can fetch them before login):
+
+- `/manifest.webmanifest`: name and short name from the business name, `start_url` `/`, standalone, dark theme colour, shortcuts (Leads, Follow-ups, Pipeline). Icons: `/brand/icon.svg` (logo letters on the brand colour, plus a maskable version for Android) and the uploaded logo when it is a square PNG.
+- `/sw.js` (`crm/public/sw.js` with the deploy's asset version and the client's brand version, so renaming the business or changing its colour makes phones re-cache the offline page): caches only the CSS, JS and `/offline`. **Pages and lead data are never cached** (shared phones, private data). Offline, a page shows **You're offline** instead of the browser's error. A deploy changes the version, so phones pick up new CSS/JS on the next visit.
+- Menu: **Install app** appears when the browser offers it (Android Chrome); on iPhone a short hint (Share → Add to Home Screen), since Safari has no install prompt. Both hide once installed. iPhones ignore SVG icons: they use the uploaded logo as the home-screen icon (`apple-touch-icon`), else `/brand/apple-touch-icon.png`, a plain 180×180 tile in the brand colour (built with zlib, no image library). Brand settings tells the owner to upload a square PNG for a proper iPhone icon.
+- Icons: PNG `/brand/icon-192.png` and `/brand/icon-512.png` (brand-colour tiles; Chrome needs them to offer **Install app**), the SVG letters, and an uploaded logo when it is a square PNG. iPhones use the logo only when it is a square PNG, otherwise `/brand/apple-touch-icon.png`; Brand settings says so. The short app name is the same on Android and iPhone (`shortName` in `crm/src/branding.js`).
+
+## Waiting for an outcome (R11)
+
+`crm/src/nudges.js`: a lead is waiting when it is still open, needed a person (a bot hand-off, or status hot) and nobody has logged an outcome since, for 2 hours to 30 days (`MIN_AGE_HOURS`, `LOOKBACK_DAYS`). `waitingSql(q, now)` is the SQL used by:
+
+- **Dashboard:** a **No outcome yet** tile and a **Log what happened** list (longest waiting first; each lead opens on its outcome buttons, `#outcome`).
+- **Leads:** the **No outcome** chip and checkbox (`?waiting=1`), and the sort **Waiting longest for an outcome** (`sort=waiting`).
+- `Nudges.daily(now)`: the per-person morning list the bot sends (contract in `docs/TEAM.md`).
+
+Each person sees only their own leads, as everywhere else. Logging any outcome takes the lead off the list until the bot opens a new hand-off. A hand-off staff resolved without logging an outcome still counts (that is the gap this closes); the 2-hour and 30-day bounds are inclusive. **Limit:** a hot lead with no hand-off is timed from its first message (we don't store when it turned hot), so it is tracked only for 30 days after first contact; one that first wrote 5 weeks ago and turned hot yesterday doesn't show. Leads that need a person almost always get a hand-off from the bot, which restarts the clock.
 
 ## Roles
 

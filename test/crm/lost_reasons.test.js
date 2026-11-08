@@ -41,3 +41,25 @@ test('lead page and reports use the business type\'s wording', async () => {
     assert.match((await owner.agent.get('/reports?days=7')).text, /Bought elsewhere/);
   } finally { await ctx.cleanup(); gymConfig.resetToDefault(); }
 });
+
+test('lost reasons: summary by business type, neutral fallback, and the AI prompt in the type\'s words', async () => {
+  const { setup } = require('./helpers');
+  const { Analytics } = require('../../crm/src/analytics');
+  const gymConfig = require('../../src/config/gymConfig');
+  const ctx = await setup();
+  try {
+    await ctx.db.query("INSERT INTO leads (wa_id, status, first_contact_at) VALUES ('918200000001', 'lost', '2030-05-10T09:00:00Z')");
+    await ctx.db.query("INSERT INTO crm_lead_outcomes (wa_id, outcome, lost_reason, created_at) VALUES ('918200000001', 'lost', 'joined_elsewhere', '2030-05-12T10:00:00Z')");
+    const now = new Date('2030-05-20T12:00:00Z');
+    const a = new Analytics(ctx.db);
+    assert.strictEqual((await a.summary(undefined, { now, type: 'realestate' })).lostReasons[0].label, 'Bought elsewhere');
+    assert.strictEqual((await a.summary(undefined, { now, type: 'gym' })).lostReasons[0].label, 'Joined another gym');
+    assert.strictEqual((await a.summary(undefined, { now })).lostReasons[0].label, 'Joined another gym'); // no type: the default pack
+    assert.strictEqual((await a.summary(undefined, { now, lostNames: { joined_elsewhere: 'Custom' } })).lostReasons[0].label, 'Custom');
+
+    gymConfig.setProfile({ ...gymConfig.DEFAULT_PROFILE, type: 'realestate' });
+    const prompt = gymConfig.getSystemPrompt();
+    assert.match(prompt, /"lost": [^)]*bought elsewhere/);
+    assert.doesNotMatch(prompt, /joined another gym|joined elsewhere/);
+  } finally { gymConfig.resetToDefault(); await ctx.cleanup(); }
+});

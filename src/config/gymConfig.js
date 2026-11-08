@@ -5,7 +5,7 @@
  * (gymName, facility, hours, pricingTiers, policies, fallbackMessages...).
  * DEFAULT_PROFILE is Goldkraft Fitness, used until a profile is saved and in tests.
  */
-const { verticalFor } = require('./verticals');
+const { verticalFor, lostReasonsFor } = require('./verticals');
 const tenancy = require('../tenancy/context');
 
 const DEFAULT_PROFILE = {
@@ -91,6 +91,8 @@ const gymConfig = {
   getSystemPrompt() {
     const p = currentProfile();
     const v = this.vertical;
+    // The ways a lead says no, in this business type's words (still one prompt, one AI call).
+    const lostWords = Object.entries(lostReasonsFor(currentProfile().type)).filter(([k]) => !['other', 'no_response'].includes(k)).map(([, w]) => w.toLowerCase()).join(', ');
     const plans = p.plans.map(t => `- ${t.name}: ${t.price}${t.details ? ` (${t.details})` : ''}`).join('\n');
     const policies = p.policies.map(x => `- ${x.name}: ${x.text}`).join('\n');
     const examples = v.examples(p).map(([lead, out]) => `Lead: ${lead}\n${JSON.stringify(out)}`).join('\n\n');
@@ -136,7 +138,7 @@ Answer with one JSON object and nothing else:
 {"reply": "<the WhatsApp message>", "lead": {<only what you learned or what changed>}, "notify_staff": null, "outcome": null}
 - lead can have: "name", "interest" (their goal in a few words), "status" (contacted, qualified, hot, cold or lost), "notes" (one line for the ${v.staff}: experience, timing, anything useful). Use {} when nothing is new.
 - notify_staff is null, or {"handoff_reason": "ready_to_book" | "price_negotiation" | "custom_program" | "injury_question" | "human_requested" | "complaint" | "other", "summary": "<one line for the ${v.staff}>"}.
-- outcome is almost always null. Fill it only when the lead clearly says something already happened: a ${v.visit} fixed with staff ("visit_booked"), they came ("visited"), they paid or joined ("joined"), or they are not coming ("lost": joined elsewhere, too far, price, timing, not interested). Format: {"type": "visit_booked" | "visited" | "joined" | "lost", "evidence": "<their words>", "when": "<day or time if said>", "plan": "<plan if said>", "amount_inr": <number if said>, "lost_reason": "price" | "distance" | "timing" | "joined_elsewhere" | "not_interested" | "other"}. A wish or a question ("I want to join", "can I visit Saturday?") is NOT an outcome. Staff confirm it; never tell the lead it is recorded.
+- outcome is almost always null. Fill it only when the lead clearly says something already happened: a ${v.visit} fixed with staff ("visit_booked"), they came ("visited"), they paid or joined ("joined"), or they are not coming ("lost": ${lostWords}). Format: {"type": "visit_booked" | "visited" | "joined" | "lost", "evidence": "<their words>", "when": "<day or time if said>", "plan": "<plan if said>", "amount_inr": <number if said>, "lost_reason": "price" | "distance" | "timing" | "joined_elsewhere" | "not_interested" | "other"}. A wish or a question ("I want to join", "can I visit Saturday?") is NOT an outcome. Staff confirm it; never tell the lead it is recorded.
 
 EXAMPLES (copy the style, not the exact words)
 ${examples}`;

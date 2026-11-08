@@ -27,7 +27,9 @@ const SETTING_KEYS = ['crmBaseUrl', 'telegramChatId', 'telegramOpsChatId', 'meta
   // K20 Zoho CRM sync (scripts/zoho-connect.js sets these). No env fallback, tenant 1 included:
   // the database trigger that marks leads for sync reads zohoSync from the tenants row.
   'zohoSync', 'zohoAccountsUrl', 'zohoApiDomain', 'zohoIdField', 'zohoLinkField', 'zohoLeadSource',
-  'zohoDealPipeline', 'zohoWonStage', 'zohoLostStage', 'zohoLostStatuses', 'zohoStatusMap'];
+  'zohoDealPipeline', 'zohoWonStage', 'zohoLostStage', 'zohoLostStatuses', 'zohoStatusMap',
+  // R14: a demo client (portfolio). Only demo clients can be filled with sample data in production.
+  'demo'];
 
 // Our lead status -> Zoho's standard Lead Status values. A client can override any of them (zohoStatusMap).
 const ZOHO_STATUS_MAP = {
@@ -71,6 +73,7 @@ function resolve(entry) {
     name: row.name,
     status: row.status,
     isDefault,
+    demo: s.demo === true || s.demo === 'on' || s.demo === 'true',
     active: row.status === 'active' && !secretsError,
     whatsapp: {
       phoneNumberId: pick(row.phone_number_id, env.metaPhoneNumberId),

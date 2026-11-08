@@ -87,6 +87,42 @@ async function createPgliteDriver(url) {
   };
 }
 
+/**
+ * Keeps a LISTEN going on its own client, reconnecting with back-off (1 s doubling to 30 s).
+ * NOTIFYs sent while no LISTEN was active are lost, so onReconnect() runs every time LISTEN
+ * starts working, the first time included: a viewer who arrived during an outage at start-up
+ * still gets one refresh. makeClient() returns a pg Client (tests pass a fake).
+ * Returns an async function that stops listening.
+ */
+function listenLoop(makeClient, channel, fn, { onReconnect, minDelayMs = 1000, maxDelayMs = 30000 } = {}) {
+  let client = null; let stopped = false; let delay = minDelayMs;
+  const connect = () => {
+    if (stopped) return;
+    const c = makeClient();
+    let dead = false;
+    const retry = err => {
+      if (dead) return;
+      dead = true;
+      if (client === c) client = null;
+      if (err) logger.warn('LISTEN connection lost; reconnecting', { channel, error: err.message });
+      Promise.resolve().then(() => c.end()).catch(() => {});
+      if (!stopped) { const t = setTimeout(connect, delay); if (t.unref) t.unref(); delay = Math.min(delay * 2, maxDelayMs); }
+    };
+    c.on('notification', msg => { if (msg.channel === channel) fn(msg.payload); });
+    c.on('error', retry);
+    c.on('end', () => retry(null));
+    c.connect().then(() => c.query(`LISTEN ${channel}`)).then(() => {
+      if (stopped || dead) return;
+      client = c; delay = minDelayMs;
+      if (onReconnect) {
+        try { onReconnect(); } catch (err) { logger.warn('LISTEN onReconnect failed', { channel, error: err.message }); }
+      }
+    }).catch(retry);
+  };
+  connect();
+  return async () => { stopped = true; if (client) await client.end().catch(() => {}); };
+}
+
 function createPgDriver(url) {
   const { Pool, types } = require('pg');
   types.setTypeParser(20, v => (v === null ? null : Number(v)));      // int8 -> number
@@ -126,37 +162,11 @@ function createPgDriver(url) {
     async exec(sql) { await pool.query(sql); },
     /**
      * LISTEN on its own connection (a pooled one would be handed to other queries).
-     * Reconnects with back-off, so a database restart doesn't stop live updates.
-     * NOTIFYs sent while it was down are lost, so onReconnect() runs once LISTEN works again.
+     * Reconnects with back-off, so a database restart doesn't stop live updates (see listenLoop).
      */
-    async listen(channel, fn, { onReconnect } = {}) {
+    async listen(channel, fn, opts = {}) {
       const { Client } = require('pg');
-      let client = null; let stopped = false; let delay = 1000; let connectedBefore = false;
-      const connect = () => {
-        if (stopped) return;
-        const c = new Client({ connectionString: url, ssl: isLocal ? false : { rejectUnauthorized: false } });
-        let dead = false;
-        const retry = err => {
-          if (dead) return;
-          dead = true;
-          if (client === c) client = null;
-          if (err) logger.warn('LISTEN connection lost; reconnecting', { channel, error: err.message });
-          c.end().catch(() => {});
-          if (!stopped) { setTimeout(connect, delay).unref(); delay = Math.min(delay * 2, 30000); }
-        };
-        c.on('notification', msg => { if (msg.channel === channel) fn(msg.payload); });
-        c.on('error', retry);
-        c.on('end', () => retry(null));
-        c.connect().then(() => c.query(`LISTEN ${channel}`)).then(() => {
-          client = c; delay = 1000;
-          if (connectedBefore && onReconnect) {
-            try { onReconnect(); } catch (err) { logger.warn('LISTEN onReconnect failed', { channel, error: err.message }); }
-          }
-          connectedBefore = true;
-        }).catch(retry);
-      };
-      connect();
-      return async () => { stopped = true; if (client) await client.end().catch(() => {}); };
+      return listenLoop(() => new Client({ connectionString: url, ssl: isLocal ? false : { rejectUnauthorized: false } }), channel, fn, opts);
     },
     async transaction(fn) {
       const client = await pool.connect();
@@ -283,8 +293,8 @@ async function useMigrationRole() {
 
 /**
  * Calls fn(payload) for every NOTIFY on `channel` (all tenants: the payload says which).
- * onReconnect() runs after the connection dropped and LISTEN works again: anything sent in
- * the gap was missed. Returns an async function that stops listening. Used by the CRM's live board (R3).
+ * onReconnect() runs each time LISTEN starts working (first connect and every reconnect):
+ * anything sent before or in a gap was missed. Returns an async function that stops listening. Used by the CRM's live board (R3).
  */
 async function listen(channel, fn, opts = {}) {
   if (!/^[a-z_]{1,63}$/.test(channel)) throw new Error(`Invalid channel name: ${channel}`);
@@ -299,5 +309,5 @@ async function checkRlsActive() {
 }
 
 module.exports = {
-  init, query, many, one, tx, listen, close, truncateAll, useRestrictedRole, useMigrationRole, checkRlsActive, driverKind: () => driver && driver.kind
+  init, query, many, one, tx, listen, listenLoop, close, truncateAll, useRestrictedRole, useMigrationRole, checkRlsActive, driverKind: () => driver && driver.kind
 };

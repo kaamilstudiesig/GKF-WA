@@ -33,7 +33,7 @@ class LiveBoard {
 
   start() {
     if (!this.listening && this.enabled) {
-      // After a dropped connection, changes made in the gap were never announced: refresh every board.
+      // Each time LISTEN starts (first connect or after a drop), changes before it were never announced: refresh every board.
       const onReconnect = () => { for (const tenantId of this.clients.keys()) this.ping(tenantId); };
       this.listening = this.db.listen(CHANNEL, payload => this.notified(payload), { onReconnect }).catch(err => {
         this.listening = null; // try again with the next viewer

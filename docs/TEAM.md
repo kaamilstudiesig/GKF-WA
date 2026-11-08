@@ -70,18 +70,11 @@ Status: K14–K17 are built and K18 is written (PR `k14-k18-new-client`). R12 is
 - Speed to lead counts **working hours** everywhere (the R2 rule), so night leads don't make staff look slow.
 - Krishna may own a feature end to end, `src/` included, once a small contract PR is agreed. Kaamil keeps Meta access and tokens, AI prompts, tenancy and deploys.
 
-**Review of Krishna's 6 open PRs (#33-#38): merge all, fix after.** Each passes all tests merged with `main`; security and client separation are right. They were branched from the same point, so they conflict with each other in `crm/src/app.js` and the docs: rebase and merge one at a time, in this order: R5 (#33) → R11 (#34) → R4 (#36) → Zoho status (#38) → R2 (#35) → R3 (#37). Fixes:
-
-1. R2: the owner's auto-assign switch does nothing until K19 (bot side). Show it as "needs the bot update" until K19 is merged.
-2. R5 (definitions in [crm/README.md](../crm/README.md#analytics-r5)): speed to lead in working minutes (reuse `workingMinutes` from `crm/src/queue.js`, so after R2).
-3. R3: every inbound message pings every open board, and each viewer reloads the whole board. Send at most one ping per client every 5 seconds.
-4. R4: iPhones ignore SVG icons; with no uploaded logo the home-screen icon is a screenshot. Serve a PNG `apple-touch-icon`, or tell the owner on Brand settings to upload a square PNG.
-5. Zoho status: the "Open in Zoho" link format is unverified; check it on the first real connection and note the result in the PR.
-6. Lost reasons are gym wording ("Joined another gym") for every business. Move the labels into the business-type packs (`labels` in `src/config/verticals.js`), with real estate wording ("Bought elsewhere", "Budget", "Location").
+**Built and merged (6–8 Nov):** R2 lead queue (waits for K19), R3 live board, R4 phone app, R5 analytics, R11 reminders in the CRM (waits for R11b), R13 bulk staff, Zoho status page, the follow-up fixes from every automatic review, and K20 Zoho sync. None of it is live until the next Heroku deploy.
 
 **Krishna, in this order** (one PR each; a contract PR first where marked):
 
-1. Merge the 6 PRs with the fixes above.
+1. **Finish #42 (R14 demo kit) and #43 (lost-reason wording)** from their review comments. #42 first: the portfolio demos wait for it.
 2. **R14 real estate demo kit** (portfolio, this week): `npm run demo -- --tenant <slug> --preset realestate` fills one client with realistic sample data: projects, about 60 leads over 30 days with chats in English and Hinglish/Arabic, hand-offs, site visits, bookings with amounts, lost reasons, staff with a manager, and some leads waiting, so every screen (pipeline, reports, R11, R2 timers) looks alive. No real names or phone numbers (use +91 98000 / +971 50 000 test ranges). Safe to run twice. Builds on `scripts/demo-data.js`.
 3. **R15 currency per business** (contract PR first, with Kaamil): a `currency` field in the business profile (INR default, AED for Dubai). The CRM shows amounts in it, and payment fields and reports use it. The `amount_inr` column keeps its name (it holds the amount in the business's currency); document that. Kaamil handles the Conversions API currency and keeps Razorpay INR-only.
 4. **R16 lead intake** (contract PR first): leads from portals and website forms. A signed `POST` endpoint per client plus a copy-paste website form snippet: create or match the lead (phone, else email), record the source, open a hand-off, and send the first WhatsApp message as an approved template (leads from forms haven't messaged us, so the 24-hour window is closed). Adapters for specific portals (Property Finder, Bayut, Dubizzle) come once the Dubai client confirms which ones.
@@ -132,6 +125,8 @@ Off by default, so nothing changes for GKF until the owner turns it on in **Busi
 *CRM screens (Krishna)*: owner toggle plus working hours and timezone in Business settings; **Taking leads** switch for sales (header menu), which calls `release`; a timer on lead cards and the lead page from `assigned_at` until picked up, counting working minutes, red after 5.
 
 *Tests (Krishna)*: round-robin order; two `autoAssign` calls at once pick different people; old leads not escalated after turning on; no alerts outside working hours; `release` moves only not-picked-up leads; one client's queue never sees another client's staff.
+
+*After review (8 Nov):* leads also go back to the queue when an owner changes a sales person to manager or owner (not only on deactivation); only sales people can use **Taking leads** (403 for others); and a lead a manager assigns **by hand** after auto-assign is on escalates like any other, because the customer is waiting either way.
 
 *Built as agreed, with one detail:* when `autoAssign` keeps the current assignee for a new hand-off, it restarts their clock (`assigned_at` now, level 0), so the 5/15 minutes count from this hand-off, not from an old assignment.
 
@@ -320,6 +315,12 @@ Every PR gets a Claude review, started by the PR itself (no session waits or pol
 2. **The author fixes:** paste that prompt into your own Claude, or comment `@claude fix findings 1 and 2 from the review` on the PR and Claude pushes the fixes itself (`.github/workflows/claude.yml`). CI runs on those pushes.
 3. **Re-review after fixes:** add the label `claude-review` to the PR (pushes alone don't re-run it, to save usage).
 4. **Merging stays with Kaamil.** Claude never approves or merges.
+
+Keep the loop fast:
+- **One open PR at a time per person**, or at least merge them in order. PRs branched from the same point conflict with each other in `crm/src/app.js`, `crm/README.md` and this file.
+- **Before adding the label, merge the latest `main`** (a merge commit, no rebase). GitHub runs no workflow on a PR with conflicts, so the review silently never starts.
+- **Don't push to a branch after its PR is merged.** Those commits never reach `main`; open a new PR instead.
+- "Merge after these fixes" with small notes can merge now and fix in a follow-up PR; anything about safety, data or client separation is fixed first.
 
 Usage: reviews run on Sonnet with a turn cap and only on the events above; `@claude` runs use the default model. Both run on Kaamil's Claude subscription (`CLAUDE_CODE_OAUTH_TOKEN`), so they count against its usage limits, plus GitHub Actions minutes. If only an `ANTHROPIC_API_KEY` secret is set, they use it instead (billed per use); once `CLAUDE_CODE_OAUTH_TOKEN` is added they switch to it and the key can be deleted. Without either, both workflows skip and stay green. The same review runs locally with `/pr-review <number>` (needs `gh`).
 

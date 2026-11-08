@@ -50,6 +50,29 @@ test('Business settings and lead page show the Zoho sync state', async () => {
     const refused = (await owner.agent.get('/leads/919900112233')).text;
     assert.match(refused, /Not sent/);
     assert.match(refused, /MANDATORY_NOT_FOUND/);
+
+    // Every bucket counts: synced 1, waiting 3 (dirty, sending, no status), retrying 1, not sent 1; skipped is left out.
+    const demo = await ctx.db.many("SELECT wa_id FROM leads WHERE wa_id NOT IN ($1, '919900112233') ORDER BY wa_id LIMIT 5", [LEAD]);
+    const [w1, w2, w3, w4, w5] = demo.map(r => r.wa_id);
+    await ctx.db.query(`INSERT INTO zoho_links (wa_id, dirty, status) VALUES ($1, true, 'synced'), ($2, false, 'sending'), ($3, false, NULL)`, [w1, w2, w3]);
+    await ctx.db.query(`INSERT INTO zoho_links (wa_id, dirty, status, last_error) VALUES ($1, true, 'failed', 'HTTP 503')`, [w4]);
+    await ctx.db.query(`INSERT INTO zoho_links (wa_id, dirty, status) VALUES ($1, false, 'skipped')`, [w5]);
+    const { ZohoStatus } = require('../../crm/src/zohoStatus');
+    const tenancy = require('../../src/tenancy/context');
+    const sum = await tenancy.run(1, () => new ZohoStatus(ctx.db, registry).summary());
+    assert.deepStrictEqual(sum.counts, { synced: 1, waiting: 3, retrying: 1, notSent: 1 });
+    assert.match((await owner.agent.get(`/leads/${w4}`)).text, /Retrying/);
+
+    // A lead with no Zoho row yet says so, instead of "Waiting" forever.
+    const other = (await ctx.db.one('SELECT wa_id FROM leads l WHERE NOT EXISTS (SELECT 1 FROM zoho_links z WHERE z.wa_id = l.wa_id) LIMIT 1')).wa_id;
+    assert.match((await owner.agent.get(`/leads/${other}`)).text, /Not in Zoho yet/);
+
+    // A long read error is shortened on the page.
+    await ctx.db.query(`UPDATE zoho_cursors SET last_error = $1`, ['x'.repeat(500)]);
+    assert.strictEqual((await tenancy.run(1, () => new ZohoStatus(ctx.db, registry).summary())).readError.length, 200);
+
+    // A broken registry is an error, not "Off".
+    assert.throws(() => new ZohoStatus(ctx.db, { config: () => { throw new Error('boom'); } }).config(), /boom/);
   } finally {
     await registry.update(1, { settings: { zohoSync: 'off' } });
     await ctx.cleanup();

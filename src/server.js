@@ -70,6 +70,11 @@ async function main() {
   }, 6 * 60 * 60 * 1000);
   housekeeping.unref();
 
+  // K19: leads not picked up in 5 / 15 working minutes escalate (only for clients with auto-assign on).
+  const leadQueue = require('./services/leadQueue');
+  const queueSweep = setInterval(() => leadQueue.sweepAll().catch(err => logger.error('Lead queue sweep crashed', { error: err.message })), 60 * 1000);
+  queueSweep.unref();
+
   let stopping = false;
   async function shutdown(signal) {
     if (stopping) return;
@@ -78,6 +83,7 @@ async function main() {
     logger.info(`${signal} received; finishing in-flight work`);
     setTimeout(() => process.exit(1), 25000).unref(); // Heroku allows 30s
     server.close();
+    clearInterval(queueSweep);
     await Promise.all([webhookWorker.stop(), outboundWorker.stop(), conversionsWorker.stop(), zohoWorker.stop()]);
     await db.close();
     process.exit(0);

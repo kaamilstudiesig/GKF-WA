@@ -17,7 +17,11 @@ const handoffRepository = {
       RETURNING id, (xmax = 0) AS inserted`, [waId, reason, summary]);
     if (row.inserted) {
       logger.info('Opened human hand-off', { handoff_id: row.id, wa_id: waId, reason });
-      notifyService.notifyHandoff({ waId, reason, summary });
+      // K19: assign first (when the owner turned auto-assign on), so the alerts name the person
+      // and "their leads only" WhatsApp alerts reach them. Never throws.
+      const leadQueue = require('../services/leadQueue'); // lazy: crm/src/queue requires the db module
+      const assignee = await leadQueue.assignOnHandoff(waId);
+      notifyService.notifyHandoff({ waId, reason, summary, assignee });
       const why = notifyService.REASON_LABELS[reason] || reason;
       staffAlerts.alert({ waId, event: 'handoff', details: summary ? `${why}: ${summary}` : why });
     }

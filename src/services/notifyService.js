@@ -175,6 +175,25 @@ NotifyService.prototype.notifyNotPickedUp = function notifyNotPickedUp({ waId, m
   });
 };
 
+/** R11b: the morning list of leads waiting for an outcome, one post to the staff group. */
+NotifyService.prototype.notifyDailyNudges = function notifyDailyNudges({ lines, total }) {
+  if (!this.sendOverride && (!this.isEnabled() || process.env.NODE_ENV === 'test')) return;
+  setImmediate(async () => {
+    try {
+      const { crmBaseUrl } = this.config;
+      const url = crmBaseUrl ? `${crmBaseUrl}/leads?waiting=1&sort=waiting` : null;
+      const buttons = url && /^https:\/\/(?!localhost|127\.|[^/]*\.localhost)/i.test(url) ? [[{ text: '📋 Log what happened', url }]] : [];
+      await this.send([
+        `🌅 <b>${total} ${total === 1 ? 'lead is' : 'leads are'} waiting for an outcome</b>`,
+        ...lines.map(l => `• ${escapeHtml(l)}`),
+        ...(url && !buttons.length ? [`<a href="${escapeHtml(url)}">Open the list</a>`] : [])
+      ].join('\n'), { buttons });
+    } catch (err) {
+      logger.error('Failed to send Telegram daily reminder', { error: err.message });
+    }
+  });
+};
+
 module.exports = new NotifyService();
 module.exports.NotifyService = NotifyService;
 module.exports.REASON_LABELS = REASON_LABELS;

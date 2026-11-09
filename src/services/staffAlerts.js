@@ -19,7 +19,8 @@ const EVENTS = {
   handoff: { label: 'Lead needs a person', windowMin: 5 },
   lead_message: { label: 'Lead sent a new message', windowMin: 30 }, // one alert per lead per 30 min
   payment: { label: 'Payment received', windowMin: 5 },
-  not_picked_up: { label: 'Lead not picked up', windowMin: 60 } // K19: sent once per escalation level (key)
+  not_picked_up: { label: 'Lead not picked up', windowMin: 60 }, // K19: sent once per escalation level (key)
+  daily_nudge: { label: 'Leads waiting for an outcome', windowMin: 1440 } // R11b: once a day (key = the local day)
 };
 
 const MISSING_CRM = new Set(['42P01', '42703']); // CRM tables not migrated yet: no alerts
@@ -80,7 +81,7 @@ async function alert({ waId, event, details = '' }) {
  * K19: alert specific people (an escalation goes to one manager, or to the owners), when they
  * have a WhatsApp number and alerts not switched off. `key` makes it once per key, not per time window.
  */
-async function alertUsers({ waId, event, details = '', userIds, key }) {
+async function alertUsers({ waId, event, details = '', userIds, key, strict = false }) {
   try {
     if (!EVENTS[event] || !waId || !userIds?.length) return 0;
     const people = await db.many(`SELECT id, alert_phone FROM crm_users
@@ -88,6 +89,7 @@ async function alertUsers({ waId, event, details = '', userIds, key }) {
     return await queueFor(people, { waId, event, details, key });
   } catch (err) {
     if (MISSING_CRM.has(err.code)) return 0;
+    if (strict) throw err; // the caller retries (R11b releases its daily claim)
     logger.error('Failed to queue staff WhatsApp alerts', { event, error: err.message });
     return 0;
   }

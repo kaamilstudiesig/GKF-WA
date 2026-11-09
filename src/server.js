@@ -72,7 +72,12 @@ async function main() {
 
   // K19: leads not picked up in 5 / 15 working minutes escalate (only for clients with auto-assign on).
   const leadQueue = require('./services/leadQueue');
-  const queueSweep = setInterval(() => leadQueue.sweepAll().catch(err => logger.error('Lead queue sweep crashed', { error: err.message })), 60 * 1000);
+  // R11b: the morning "waiting for an outcome" reminder, once a day per client at the start of its working day.
+  const dailyNudges = require('./services/dailyNudges');
+  const queueSweep = setInterval(() => {
+    leadQueue.sweepAll().catch(err => logger.error('Lead queue sweep crashed', { error: err.message }));
+    dailyNudges.runAll().catch(err => logger.error('Daily reminder crashed', { error: err.message }));
+  }, 60 * 1000);
   queueSweep.unref();
 
   let stopping = false;

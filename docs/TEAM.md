@@ -70,7 +70,7 @@ Status: K14–K17 are built and K18 is written (PR `k14-k18-new-client`). R12 is
 - Speed to lead counts **working hours** everywhere (the R2 rule), so night leads don't make staff look slow.
 - Krishna may own a feature end to end, `src/` included, once a small contract PR is agreed. Kaamil keeps Meta access and tokens, AI prompts, tenancy and deploys.
 
-**Built and merged (6–8 Nov):** R2 lead queue (K19 built: owners can turn it on), R3 live board, R4 phone app, R5 analytics, R11 reminders in the CRM (waits for R11b), R13 bulk staff, Zoho status page, the follow-up fixes from every automatic review, and K20 Zoho sync. None of it is live until the next Heroku deploy.
+**Built and merged (6–8 Nov):** R2 lead queue (K19 built: owners can turn it on), R3 live board, R4 phone app, R5 analytics, R11 reminders (CRM list and the morning send, R11b), R13 bulk staff, Zoho status page, the follow-up fixes from every automatic review, and K20 Zoho sync. None of it is live until the next Heroku deploy.
 
 **Krishna, in this order** (one PR each; a contract PR first where marked):
 
@@ -135,7 +135,7 @@ Off by default, so nothing changes for GKF until the owner turns it on in **Busi
 **Kaamil, in this order**
 
 1. **Portfolio (this week):** create the 3 demo clients (`npm run tenant -- add`, with `"demo": true` in `settings` so `npm run demo` may fill them), each with a test WhatsApp number, real estate preset, branding and Krishna's R14 data. Then the DartIt name, logo and website, then `crm.inter-rootlabs.com`.
-2. ✅ **K19:** R2 wired into the bot (9 Nov). **R11b:** send R11's daily list (`Nudges.daily()`) each morning on Telegram and staff WhatsApp.
+2. ✅ **K19:** R2 wired into the bot (9 Nov). ✅ **R11b:** the morning "waiting for an outcome" reminder on Telegram and staff WhatsApp (9 Nov).
 3. **Dubai discovery:** ask the client for their CRM, lead sources and portals, languages, team size and Meta setup. Then **K22**: turn K20 into a general CRM connector and add their CRM. Test Arabic replies.
 4. **K24 Meta catalog** (with R17): catalog API, product messages from the bot, `catalog_management` on the client's token.
 5. **R15 bot side:** Conversions API events in the business's currency.
@@ -213,12 +213,13 @@ Both: line up a partner agency with a few paying clients (any industry) while th
 
 Cross-client benchmarks, score trained on every client's outcomes, outcome-based pricing pilot, win-back templates, Instagram capture (comment/DM → WhatsApp). Owners decided when we get there.
 
-## Contract: R11 daily reminder (Krishna built the CRM side; Kaamil sends it as R11b)
+## Contract: R11 daily reminder (Krishna built the CRM side; Kaamil sends it as R11b, ✅ built 9 Nov)
 
 `crm/src/nudges.js` decides which leads are **waiting for an outcome**: open (not converted, lost or cold), needed a person (a hand-off, or status hot), and no outcome logged since the latest hand-off (a hand-off staff resolved without logging an outcome still counts: that is the gap R11 closes) (or the first message, for a hot lead with no hand-off), for 2 hours to 30 days. The dashboard tile and list, and the **No outcome** filter on Leads, use the same rule.
 
 - `new Nudges(db).daily(now)` → `[{ user: { id, name, email, role, alertPhone, alertMode } | null, leads: [{ waId, name, since, hours }] }]`: one item per active person with waiting leads assigned (oldest first), then one item with `user: null` for unassigned leads (or leads assigned to someone disabled). Runs inside `tenancy.run`; no tenant filter. Sends nothing.
 - **Kaamil:** once a day per tenant (morning, display timezone), post each person's list to the staff Telegram group, and to their WhatsApp when `alertPhone` is set and `alertMode` is not `'off'` (a template with an **Open in CRM** button to `/leads?waiting=1&sort=waiting`). Send the `user: null` list to managers and owners. Skip people with an empty list.
+- **As built (R11b, `src/services/dailyNudges.js`):** runs every minute and does real work once a day per client, at the **start of its working day** in its time zone (Business settings → Lead queue). Each person with waiting leads gets one WhatsApp alert (event `daily_nudge` on the `staff_lead_alert` template: how many, the first names, the oldest age; the button opens the oldest lead), only if they have a number and alerts are not off. The unassigned list goes to managers and owners the same way. One summary goes to the staff Telegram group with a **Log what happened** button (`/leads?waiting=1&sort=waiting`). "Sent today" is a `daily_nudges_sent` row in `crm_activity_log` for the local day, claimed under an advisory lock, so several processes never send it twice.
 
 ## Contract: the outcome link (K4 ↔ R1)
 

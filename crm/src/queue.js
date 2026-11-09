@@ -173,7 +173,8 @@ class LeadQueue {
       if (!won) continue; // another process got there first, or the lead was reassigned
       for (let l = r.escalation_level + 1; l <= level; l++) {
         const to = l === 1 && r.manager_id ? [r.manager_id] : owners;
-        for (const userId of to) alerts.push({ waId: r.wa_id, userId, level: l, assigneeId: r.user_id });
+        // assignedAt tells one assignment from the next (a lead handed off again next week escalates again).
+        for (const userId of to) alerts.push({ waId: r.wa_id, userId, level: l, assigneeId: r.user_id, assignedAt: new Date(r.assigned_at).toISOString() });
       }
     }
     return alerts;

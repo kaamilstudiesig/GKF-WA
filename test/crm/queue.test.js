@@ -125,10 +125,13 @@ test('sweep: 5 minutes to the manager, 15 to the owners, once each; old leads an
     const at = mins => new Date(t0.getTime() + mins * 60000);
 
     assert.deepStrictEqual(await queue.sweep(at(4)), []);
-    assert.deepStrictEqual(await queue.sweep(at(6)), [{ waId: w, userId: ids.manager, level: 1, assigneeId: ids.a }]);
+    const lvl1 = await queue.sweep(at(6));
+    assert.strictEqual(lvl1[0].assignedAt, t0.toISOString()); // tells one assignment from the next (K19 alert keys)
+    const noAt = list => list.map(({ assignedAt, ...rest }) => rest);
+    assert.deepStrictEqual(noAt(lvl1), [{ waId: w, userId: ids.manager, level: 1, assigneeId: ids.a }]);
     assert.deepStrictEqual(await queue.sweep(at(7)), []); // never repeats
     const owners = await queue.sweep(at(16));
-    assert.deepStrictEqual(owners, [{ waId: w, userId: ids.owner, level: 2, assigneeId: ids.a }]);
+    assert.deepStrictEqual(noAt(owners), [{ waId: w, userId: ids.owner, level: 2, assigneeId: ids.a }]);
     assert.deepStrictEqual(await queue.sweep(at(60)), []);
 
     // A reply picks the lead up: nothing to escalate.

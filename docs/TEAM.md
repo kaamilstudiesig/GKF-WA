@@ -70,7 +70,7 @@ Status: K14–K17 are built and K18 is written (PR `k14-k18-new-client`). R12 is
 - Speed to lead counts **working hours** everywhere (the R2 rule), so night leads don't make staff look slow.
 - Krishna may own a feature end to end, `src/` included, once a small contract PR is agreed. Kaamil keeps Meta access and tokens, AI prompts, tenancy and deploys.
 
-**Built and merged (6–8 Nov):** R2 lead queue (waits for K19), R3 live board, R4 phone app, R5 analytics, R11 reminders in the CRM (waits for R11b), R13 bulk staff, Zoho status page, the follow-up fixes from every automatic review, and K20 Zoho sync. None of it is live until the next Heroku deploy.
+**Built and merged (6–8 Nov):** R2 lead queue (K19 built: owners can turn it on), R3 live board, R4 phone app, R5 analytics, R11 reminders in the CRM (waits for R11b), R13 bulk staff, Zoho status page, the follow-up fixes from every automatic review, and K20 Zoho sync. None of it is live until the next Heroku deploy.
 
 **Krishna, in this order** (one PR each; a contract PR first where marked):
 
@@ -114,7 +114,7 @@ Off by default, so nothing changes for GKF until the owner turns it on in **Busi
   5. One transaction with `pg_advisory_xact_lock(<queue key>, tenant_id)`, so two hand-offs at the same moment take turns instead of both picking the same person.
   6. Nobody available → `null`.
 - `release(userId)` → number of leads moved. Called when a sales person turns **Taking leads** off, and when an owner deactivates a user. Their open hand-offs that are **not picked up yet** go to `autoAssign(waId, { exclude: [userId] })`. Leads they already picked up stay with them (they are mid-conversation). If nobody else is available the lead stays, and the sweep escalates it as normal.
-- `sweep(now = new Date())` → `[{ waId, userId, level, assigneeId }]`, one item per person to alert.
+- `sweep(now = new Date())` → `[{ waId, userId, level, assigneeId, assignedAt }]`, one item per person to alert (`assignedAt`, added in K19, tells one assignment from the next so a lead handed off again escalates again).
   - Looks at leads with an open hand-off in `assigned` and an assignment that is **not picked up**: no staff reply (`outbound_messages` with `metadata.source = 'crm'`) and no outcome (`crm_lead_outcomes`, any outcome, so a logged "No answer" counts as an attempt) since `assigned_at`.
   - **Old leads never escalate:** only assignments with `assigned_at >= auto_assign_since`. Turning auto-assign on does not alert owners about leads assigned before that.
   - **Working minutes only:** the clock counts minutes between `work_start` and `work_end` in the business's `timezone`. A lead assigned at 2 AM starts counting at `work_start`, so nobody is alerted at night. Put this in a pure function `workingMinutes(from, to, settings)` with its own tests (overnight, weekend not special, Dubai vs India time).
@@ -130,7 +130,7 @@ Off by default, so nothing changes for GKF until the owner turns it on in **Busi
 
 *Built as agreed, with one detail:* when `autoAssign` keeps the current assignee for a new hand-off, it restarts their clock (`assigned_at` now, level 0), so the 5/15 minutes count from this hand-off, not from an old assignment.
 
-*Bot side (Kaamil, K19)*: set `require('../../crm/src/queue').LeadQueue.botWired = true` where the bot wires it in (until then Business settings shows auto-assign as "needs the bot update" and keeps it off). `handoffRepository.open` calls `autoAssign` before `notifyService` / `staffAlerts`, so "their leads only" alerts reach the new assignee, wrapped so a queue error never blocks the hand-off. The minute housekeeping timer runs `sweep()` per tenant in `tenancy.run` and sends a `not_picked_up` alert for each result; the text uses `level` ("not picked up in 5 min" / "15 min").
+*Bot side (Kaamil, K19, ✅ built 9 Nov in `src/services/leadQueue.js`)*: set `require('../../crm/src/queue').LeadQueue.botWired = true` where the bot wires it in (until then Business settings shows auto-assign as "needs the bot update" and keeps it off). `handoffRepository.open` calls `autoAssign` before `notifyService` / `staffAlerts`, so "their leads only" alerts reach the new assignee, wrapped so a queue error never blocks the hand-off. The minute housekeeping timer runs `sweep()` per tenant in `tenancy.run` and sends a `not_picked_up` alert for each result; the text uses `level` ("not picked up in 5 min" / "15 min"). As built: the hand-off's Telegram alert says "Assigned to <name> (lead queue)"; escalations go to each person's WhatsApp (`staffAlerts.alertUsers`, once per lead, level and assignment, so a lead handed off again later escalates again; only to people with a number and alerts not off; the Telegram post says when nobody got one). The level is recorded before sending, so a failed send is logged and not retried and one "Not picked up in 5/15 min" post to the staff group; the sweep runs every minute for every active client. Owners turn it on in **Business settings → Lead queue**.
 
 **Contracts for R15, R16, R17 (drafted 9 Nov by Kaamil; Krishna confirms or proposes changes in a small docs PR, then builds)**
 
@@ -178,7 +178,7 @@ Done when: an owner adds a project with three unit types, they appear in Meta Co
 **Kaamil, in this order**
 
 1. **Portfolio (this week):** create the 3 demo clients (`npm run tenant -- add`, with `"demo": true` in `settings` so `npm run demo` may fill them), each with a test WhatsApp number, real estate preset, branding and Krishna's R14 data. Then the DartIt name, logo and website, then `crm.inter-rootlabs.com`.
-2. **K19:** wire R2 into the bot (contract above). Also send R11's daily list (`Nudges.daily()`) each morning on Telegram and staff WhatsApp.
+2. ✅ **K19:** R2 wired into the bot (9 Nov). **R11b:** send R11's daily list (`Nudges.daily()`) each morning on Telegram and staff WhatsApp.
 3. **Dubai discovery:** ask the client for their CRM, lead sources and portals, languages, team size and Meta setup. Then **K22**: turn K20 into a general CRM connector and add their CRM. Test Arabic replies.
 4. **K24 Meta catalog** (with R17): catalog API, product messages from the bot, `catalog_management` on the client's token.
 5. **R15 bot side:** Conversions API events in the business's currency.

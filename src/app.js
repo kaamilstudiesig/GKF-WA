@@ -14,6 +14,7 @@ const { Crm } = require('../crm/src/crm');
 const razorpay = require('./services/razorpay');
 const notifyService = require('./services/notifyService');
 const staffAlerts = require('./services/staffAlerts');
+require('./services/leadQueue'); // K19: the bot assigns hand-offs, so the CRM shows auto-assign as ready
 const tenancy = require('./tenancy/context');
 const registry = require('./tenancy/registry');
 

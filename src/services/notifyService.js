@@ -58,7 +58,7 @@ class NotifyService {
     return Boolean(token && chatId);
   }
 
-  buildHandoffMessage({ waId, reason, summary, lead }) {
+  buildHandoffMessage({ waId, reason, summary, lead, assignee = null }) {
     const name = lead?.display_name || 'Unknown name';
     const lines = [
       `🔔 <b>Lead needs a human</b>`,
@@ -66,6 +66,7 @@ class NotifyService {
       `Reason: <b>${escapeHtml(REASON_LABELS[reason] || reason)}</b>`
     ];
     if (summary) lines.push(`“${escapeHtml(String(summary).slice(0, 300))}”`);
+    if (assignee) lines.push(`Assigned to <b>${escapeHtml(assignee.name)}</b> (lead queue)`);
     const ad = lead?.metadata?.referral;
     if (ad) lines.push(`From ad: ${escapeHtml(ad.headline || ad.source_id || ad.platform || 'Meta ad')}`);
     const { fallbackLinks } = this.leadLinks(waId, lead, { replyLabel: 'Open in CRM' });
@@ -134,7 +135,7 @@ class NotifyService {
    * Fire-and-forget alert for a newly opened hand-off. Runs after the current
    * call stack so a slow Telegram call never delays the WhatsApp reply.
    */
-  notifyHandoff({ waId, reason, summary = null }) {
+  notifyHandoff({ waId, reason, summary = null, assignee = null }) {
     if (!this.sendOverride && (!this.isEnabled() || process.env.NODE_ENV === 'test')) return;
     setImmediate(async () => {
       try {
@@ -142,7 +143,7 @@ class NotifyService {
         const leadRepository = require('../db/leadRepository');
         const lead = await leadRepository.findByWaId(waId);
         const { buttons } = this.leadLinks(waId, lead, { replyLabel: 'Open in CRM' });
-        await this.send(this.buildHandoffMessage({ waId, reason, summary, lead }), { buttons });
+        await this.send(this.buildHandoffMessage({ waId, reason, summary, lead, assignee }), { buttons });
         logger.info('Staff handoff alert sent to Telegram', { wa_id: waId, reason });
       } catch (err) {
         logger.error('Failed to send Telegram staff alert', { wa_id: waId, reason, error: err.message });
@@ -150,6 +151,29 @@ class NotifyService {
     });
   }
 }
+
+/**
+ * K19: a lead the queue assigned was not picked up (no reply, call or outcome) within
+ * `minutes` working minutes. One message per lead and level to the staff group.
+ */
+NotifyService.prototype.notifyNotPickedUp = function notifyNotPickedUp({ waId, minutes, assigneeName, to }) {
+  if (!this.sendOverride && (!this.isEnabled() || process.env.NODE_ENV === 'test')) return;
+  setImmediate(async () => {
+    try {
+      const leadRepository = require('../db/leadRepository');
+      const lead = await leadRepository.findByWaId(waId);
+      const { buttons, fallbackLinks } = this.leadLinks(waId, lead, { replyLabel: 'Open in CRM' });
+      await this.send([
+        `⏰ <b>Not picked up in ${minutes} min</b>`,
+        `<b>${escapeHtml(lead?.display_name || 'Lead')}</b> · ${escapeHtml(contactLabel(lead, waId))}`,
+        `Assigned to <b>${escapeHtml(assigneeName || 'nobody')}</b>; alerted: ${escapeHtml(to)}`,
+        ...fallbackLinks
+      ].join('\n'), { buttons });
+    } catch (err) {
+      logger.error('Failed to send Telegram not-picked-up alert', { wa_id: waId, error: err.message });
+    }
+  });
+};
 
 module.exports = new NotifyService();
 module.exports.NotifyService = NotifyService;

@@ -7,6 +7,7 @@ const dailyNudges = require('../src/services/dailyNudges');
 const { LeadQueue } = require('../crm/src/queue');
 
 const sleep = ms => new Promise(r => setTimeout(r, ms));
+test.beforeEach(() => dailyNudges.resetForTests());
 const alertsTo = (db, phone) => db.many("SELECT dedup_key, text FROM outbound_messages WHERE wa_id = $1 AND dedup_key LIKE 'staff_alert:daily_nudge:%' ORDER BY id", [phone]);
 
 test('R11b: the morning reminder goes out once a day at the start of the working day, to the right people', async () => {
@@ -72,4 +73,59 @@ test('R11b: the start time follows the client\'s time zone, and an empty day sen
     await sleep(20);
     assert.ok(!sent.some(t => /waiting for an outcome/.test(t)));
   } finally { notifyService.sendOverride = null; await ctx.cleanup(); }
+});
+
+test('R11b review: not at night; a failure gives the day back; two runs at once send once; template and button', async () => {
+  const ctx = await setup();
+  const sent = [];
+  notifyService.sendOverride = async (text, opts) => { sent.push({ text, buttons: opts && opts.buttons }); return true; };
+  const savedCrm = process.env.CRM_BASE_URL;
+  process.env.CRM_BASE_URL = 'https://crm.example.com';
+  try {
+    const db = ctx.db;
+    const sales = await ctx.userId('sales');
+    await db.query("UPDATE crm_users SET alert_phone = '919000000021', alert_mode = 'mine' WHERE id = $1", [sales]);
+    await new LeadQueue(db).saveSettings({ autoAssign: false, workStart: '09:00', workEnd: '21:00', timezone: 'Asia/Kolkata' }, 'test');
+    await db.query("INSERT INTO leads (wa_id, display_name, status) VALUES ('919811300001', 'Kabir', 'hot')");
+    await db.query("INSERT INTO handoffs (wa_id, reason, created_at) VALUES ('919811300001', 'ready_to_book', '2030-04-01T05:00:00Z')");
+    await db.query("INSERT INTO crm_lead_assignments (wa_id, user_id, assigned_at) VALUES ('919811300001', $1, '2030-04-01T05:00:00Z')", [sales]);
+    const run = now => tenancy.run(1, () => dailyNudges.runTenant(new Date(now)));
+
+    // A restart at 22:00 in India sends nothing until tomorrow morning.
+    assert.deepStrictEqual(await run('2030-04-02T16:30:00Z'), { sent: false, reason: 'after_end' });
+
+    // Building the list fails: the day is given back and the next minute sends.
+    const { Nudges } = require('../crm/src/nudges');
+    const origDaily = Nudges.prototype.daily;
+    Nudges.prototype.daily = async () => { throw new Error('db hiccup'); };
+    try {
+      await assert.rejects(run('2030-04-03T04:00:00Z'), /db hiccup/);
+    } finally { Nudges.prototype.daily = origDaily; }
+    // Queueing the WhatsApp fails: also given back.
+    const outbound = require('../src/db/outboundRepository');
+    const origEnqueue = outbound.enqueue;
+    outbound.enqueue = async () => { throw new Error('queue down'); };
+    try {
+      await assert.rejects(run('2030-04-03T04:01:00Z'), /queue down/);
+    } finally { outbound.enqueue = origEnqueue; }
+
+    // Two processes at the same minute: exactly one sends.
+    const [a, b] = await Promise.all([run('2030-04-03T04:02:00Z'), run('2030-04-03T04:02:00Z')]);
+    assert.deepStrictEqual([a.sent, b.sent].sort(), [false, true]);
+    const alerts = await db.many("SELECT metadata FROM outbound_messages WHERE wa_id = '919000000021' AND dedup_key LIKE 'staff_alert:daily_nudge:%'");
+    assert.strictEqual(alerts.length, 1);
+    const tpl = alerts[0].metadata.template;
+    assert.strictEqual(tpl.name, 'staff_lead_alert');
+    assert.strictEqual(tpl.button, '919811300001'); // opens the oldest waiting lead
+    assert.strictEqual(tpl.body[0], 'Leads waiting for an outcome');
+
+    await sleep(30);
+    const post = sent.find(x => /waiting for an outcome/.test(x.text));
+    assert.ok(post);
+    assert.strictEqual(post.buttons[0][0].url, 'https://crm.example.com/leads?waiting=1&sort=waiting');
+  } finally {
+    notifyService.sendOverride = null;
+    if (savedCrm === undefined) delete process.env.CRM_BASE_URL; else process.env.CRM_BASE_URL = savedCrm;
+    await ctx.cleanup();
+  }
 });

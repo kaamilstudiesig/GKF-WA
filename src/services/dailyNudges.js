@@ -17,9 +17,14 @@ const { localDay, tzOffsetMs } = require('../../crm/src/util');
  * - leads with nobody on them go to the managers and owners the same way;
  * - one summary goes to the staff Telegram group.
  * "Sent today" is recorded in crm_activity_log (action daily_nudges_sent, the local day),
- * under an advisory lock, so several processes never send it twice.
+ * under an advisory lock, so several processes never send it twice. If building or queueing
+ * the alerts fails, the record is removed again and the next minute retries; alerts already
+ * queued are not repeated (their keys include the day). Each process remembers the last day
+ * it saw sent, so after that the database is not asked again until tomorrow.
+ * It only fires inside working hours: a restart at night does not send a "morning" reminder.
  */
 const LOCK = 4242011;
+const sentDay = new Map(); // tenant id -> local day already sent (this process)
 
 const minutesOfDay = (date, tz) => {
   const local = new Date(date.getTime() + tzOffsetMs(date, tz));
@@ -44,7 +49,12 @@ function summary(leads) {
 async function runTenant(now = new Date()) {
   const s = await new LeadQueue(db).settings();
   const day = localDay(now.toISOString(), s.timezone);
-  if (minutesOfDay(now, s.timezone) < parseTime(s.work_start)) return { sent: false, reason: 'before_start' };
+  if (sentDay.get(tenancy.tenantId()) === day) return { sent: false, reason: 'already_sent' };
+  const mins = minutesOfDay(now, s.timezone);
+  const start = parseTime(s.work_start); const end = parseTime(s.work_end);
+  if (mins < start) return { sent: false, reason: 'before_start' };
+  // After the working day ends, wait for tomorrow. (A shift past midnight counts until midnight.)
+  if (end > start && mins >= end) return { sent: false, reason: 'after_end' };
 
   // Claim today's run (one process only).
   const claimed = await db.tx(async () => {
@@ -54,8 +64,22 @@ async function runTenant(now = new Date()) {
     await db.query("INSERT INTO crm_activity_log (wa_id, user_id, action, details) VALUES (NULL, NULL, 'daily_nudges_sent', $1::jsonb)", [JSON.stringify({ day })]);
     return true;
   });
-  if (!claimed) return { sent: false, reason: 'already_sent' };
+  if (!claimed) {
+    sentDay.set(tenancy.tenantId(), day);
+    return { sent: false, reason: 'already_sent' };
+  }
+  try {
+    const r = await sendAll(now, day);
+    sentDay.set(tenancy.tenantId(), day);
+    return r;
+  } catch (err) {
+    // Give today back so the next minute tries again.
+    await db.query("DELETE FROM crm_activity_log WHERE action = 'daily_nudges_sent' AND details ->> 'day' = $1", [day]);
+    throw err;
+  }
+}
 
+async function sendAll(now, day) {
   const groups = await new Nudges(db).daily(now);
   if (!groups.length) return { sent: true, people: 0, telegram: false };
   const leaders = groups.some(g => !g.user)
@@ -67,7 +91,7 @@ async function runTenant(now = new Date()) {
     const oldest = g.leads[0]; // oldest first
     const userIds = g.user ? [g.user.id] : leaders;
     people += await staffAlerts.alertUsers({
-      waId: oldest.waId, event: 'daily_nudge', userIds, key: day,
+      waId: oldest.waId, event: 'daily_nudge', userIds, key: day, strict: true,
       details: g.user ? summary(g.leads) : `Nobody is on these. ${summary(g.leads)}`
     });
   }
@@ -91,4 +115,7 @@ async function runAll(now = new Date()) {
   return results;
 }
 
-module.exports = { runTenant, runAll, summary, minutesOfDay };
+/** Tests only: forget which days this process saw sent. */
+const resetForTests = () => sentDay.clear();
+
+module.exports = { runTenant, runAll, summary, minutesOfDay, resetForTests };

@@ -81,7 +81,7 @@ async function alert({ waId, event, details = '' }) {
  * K19: alert specific people (an escalation goes to one manager, or to the owners), when they
  * have a WhatsApp number and alerts not switched off. `key` makes it once per key, not per time window.
  */
-async function alertUsers({ waId, event, details = '', userIds, key }) {
+async function alertUsers({ waId, event, details = '', userIds, key, strict = false }) {
   try {
     if (!EVENTS[event] || !waId || !userIds?.length) return 0;
     const people = await db.many(`SELECT id, alert_phone FROM crm_users
@@ -89,6 +89,7 @@ async function alertUsers({ waId, event, details = '', userIds, key }) {
     return await queueFor(people, { waId, event, details, key });
   } catch (err) {
     if (MISSING_CRM.has(err.code)) return 0;
+    if (strict) throw err; // the caller retries (R11b releases its daily claim)
     logger.error('Failed to queue staff WhatsApp alerts', { event, error: err.message });
     return 0;
   }

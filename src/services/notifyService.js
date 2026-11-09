@@ -166,7 +166,7 @@ NotifyService.prototype.notifyNotPickedUp = function notifyNotPickedUp({ waId, m
       await this.send([
         `⏰ <b>Not picked up in ${minutes} min</b>`,
         `<b>${escapeHtml(lead?.display_name || 'Lead')}</b> · ${escapeHtml(contactLabel(lead, waId))}`,
-        `Assigned to <b>${escapeHtml(assigneeName || 'nobody')}</b>; now alerting ${escapeHtml(to)}`,
+        `Assigned to <b>${escapeHtml(assigneeName || 'nobody')}</b>; alerted: ${escapeHtml(to)}`,
         ...fallbackLinks
       ].join('\n'), { buttons });
     } catch (err) {

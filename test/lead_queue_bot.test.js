@@ -81,8 +81,8 @@ test('K19: not picked up in 5 min alerts the manager, 15 min the owners (once ea
     assert.strictEqual(toOwner.length, 1);
     assert.match(toOwner[0].text, /Not picked up in 15 min/);
     await sleep(20);
-    assert.ok(sent.some(t => /Not picked up in 5 min/.test(t) && /now alerting GKF Manager/.test(t)));
-    assert.ok(sent.some(t => /Not picked up in 15 min/.test(t) && /now alerting GKF Owner/.test(t)));
+    assert.ok(sent.some(t => /Not picked up in 5 min/.test(t) && /alerted: GKF Manager on WhatsApp/.test(t)));
+    assert.ok(sent.some(t => /Not picked up in 15 min/.test(t) && /alerted: GKF Owner on WhatsApp/.test(t)));
 
     // An owner with alerts off still gets nothing on WhatsApp.
     await db.query("UPDATE crm_users SET alert_mode = 'off' WHERE id = $1", [ids.owner]);
@@ -103,4 +103,49 @@ test('K19: with auto-assign off, nothing is assigned or escalated (as before)', 
     assert.strictEqual(await db.one("SELECT 1 AS x FROM crm_lead_assignments WHERE wa_id = '919811100005'"), null);
     assert.strictEqual(await leadQueue.sweepAll(new Date(Date.now() + 60 * 60000)), 0);
   } finally { await ctx.cleanup(); }
+});
+
+test('K19 review: a lead handed off again escalates again; Telegram says when nobody got a WhatsApp; one failure does not stop the rest', async () => {
+  const ctx = await setup();
+  const sent = [];
+  notifyService.sendOverride = async text => { sent.push(text); return true; };
+  try {
+    const { db, ids, lead } = await queueOn(ctx);
+    await lead('919811100006');
+    await handoffRepository.open({ waId: '919811100006', reason: 'ready_to_book' });
+    const first = new Date((await db.one("SELECT assigned_at FROM crm_lead_assignments WHERE wa_id = '919811100006'")).assigned_at);
+    await leadQueue.sweepAll(new Date(first.getTime() + 6 * 60000));
+    // Picked up, resolved, and next week the lead needs a person again: a new assignment.
+    await handoffRepository.resolve('919811100006');
+    await db.query("UPDATE crm_lead_assignments SET assigned_at = now() + interval '7 days', escalation_level = 0 WHERE wa_id = '919811100006'");
+    await db.query("INSERT INTO handoffs (wa_id, reason, status) VALUES ('919811100006', 'ready_to_book', 'assigned')");
+    const second = new Date((await db.one("SELECT assigned_at FROM crm_lead_assignments WHERE wa_id = '919811100006'")).assigned_at);
+    await leadQueue.sweepAll(new Date(second.getTime() + 6 * 60000));
+    const toManager = (await alertsTo(db, '919000000002')).filter(a => a.dedup_key.startsWith('staff_alert:not_picked_up:919811100006:'));
+    assert.strictEqual(toManager.length, 2, 'one WhatsApp per assignment, not one ever');
+
+    // The owner has alerts off: Telegram must not claim someone was alerted.
+    await db.query("UPDATE crm_users SET alert_phone = NULL WHERE id = $1", [ids.manager]);
+    await lead('919811100007');
+    await handoffRepository.open({ waId: '919811100007', reason: 'ready_to_book' });
+    const t = new Date((await db.one("SELECT assigned_at FROM crm_lead_assignments WHERE wa_id = '919811100007'")).assigned_at);
+    await leadQueue.sweepAll(new Date(t.getTime() + 6 * 60000));
+    await sleep(20);
+    assert.ok(sent.some(x => /nobody on WhatsApp \(GKF Manager: no number or alerts off\)/.test(x)));
+
+    // One alert failing (here: the first) is logged; the next lead is still escalated.
+    await db.query("UPDATE crm_users SET alert_phone = '919000000002' WHERE id = $1", [ids.manager]);
+    await lead('919811100008'); await lead('919811100009');
+    await handoffRepository.open({ waId: '919811100008', reason: 'ready_to_book' });
+    await handoffRepository.open({ waId: '919811100009', reason: 'ready_to_book' });
+    const staffAlerts = require('../src/services/staffAlerts');
+    const orig = staffAlerts.alertUsers;
+    let calls = 0;
+    staffAlerts.alertUsers = async args => { if (++calls === 1) throw new Error('boom'); return orig(args); };
+    try {
+      await leadQueue.sweepAll(new Date(Date.now() + 30 * 60000));
+    } finally { staffAlerts.alertUsers = orig; }
+    const later = (await alertsTo(db, '919000000002')).filter(a => /91981110000[89]/.test(a.dedup_key) && a.dedup_key.startsWith('staff_alert:not_picked_up:'));
+    assert.ok(later.length >= 1, 'the other lead still escalated');
+  } finally { notifyService.sendOverride = null; await ctx.cleanup(); }
 });

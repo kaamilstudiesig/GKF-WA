@@ -38,8 +38,14 @@ async function sweepTenant(now = new Date()) {
     if (!groups.has(k)) groups.set(k, { waId: a.waId, level: a.level, assigneeId: a.assigneeId, assignedAt: a.assignedAt, userIds: [] });
     groups.get(k).userIds.push(a.userId);
   }
-  const names = new Map((await db.many('SELECT id, name, role FROM crm_users WHERE id = ANY($1::int[])',
-    [[...new Set(alerts.flatMap(a => [a.userId, a.assigneeId]))]])).map(u => [u.id, u]));
+  // Names only make the texts nicer: if the lookup fails, the alerts still go out without them.
+  let names = new Map();
+  try {
+    names = new Map((await db.many('SELECT id, name, role FROM crm_users WHERE id = ANY($1::int[])',
+      [[...new Set(alerts.flatMap(a => [a.userId, a.assigneeId]))]])).map(u => [u.id, u]));
+  } catch (err) {
+    logger.warn('Lead queue: staff names unavailable; alerting without them', { error: err.message });
+  }
   // The level is already recorded by sweep() (so it never repeats, even with several processes).
   // If sending one lead's alert fails, it is logged and not retried; the other leads still go out.
   for (const g of groups.values()) {

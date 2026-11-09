@@ -76,9 +76,9 @@ Status: K14–K17 are built and K18 is written (PR `k14-k18-new-client`). R12 is
 
 1. **Finish #42 (R14 demo kit) and #43 (lost-reason wording)** from their review comments. #42 first: the portfolio demos wait for it.
 2. ✅ **R14 real estate demo kit** (PR `r14-realestate-demo`, how to run it: [OPERATIONS.md](OPERATIONS.md#demo-clients-r14)) (portfolio, this week): `npm run demo -- --tenant <slug> --preset realestate` fills one client with realistic sample data: projects, about 60 leads over 30 days with chats in English and Hinglish/Arabic, hand-offs, site visits, bookings with amounts, lost reasons, staff with a manager, and some leads waiting, so every screen (pipeline, reports, R11, R2 timers) looks alive. No real names or phone numbers (use +91 98000 / +971 50 000 test ranges). Safe to run twice. Builds on `scripts/demo-data.js`.
-3. **R15 currency per business** (contract PR first, with Kaamil): a `currency` field in the business profile (INR default, AED for Dubai). The CRM shows amounts in it, and payment fields and reports use it. The `amount_inr` column keeps its name (it holds the amount in the business's currency); document that. Kaamil handles the Conversions API currency and keeps Razorpay INR-only.
-4. **R16 lead intake** (contract PR first): leads from portals and website forms. A signed `POST` endpoint per client plus a copy-paste website form snippet: create or match the lead (phone, else email), record the source, open a hand-off, and send the first WhatsApp message as an approved template (leads from forms haven't messaged us, so the 24-hour window is closed). Adapters for specific portals (Property Finder, Bayut, Dubizzle) come once the Dubai client confirms which ones.
-5. **R17 projects and units** (contract PR first, with Kaamil's K24): a Projects page where the owner manages projects and units (name, area, type, size, price from, handover date, brochure link, photo), stored in the client's Meta catalog so the bot can send them as WhatsApp product messages.
+3. **R15 currency per business** (contract drafted below: confirm or change it in a small docs PR, then build, with Kaamil): a `currency` field in the business profile (INR default, AED for Dubai). The CRM shows amounts in it, and payment fields and reports use it. The `amount_inr` column keeps its name (it holds the amount in the business's currency); document that. Kaamil handles the Conversions API currency and keeps Razorpay INR-only.
+4. **R16 lead intake** (contract drafted below: confirm or change it in a small docs PR, then build): leads from portals and website forms. A signed `POST` endpoint per client plus a copy-paste website form snippet: create or match the lead (phone, else email), record the source, open a hand-off, and send the first WhatsApp message as an approved template (leads from forms haven't messaged us, so the 24-hour window is closed). Adapters for specific portals (Property Finder, Bayut, Dubizzle) come once the Dubai client confirms which ones.
+5. **R17 projects and units** (contract drafted below: confirm or change it in a small docs PR, then build, with Kaamil's K24): a Projects page where the owner manages projects and units (name, area, type, size, price from, handover date, brochure link, photo), stored in the client's Meta catalog so the bot can send them as WhatsApp product messages.
 6. **R6 revenue per ad** (Turiya): per ad and campaign: leads, qualified, site visits, sales, revenue, cost per customer and ROAS once K5 brings spend. Reuse `crm/src/analytics.js`.
 7. **R18 value page per client** (Turiya): one shareable screen for the owner or agency: leads, speed to lead, logging rate, sales, revenue, cost per customer, plus "what the system did" (replies sent, leads qualified, hand-offs timed, sales sent to Meta). Demo data until real numbers exist.
 8. **R8 onboarding wizard** (Turiya: easy onboarding): profile, business-type preset, brand, team (R13), test chat, checklist. Pairs with Kaamil's K9.
@@ -131,6 +131,49 @@ Off by default, so nothing changes for GKF until the owner turns it on in **Busi
 *Built as agreed, with one detail:* when `autoAssign` keeps the current assignee for a new hand-off, it restarts their clock (`assigned_at` now, level 0), so the 5/15 minutes count from this hand-off, not from an old assignment.
 
 *Bot side (Kaamil, K19, ✅ built 9 Nov in `src/services/leadQueue.js`)*: set `require('../../crm/src/queue').LeadQueue.botWired = true` where the bot wires it in (until then Business settings shows auto-assign as "needs the bot update" and keeps it off). `handoffRepository.open` calls `autoAssign` before `notifyService` / `staffAlerts`, so "their leads only" alerts reach the new assignee, wrapped so a queue error never blocks the hand-off. The minute housekeeping timer runs `sweep()` per tenant in `tenancy.run` and sends a `not_picked_up` alert for each result; the text uses `level` ("not picked up in 5 min" / "15 min"). As built: the hand-off's Telegram alert says "Assigned to <name> (lead queue)"; escalations go to each person's WhatsApp (`staffAlerts.alertUsers`, once per lead, level and assignment, so a lead handed off again later escalates again; only to people with a number and alerts not off; the Telegram post says when nobody got one). The level is recorded before sending, so a failed send is logged and not retried and one "Not picked up in 5/15 min" post to the staff group; the sweep runs every minute for every active client. Owners turn it on in **Business settings → Lead queue**.
+
+**Contracts for R15, R16, R17 (drafted 9 Nov by Kaamil; Krishna confirms or proposes changes in a small docs PR, then builds)**
+
+*R15: currency per business*
+
+| What | Where | Owner |
+| --- | --- | --- |
+| The currency | `profile.currency` in the business profile: `INR` (default), `AED`, `SAR`, `USD`. Added in `normalize()` (`src/services/businessProfile.js`), read through `gymConfig.profile.currency`. A select on Business settings | Krishna (both sides) |
+| How amounts are stored | Unchanged: `amount_inr` columns keep their name and hold **whole units of the business's currency** (AED 950000 for a Dubai sale). Documented in `crm/README.md` and `crm/src/constants.js`; no migration | Krishna |
+| How amounts are shown | One helper `util.money(amount, currency)` in `crm/src/util.js` (`₹7,080`, `AED 950,000`, Indian grouping only for INR). Replace every hard-coded `₹` in `crm/views/` and in CRM-side text with it. Report headers say "Revenue (AED)" | Krishna |
+| Payment links | Razorpay is INR-only: hide **Send payment link** when the currency is not INR | Krishna |
+| Changing it later | Allowed, with a warning on the settings page when sales exist ("existing amounts are not converted") | Krishna |
+| Bot side | Conversions API `custom_data.currency` from the profile; `suggestedOutcome` strips any currency symbol (₹, AED, Rs) before parsing; Telegram/WhatsApp alert texts use the same money format; Zoho deals already carry the number as is | Kaamil |
+
+Done when: a Dubai client shows AED everywhere (lead page, outcome sheet, pipeline, reports, alerts) and GKF looks exactly as today. Tests: the money helper for each currency, the settings select, the hidden payment link, and a Purchase event in AED.
+
+*R16: lead intake from portals and website forms*
+
+- **Endpoint (bot host):** `POST /intake/:slug` (`src/routes/intake.js`, mounted in `src/app.js` next to the Razorpay webhook). The client is found by slug (`registry.bySlug`); everything after runs in `tenancy.run`. Two ways in:
+  - **Server-to-server** (portals, Zapier, a client's CRM): JSON body signed with `X-Intake-Signature: sha256=<HMAC of the raw body>` using a per-client secret `intakeSecret` (new key in `SECRET_KEYS`, `src/tenancy/registry.js`).
+  - **Website form** (the copy-paste snippet): no secret in the browser. A public `intakeFormKey` (setting) plus the client's allowed website origins (`intakeOrigins` setting), a honeypot field, and a rate limit per IP and per phone (the existing rate limiter). The snippet is plain HTML + a few lines of JS that the owner copies from Business settings → **Lead sources**.
+- **Body:** `{ name, phone, email, message, source, sourceRef, utm: { source, medium, campaign, content }, consent }`. `source` is one of `website`, `property_finder`, `bayut`, `dubizzle`, `other`. `phone` in any format; normalised to digits with the country code (reuse `normalizePhone`). Responses: `202 { ok: true }`, `400` with a reason, `401` bad signature or key, `429`.
+- **What it does:**
+  1. Match an existing lead by phone (`leads.phone`, then `wa_id`); otherwise create one with `wa_id` = the phone, `source` = `intake_<source>`, `metadata.intake` = the body without the message (email lives here; no new column).
+  2. Store the form message as an inbound-style note in `crm_lead_notes` (not in `messages`, so the AI never treats it as WhatsApp text).
+  3. Open a hand-off with a new reason `form_lead` (platform migration: extend the `handoffs.reason` CHECK), so it lands in the lead queue (R2/K19) and alerts like any hand-off.
+  4. If `consent` is true and there is a phone, queue the first WhatsApp message as the approved template `lead_welcome` (`{{1}}` name, `{{2}}` business name; Kaamil adds it to `scripts/create-template.js`). At most one per phone per 24 hours. No phone: no WhatsApp, the hand-off says "email only".
+  5. A repeat submission with the same `sourceRef` within 24 hours does nothing (idempotent).
+- **CRM (Krishna):** Business settings → **Lead sources**: the endpoint URL, the form snippet, the allowed origins, "show / regenerate secret" (owner only, shown once), and a list of the last 20 intake leads with their source. A source badge on lead cards.
+- **Portal adapters** (Property Finder, Bayut, Dubizzle) come later, once the Dubai client says which they use: each is a small mapper from that portal's payload or email to the body above.
+- **Tests (Krishna):** good signature, bad signature, form key + wrong origin, honeypot, rate limit, new lead vs existing lead, no phone, no consent, duplicate `sourceRef`, template queued once, and one client's intake never touching another client. Fakes only, never Meta.
+
+*R17: projects and units, in a Meta catalog*
+
+| What | Where | Owner |
+| --- | --- | --- |
+| Data (source of truth) | Platform migration `projects`: `crm_projects` (`id`, `tenant_id`, `name`, `area`, `kind` e.g. apartments/villas, `handover`, `brochure_url`, `photo_url`, `status` active/sold_out, `sort`) and `crm_units` (`id`, `tenant_id`, `project_id`, `name` e.g. "2 BHK", `size_sqft`, `price_from`, `retailer_id` unique per tenant, `meta_product_id`, `sync_status`, `sync_error`, `dirty`). Both with `tenant_id` and the tenancy policy | Krishna |
+| Projects page | **Projects** (owner and manager): add, edit, mark sold out, reorder; units under each project. Prices use R15's currency. Photo and brochure as https URLs in v1 (no uploads) | Krishna |
+| On the lead page | **Send projects**: pick units, and the bot sends them as one WhatsApp product list. Only inside the 24-hour window; outside it, the button says why | Krishna (UI), Kaamil (send) |
+| Catalog sync (K24) | A worker like the Zoho one: a trigger marks changed units `dirty`; it pushes them to the client's Meta catalog (`catalogId` setting, `catalog_management` on the client's token) with the Catalog batch API, and stores `meta_product_id` / `sync_status` / `sync_error`, which the Projects page shows | Kaamil |
+| The bot | Can answer "what projects do you have" from these tables and send a product list. The business profile stays the source of facts for everything else; projects never replace it in v1 | Kaamil |
+
+Done when: an owner adds a project with three unit types, they appear in Meta Commerce Manager, and staff send them to a lead as a product list from the lead page. Tests with a fake catalog API.
 
 **Kaamil, in this order**
 

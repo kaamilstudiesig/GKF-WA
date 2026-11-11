@@ -74,7 +74,7 @@ Status: K14–K17 are built and K18 is written (PR `k14-k18-new-client`). R12 is
 
 **Krishna, in this order** (one PR each; a contract PR first where marked):
 
-1. **Finish #42 (R14 demo kit) and #43 (lost-reason wording)** from their review comments. #42 first: the portfolio demos wait for it.
+1. ✅ **Finish #42 (R14 demo kit) and #43 (lost-reason wording)** from their review comments: both fixed to "Ready to merge" and merged 8 Nov.
 2. ✅ **R14 real estate demo kit** (PR `r14-realestate-demo`, how to run it: [OPERATIONS.md](OPERATIONS.md#demo-clients-r14)) (portfolio, this week): `npm run demo -- --tenant <slug> --preset realestate` fills one client with realistic sample data: projects, about 60 leads over 30 days with chats in English and Hinglish/Arabic, hand-offs, site visits, bookings with amounts, lost reasons, staff with a manager, and some leads waiting, so every screen (pipeline, reports, R11, R2 timers) looks alive. No real names or phone numbers (use +91 98000 / +971 50 000 test ranges). Safe to run twice. Builds on `scripts/demo-data.js`.
 3. **R15 currency per business** (contract drafted below: confirm or change it in a small docs PR, then build, with Kaamil): a `currency` field in the business profile (INR default, AED for Dubai). The CRM shows amounts in it, and payment fields and reports use it. The `amount_inr` column keeps its name (it holds the amount in the business's currency); document that. Kaamil handles the Conversions API currency and keeps Razorpay INR-only.
 4. **R16 lead intake** (contract drafted below: confirm or change it in a small docs PR, then build): leads from portals and website forms. A signed `POST` endpoint per client plus a copy-paste website form snippet: create or match the lead (phone, else email), record the source, open a hand-off, and send the first WhatsApp message as an approved template (leads from forms haven't messaged us, so the 24-hour window is closed). Adapters for specific portals (Property Finder, Bayut, Dubizzle) come once the Dubai client confirms which ones.
@@ -147,6 +147,26 @@ Off by default, so nothing changes for GKF until the owner turns it on in **Busi
 
 Done when: a Dubai client shows AED everywhere (lead page, outcome sheet, pipeline, reports, alerts) and GKF looks exactly as today. Tests: the money helper for each currency, the settings select, the hidden payment link, and a Purchase event in AED.
 
+*Confirmed by Krishna (11 Nov, PR `r15-currency-contract`), with these changes. Kaamil: agree or change them on that PR before the build starts.*
+
+1. **One shared module, `src/config/currency.js`, not `crm/src/util.js`.** The bot's alert texts need the same format, and #43's review asked us not to make `src/` depend on `crm/`. It holds:
+   - `CURRENCIES`: `INR` (`₹7,080`, Indian grouping), `AED` (`AED 950,000`), `SAR` (`SAR 950,000`), `USD` (`$950,000`), all in whole units.
+   - `money(amount, currency)`: the display format.
+   - `parseAmount(text)`: reads typed amounts ("₹7,080", "Rs 7080", "AED 950,000", "950000"). It strips the symbol, code, commas and spaces, and rejects decimals and anything else with a message.
+
+   The CRM uses `util.money`, which re-exports it. Kaamil's alert texts and `suggestedOutcome` use the same two functions.
+2. **Unknown codes become INR.** `normalize()` accepts only the four codes, so an old profile or a bad value falls back to INR. GKF needs no change.
+3. **Payment links are blocked on the server too.** When the currency isn't INR, the payment-link route returns 400 as well as hiding the button. The ₹10 lakh link limit stays.
+4. **The largest sale stays 100,000,000 whole units in any currency.** It fits the `INTEGER` columns (AED 100M or ₹10 crore), so there is no migration.
+5. **Typed amounts:** the outcome sheet (lead page and pipeline) labels the field "Amount paid (AED)", and the field accepts the currency's code or symbol.
+6. **AI cost on Reports stays our cost, in USD,** with the ₹ line shown only when the currency is INR. It's what the bot costs us, not the client's revenue.
+7. **Old text isn't rewritten.** Messages and activity entries that were already sent with ₹ stay as sent. Only numbers shown from `amount_inr` change format.
+8. **Examples follow the currency.** The plan-price example on Business settings (the `planPrice` label, e.g. "₹85L onwards") uses the business's currency, e.g. "AED 1.1M onwards".
+9. **R14 demo kit:** `--region ae` sets `currency: 'AED'` in the profile it writes, and `--region in` sets INR. The packs already carry the currency.
+10. **Bot side, one more item for Kaamil:** the AI prompt's `amount_inr` line says the number is in the business's currency (still one AI call). Zoho deals carry the number as is, so onboarding should check that the client's Zoho home currency matches `profile.currency`.
+
+Build order once agreed: shared module and profile field, then the CRM screens (lead page, outcome sheet, pipeline, reports, settings select with the warning, payment link), then the demo kit. One PR (`r15-currency`). Tests: `money` and `parseAmount` for each currency, the settings select and warning, the payment link hidden and refused, a Dubai lead page, pipeline and reports showing AED, and GKF pages unchanged.
+
 *R16: lead intake from portals and website forms*
 
 - **Endpoint (bot host):** `POST /intake/:slug` (`src/routes/intake.js`, mounted in `src/app.js` next to the Razorpay webhook). The client is found by slug (`registry.bySlug`); everything after runs in `tenancy.run`. Two ways in:
@@ -163,6 +183,45 @@ Done when: a Dubai client shows AED everywhere (lead page, outcome sheet, pipeli
 - **Portal adapters** (Property Finder, Bayut, Dubizzle) come later, once the Dubai client says which they use: each is a small mapper from that portal's payload or email to the body above.
 - **Tests (Krishna):** good signature, bad signature, form key + wrong origin, honeypot, rate limit, new lead vs existing lead, no phone, no consent, duplicate `sourceRef`, template queued once, and one client's intake never touching another client. Fakes only, never Meta.
 
+*Confirmed by Krishna (11 Nov, PR `r16-intake-contract`), with these changes. Kaamil: agree or change them on that PR before the build starts.*
+
+1. **A phone is required in v1.** A form with no phone gets `400 phone required`, and the website form marks phone as required. The reason: a lead's key must be a phone or a BSUID (`identity.isLeadKey`). A made-up key for an email-only lead (such as `EM.…`) would match the BSUID pattern, and the bot could try to send to it. Portals always send a phone. Email-only leads can come later, with a key type agreed with Kaamil.
+2. **A form lead must not look like it has an open 24-hour window.** Today `leads.last_inbound_message_at` is `NOT NULL DEFAULT now()`, and both the bot and the CRM use it for the window. A new form lead would show an open reply box, and staff replies would fail at Meta.
+   - **Proposed fix:** the R16 platform migration makes the column nullable, and form leads keep it `NULL` until they message on WhatsApp.
+   - **Why it's safe:** `windowOpen(null)` is already false in both places. The bot's upsert uses `GREATEST`, which ignores `NULL`, so the first real message fills it in.
+   - **The cost:** the four CRM sort orders on it (`recent`, `oldest`, `attention`, the pipeline) get `NULLS LAST`.
+   - **Tests:** a form lead shows the window closed, and it opens once the lead writes.
+   - **Alternative**, if Kaamil would rather not touch `leads`: a `metadata.intake.noWindow` flag checked by both `windowOpen` functions. It's messier, because two places must remember it.
+3. **A small `intake_submissions` table** goes in the same migration as the `form_lead` hand-off reason, with `tenancyPolicy`.
+   - **Columns:** `id`, `tenant_id`, `received_at`, `source`, `source_ref`, `wa_id`, `ip_hash` (a salted hash, never the raw IP), `status` (`accepted` / `duplicate` / `rejected` / `limited`) and `error`.
+   - **What it gives us:**
+     - The duplicate `sourceRef` check (same source and ref within 24 hours).
+     - Rate limits that work with several dynos (counted here, not in memory).
+     - The "last 20" list on **Lead sources**.
+   - `leads.metadata.intake` still keeps the latest submission, without the message.
+4. **Phone format moves to `src/`.** `normalizePhone` lives in `crm/src/users.js`. It moves to `src/services/identity.js` as `normalizePhone(raw, country)`, and the CRM imports it from there. That keeps `src/` from depending on `crm/`, as #43's review asked. Local numbers ("050 123 4567") need the client's country code, so there's a new setting, `phoneCountry`: `91` by default, `971` for Dubai.
+5. **The website form avoids CORS preflight.** It posts as `application/x-www-form-urlencoded`, which doesn't need a CORS preflight. The server:
+   - checks `Origin` against `intakeOrigins` and the form key, and sends `Access-Control-Allow-Origin` only to an allowed origin;
+   - treats the honeypot as a silent `202`, so bots don't learn it was caught.
+
+   The snippet has a consent checkbox, unticked by default, that names the business and WhatsApp. Server-to-server calls send signed JSON (the HMAC is over `req.rawBody`, which `express.json` already keeps).
+6. **The secret can only be regenerated, and is shown once** (owner only). A stored secret can't be shown again, so there's no "show". It's saved encrypted with `registry.update`. The public form key and the endpoint URL are always shown.
+7. **Rate limits:**
+   - Web form: 10 submissions per IP per hour, and 3 per phone per day, per client.
+   - Signed calls: no rate limit, only the duplicate `sourceRef` check.
+   - Over the limit: `429`, recorded as `limited`.
+8. **Existing leads:**
+   - **A hand-off is already open:** no second hand-off. The note and source are added, and staff get one alert.
+   - **The lead wrote on WhatsApp in the last 24 hours:** no template, because the conversation is live.
+   - **Status:** a lost or won lead isn't reopened silently. The hand-off summary says "came back through <source>".
+9. **The welcome template is optional per client.** It's a new setting, `leadWelcomeTemplate`. With no template set or approved, nothing is sent, and the hand-off says "WhatsApp welcome not sent: template not set up". Kaamil creates `lead_welcome` per client.
+10. **Notes from forms** use `crm_lead_notes` with `user_id NULL`, shown as "From the <source> form". The lead page shows the source badge, as in the draft.
+11. **Who builds what:**
+   - **Krishna:** the route, the migration, the identity move and the CRM screens. `docs/TEAM.md` (7 Nov) allows `src/` work once a contract is agreed.
+   - **Kaamil:** reviews the migration and the new registry keys (`intakeSecret`, `intakeFormKey`, `intakeOrigins`, `phoneCountry`, `leadWelcomeTemplate`), and adds `lead_welcome` to `scripts/create-template.js`.
+
+Extra tests on top of the draft: the window stays closed for a form lead, a local Dubai number becomes `971…`, honeypot submissions return `202` and are never saved as leads, the limits hold across two app instances, and regenerating the secret makes the old one fail.
+
 *R17: projects and units, in a Meta catalog*
 
 | What | Where | Owner |
@@ -174,6 +233,47 @@ Done when: a Dubai client shows AED everywhere (lead page, outcome sheet, pipeli
 | The bot | Can answer "what projects do you have" from these tables and send a product list. The business profile stays the source of facts for everything else; projects never replace it in v1 | Kaamil |
 
 Done when: an owner adds a project with three unit types, they appear in Meta Commerce Manager, and staff send them to a lead as a product list from the lead page. Tests with a fake catalog API.
+
+*Confirmed by Krishna (11 Nov, PR `r17-projects-contract`), with these changes. Kaamil: agree or change them on that PR before the build starts.*
+
+1. **Projects work without the catalog.** The Projects page and **Send projects** don't wait for K24.
+   - **When the catalog is on and the chosen units are synced**, Send projects sends a WhatsApp product list.
+   - **Otherwise** it sends a plain message: each unit's name, "from" price, area and handover, plus the brochure link.
+
+   **Why:** we haven't confirmed that Meta's commerce rules accept property listings in a catalog. Third-party guides don't list real estate as banned, but none of them is Meta's own wording. Setting up a catalog per client also takes time, and the demos are this week.
+
+   **K24 step 0 (Kaamil):** read the WhatsApp Commerce Policy and Meta's Commerce Policies, and get one test catalog with a unit approved, before building the sync.
+2. **Catalog fields come from our data.**
+   - **title:** "<project> · <unit>"
+   - **description:** area, kind, size and handover
+   - **price:** `price_from` in the business's currency, so R17 is built after R15
+   - **image:** the unit's photo, else the project's
+   - **link:** the brochure, else the business website
+   - **availability:** in stock, or out of stock when sold out
+   - **condition:** new
+   - **brand:** the business name
+
+   A unit with no https photo or no link isn't sent to the catalog, and the Projects page says **Needs a photo** or **Needs a link**.
+3. **Units get their own optional `photo_url`**, which falls back to the project's photo.
+4. **Retailer IDs:** `retailer_id` is generated (`u<id>`). It can't be edited and is never reused, so a renamed unit stays the same product in Meta.
+5. **Meta's limits:** at most 30 units per send, with one section per project and at most 10 projects. The picker enforces this.
+6. **Removing a unit hides it rather than deleting it.** It gets a new status, `archived`, and the sync removes it from the catalog. A unit that leads have already been sent stays readable in their history.
+7. **No cart (K24, Kaamil).** Nobody buys property through a cart, so K24 turns the cart off on the number.
+   - **The customer asks about a product** (`referred_product` on an inbound message): it becomes a note on the lead, "Asked about <unit>", and the bot answers as usual.
+   - **A cart order arrives anyway:** the bot gets a polite reply, and staff get a hand-off.
+8. **Who can do what:** owners and managers edit projects. Anyone who can see the lead can use Send projects.
+9. **Sends count as staff replies.** They're stored in `outbound_messages` with `metadata.source = 'crm'` and `metadata.units` (the unit IDs). That counts as a staff reply for R2 (picked up) and R5 (speed to lead), and it shows in the lead's history.
+10. **The bot's facts:** the business profile stays the bot's source of facts in v1, as the draft says. The Projects page notes that the bot still uses Business settings for its answers. When K24 lets the bot read projects, the profile's projects and unit types should be filled from this page, so the owner doesn't keep two lists (Kaamil decides, since he owns the prompts).
+11. **Migration numbers:** R16 and R17 each take the next free platform migration id when they are built. Neither id is fixed in advance.
+
+Build order once agreed (after R15): tables and Projects page, then Send projects (plain message), then the catalog columns that K24 uses. Tests:
+- adding, editing, sold out, archive and reorder
+- the per-tenant `retailer_id`
+- the 30-unit and 10-project limits
+- Send projects outside the window (disabled, with the reason)
+- the plain-message fallback, and the product list with a fake catalog
+- "Needs a photo"
+- tenant isolation
 
 **Kaamil, in this order**
 

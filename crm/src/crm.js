@@ -620,18 +620,7 @@ class Crm {
       FROM leads l ${ASSIGN_JOIN} WHERE ${scope} AND l.first_contact_at >= ${q.p(since)}
       GROUP BY l.source ORDER BY c DESC, l.source`);
 
-    // Click-to-WhatsApp ads, keyed by the ad id the bot saved at metadata.referral.
-    const ads = await scoped((q, scope) => `SELECT
-        l.metadata -> 'referral' ->> 'source_id' AS ad_id,
-        MAX(l.metadata -> 'referral' ->> 'headline') AS headline,
-        MAX(l.metadata -> 'referral' ->> 'platform') AS platform,
-        COUNT(*)::int AS c,
-        COUNT(*) FILTER (WHERE l.status IN ('hot', 'qualified'))::int AS warm,
-        COUNT(*) FILTER (WHERE l.status = 'converted')::int AS converted
-      FROM leads l ${ASSIGN_JOIN}
-      WHERE ${scope} AND l.first_contact_at >= ${q.p(since)}
-        AND jsonb_typeof(l.metadata -> 'referral') = 'object'
-      GROUP BY 1 ORDER BY converted DESC, c DESC, 1 LIMIT 20`);
+    // Per ad: Analytics.byAd (R6), on the Reports page's "By ad" section.
 
     const rq = new Params();
     const nowP = rq.p(now());
@@ -663,7 +652,7 @@ class Crm {
       days, counts, usdToInr,
       conversionRate: closed ? Math.round((counts.converted / closed) * 100) : null,
       perDay: Object.entries(perDay).map(([day, c]) => ({ day, c })),
-      interests, handoffReasons, reps, ai, sources, ads
+      interests, handoffReasons, reps, ai, sources
     };
   }
 

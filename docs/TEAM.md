@@ -79,7 +79,7 @@ Status: K14–K17 are built and K18 is written (PR `k14-k18-new-client`). R12 is
 3. **R15 currency per business** (contract drafted below: confirm or change it in a small docs PR, then build, with Kaamil): a `currency` field in the business profile (INR default, AED for Dubai). The CRM shows amounts in it, and payment fields and reports use it. The `amount_inr` column keeps its name (it holds the amount in the business's currency); document that. Kaamil handles the Conversions API currency and keeps Razorpay INR-only.
 4. **R16 lead intake** (contract drafted below: confirm or change it in a small docs PR, then build): leads from portals and website forms. A signed `POST` endpoint per client plus a copy-paste website form snippet: create or match the lead (phone, else email), record the source, open a hand-off, and send the first WhatsApp message as an approved template (leads from forms haven't messaged us, so the 24-hour window is closed). Adapters for specific portals (Property Finder, Bayut, Dubizzle) come once the Dubai client confirms which ones.
 5. **R17 projects and units** (contract drafted below: confirm or change it in a small docs PR, then build, with Kaamil's K24): a Projects page where the owner manages projects and units (name, area, type, size, price from, handover date, brochure link, photo), stored in the client's Meta catalog so the bot can send them as WhatsApp product messages.
-6. **R6 revenue per ad** (Turiya): per ad and campaign: leads, qualified, site visits, sales, revenue, cost per customer and ROAS once K5 brings spend. Reuse `crm/src/analytics.js`.
+6. **R6 revenue per ad** (Turiya): per ad and campaign: leads, qualified, site visits, sales, revenue, cost per customer and ROAS once K5 brings spend. Reuse `crm/src/analytics.js`. *Built (PR `r6-revenue-per-ad`):* `Analytics.byAd` and **Reports → By ad** + CSV, with a lead-quality grade per ad. **For K5 (Kaamil):** fill `Analytics.adSpend(range)` (a `Map` of ad id to `{ spend, campaignId, campaignName }`) from your spend table; cost per sale, ROAS, campaign and the **By campaign** roll-up then show with no other change. Click-to-WhatsApp referrals carry the ad id, not the campaign, so campaigns come from K5.
 7. **R18 value page per client** (Turiya): one shareable screen for the owner or agency: leads, speed to lead, logging rate, sales, revenue, cost per customer, plus "what the system did" (replies sent, leads qualified, hand-offs timed, sales sent to Meta). Demo data until real numbers exist.
 8. **R8 onboarding wizard** (Turiya: easy onboarding): profile, business-type preset, brand, team (R13), test chat, checklist. Pairs with Kaamil's K9.
 
@@ -330,7 +330,7 @@ Build order once agreed (after R15): tables and Projects page, then Send project
 | # | Task | Owner |
 | --- | --- | --- |
 | K5 | Marketing API spend import per ad (daily job) | Kaamil |
-| R6 | Per-ad report: leads, qualified, customers, ₹, cost per customer, ROAS, lead-quality grade per creative | Krishna |
+| R6 | ✅ Per-ad report: leads, qualified, customers, ₹, cost per customer, ROAS, lead-quality grade per creative (spend columns wait for K5) | Krishna |
 | R7 | Nightly digest + weekly agency report page | Krishna |
 
 ### 4. Early signal

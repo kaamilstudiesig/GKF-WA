@@ -22,7 +22,14 @@ const pwa = require('./pwa');
 const bulkStaff = require('./bulkStaff');
 const { LeadQueue, QueueError, TIMEZONES } = require('./queue');
 const { MIN_AGE_HOURS } = require('./nudges');
-const { Analytics } = require('./analytics');
+const { Analytics, GRADE_MIN_LEADS } = require('./analytics');
+
+/** One CSV cell: quoted when needed, and formula-looking text made inert (spreadsheet injection). */
+function csvCell(v) {
+  let s = v === null || v === undefined ? '' : String(v);
+  if (/^[=+\-@\t\r]/.test(s)) s = `'${s}`;
+  return /[",\n\r]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+}
 const { Branding } = require('./branding');
 const { can } = require('./permissions');
 const { LEAD_STATUSES, ROLE_LABELS, ROLES, OUTCOMES, LOST_REASONS, STAGES } = require('./constants');
@@ -384,20 +391,38 @@ function createCrmApp({
   // ---- reports ----
   app.get('/reports', allow(can.viewReports), h(async (req, res) => {
     const days = [7, 30, 90].includes(Number(req.query.days)) ? Number(req.query.days) : 30;
+    const a = await analytics.summary(req.user, { days, names: res.locals.OUTCOMES, lostNames: res.locals.LOST_REASONS });
+    // R6: "By ad" is sorted by revenue (the default from byAd) or by leads; "not from an ad" stays last.
+    const KIND_ORDER = { ad: 0, missing: 1, none: 2 };
+    const adSort = req.query.adsort === 'leads' ? 'leads' : 'revenue';
+    const adRows = adSort === 'leads'
+      ? [...a.ads].sort((x, y) => KIND_ORDER[x.kind] - KIND_ORDER[y.kind] || y.leads - x.leads || y.revenueInr - x.revenueInr)
+      : a.ads;
     res.render('reports', {
       r: await crm.reports(req.user, { days, includeAiCost: can.viewAiCost(req.user), usdToInr }),
-      a: await analytics.summary(req.user, { days, names: res.locals.OUTCOMES, lostNames: res.locals.LOST_REASONS })
+      a, adRows, adSort, GRADE_MIN_LEADS
     });
+  }));
+  // R6: the "By ad" table as a spreadsheet (same scope and period as the page).
+  app.get('/reports/ads.csv', allow(can.viewReports), h(async (req, res) => {
+    const days = [7, 30, 90].includes(Number(req.query.days)) ? Number(req.query.days) : 30;
+    const rows = await analytics.byAd(req.user, await analytics.range({ days }));
+    const L = res.locals.OUTCOMES;
+    const AD_KIND_LABEL = { missing: 'Ad (id missing)', none: 'Not from an ad' };
+    const cols = [['ad_id', 'adId'], ['platform', 'platform'], ['headline', 'headline'], ['campaign', 'campaignName'], ['leads', 'leads'],
+      ['qualified', 'qualified'], [L.visit_booked, 'visitBooked'], [L.visited, 'visited'], [L.joined, 'won'], ['revenue', 'revenueInr'],
+      ['win_rate_pct', 'winRate'], ['median_minutes_to_contact', 'medianMinutes'], ['grade', 'grade'], ['spend', 'spend'],
+      ['cost_per_sale', 'costPerSale'], ['roas', 'roas']];
+    const lines = [cols.map(([h]) => csvCell(h)).join(','),
+      ...rows.map(r => cols.map(([, k]) => csvCell(k === 'headline' && r.kind !== 'ad' ? AD_KIND_LABEL[r.kind] : r[k])).join(','))];
+    res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+    res.setHeader('Content-Disposition', `attachment; filename="${res.locals.brand.fileSlug}-ads-${days}d-${util.localDay(new Date().toISOString())}.csv"`);
+    res.send(lines.join('\n'));
   }));
   app.get('/reports/leads.csv', allow(can.exportLeads), h(async (req, res) => {
     const cols = ['wa_id', 'phone', 'username', 'display_name', 'status', 'interest', 'source', 'assignee_name', 'needs_human', 'handoff_reason',
       'open_followups', 'first_contact_at', 'last_inbound_message_at', 'last_outbound_message_at'];
-    const esc = v => {
-      let s = v === null || v === undefined ? '' : String(v);
-      if (/^[=+\-@\t\r]/.test(s)) s = `'${s}`; // block spreadsheet formula injection
-      return /[",\n\r]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
-    };
-    const lines = [cols.join(','), ...(await crm.exportLeads(req.user)).map(l => cols.map(c => esc(l[c])).join(','))];
+    const lines = [cols.join(','), ...(await crm.exportLeads(req.user)).map(l => cols.map(c => csvCell(l[c])).join(','))];
     res.setHeader('Content-Type', 'text/csv; charset=utf-8');
     res.setHeader('Content-Disposition', `attachment; filename="${res.locals.brand.fileSlug}-leads-${util.localDay(new Date().toISOString())}.csv"`);
     res.send(lines.join('\n'));

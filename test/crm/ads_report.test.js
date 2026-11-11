@@ -37,6 +37,9 @@ async function seed(db, salesId) {
 
   await lead('918200000004', 'new', '2030-01-20T09:00:00Z', ad('333', '=HYPERLINK("http://x")'));
 
+  // From an ad, but Meta sent no ad id: an ad lead all the same, never counted as organic.
+  await lead('918200000006', 'new', '2030-01-21T09:00:00Z', { referral: { headline: 'Unknown ad', source_type: 'ad' } });
+
   await lead('918200000005', 'converted', '2030-01-15T09:00:00Z');
   await outcome('918200000005', 'joined', '2030-01-16T09:00:00Z', 2000);
 }
@@ -50,7 +53,7 @@ test('R6 by ad: funnel, revenue, speed and win rate per ad; no-ad leads last; sa
     const range = await analytics.range({ days: 30, now: NOW });
     const rows = await analytics.byAd(undefined, range);
 
-    assert.deepStrictEqual(rows.map(r => r.adId), ['111', '222', '333', null]); // revenue first, then leads; no ad last
+    assert.deepStrictEqual(rows.map(r => [r.kind, r.adId]), [['ad', '111'], ['ad', '222'], ['ad', '333'], ['missing', null], ['none', null]]); // revenue, then leads; id missing, then no ad, last
     const a = rows[0];
     assert.deepStrictEqual(
       { headline: a.headline, platform: a.platform, leads: a.leads, contacted: a.contacted, qualified: a.qualified, visitBooked: a.visitBooked,
@@ -63,7 +66,8 @@ test('R6 by ad: funnel, revenue, speed and win rate per ad; no-ad leads last; sa
 
     const b = rows[1];
     assert.deepStrictEqual([b.leads, b.qualified, b.won, b.revenueInr, b.winRate, b.medianMinutes], [1, 0, 0, 0, 0, null]);
-    const none = rows[3];
+    assert.deepStrictEqual([rows[3].leads, rows[3].grade], [1, null]); // the ad lead with no id
+    const none = rows[4];
     assert.deepStrictEqual([none.leads, none.won, none.revenueInr, none.grade], [1, 1, 2000, null]);
 
     // Rows add up to the funnel (same rules, same leads).
@@ -91,7 +95,7 @@ test('R6 by ad: spend from the ad spend import gives cost per sale, ROAS and cam
     const a = rows.find(r => r.adId === '111'); const b = rows.find(r => r.adId === '222');
     assert.deepStrictEqual([a.spend, a.costPerSale, a.roas, a.campaignName], [2000, 2000, 2.5, 'January trials']);
     assert.deepStrictEqual([b.spend, b.costPerSale, b.roas], [500, null, 0]); // no sale: no cost per sale; ROAS 0
-    assert.strictEqual(rows.find(r => r.adId === null).spend, null);
+    assert.strictEqual(rows.find(r => r.kind === 'none').spend, null);
   } finally { await ctx.cleanup(); }
 });
 
@@ -141,10 +145,45 @@ test('R6 Reports page: "By ad" section, sort by leads, CSV with safe cells, owne
     assert.ok(lines.some(l => l.startsWith('901,instagram,Big win ad,,1,') && l.includes(',7000,')));
     assert.ok(lines.some(l => l.includes(`"'=HYPERLINK(""http://evil"")"`)), 'formula made inert');
     assert.ok(lines.some(l => l.includes('Not from an ad')));
+    assert.ok(!lines.some(l => l.includes('undefined')));
 
     const manager = await login(ctx.app, 'manager');
     assert.strictEqual((await manager.agent.get('/reports/ads.csv?days=7')).status, 200);
     const sales = await login(ctx.app, 'sales');
     assert.strictEqual((await sales.agent.get('/reports/ads.csv')).status, 403);
+  } finally { await ctx.cleanup(); }
+});
+
+test('R6 by campaign: ads roll up by campaign once K5 gives campaigns and spend', async () => {
+  const ctx = await setup();
+  try {
+    await seed(ctx.db, await ctx.userId('sales'));
+    const analytics = new Analytics(ctx.db);
+    analytics.adSpend = async () => new Map([
+      ['111', { spend: 2000, campaignId: 'c1', campaignName: 'January trials' }],
+      ['222', { spend: 500, campaignId: 'c1', campaignName: 'January trials' }],
+      ['333', { spend: 300, campaignId: 'c2', campaignName: 'Brand' }]
+    ]);
+    const s = await analytics.summary(undefined, { days: 30, now: NOW });
+    assert.deepStrictEqual(s.campaigns.map(c => [c.campaignId, c.ads, c.leads, c.won, c.revenueInr, c.spend, c.costPerSale, c.roas]), [
+      ['c1', 2, 3, 1, 5000, 2500, 2500, 2], // two ads, one campaign
+      ['c2', 1, 1, 0, 0, 300, null, 0]
+    ]);
+    // Before K5 there are no campaigns.
+    assert.deepStrictEqual((await new Analytics(ctx.db).summary(undefined, { days: 30, now: NOW })).campaigns, []);
+  } finally { await ctx.cleanup(); }
+});
+
+test('R6 summary reads the funnel rows once, for both the funnel and the per-ad report', async () => {
+  const ctx = await setup();
+  try {
+    await seed(ctx.db, await ctx.userId('sales'));
+    const analytics = new Analytics(ctx.db);
+    let calls = 0;
+    const real = analytics.funnelRows.bind(analytics);
+    analytics.funnelRows = async (...args) => { calls++; return real(...args); };
+    const s = await analytics.summary(undefined, { days: 30, now: NOW });
+    assert.strictEqual(calls, 1);
+    assert.strictEqual(s.ads.reduce((n, r) => n + r.leads, 0), s.funnel.leads);
   } finally { await ctx.cleanup(); }
 });

@@ -102,21 +102,23 @@ class Analytics {
     // type given, else the current client's own type from its business profile.
     const lost = lostNames || lostReasonsFor(type || require('../../src/config/gymConfig').profile.type);
     // One after another: requests run inside a tenant's transaction context.
-    const funnel = await this.funnel(user, range, names);
+    // The funnel's lead rows are read once and shared by the funnel and the per-ad report.
+    const rows = await this.funnelRows(user, range);
+    const funnel = await this.funnel(user, range, names, rows);
     const handoffs = await this.handoffStats(user, range);
     const lostReasons = await this.lostReasons(user, range, lost);
     const people = await this.people(user, range);
-    const ads = await this.byAd(user, range);
+    const ads = await this.byAd(user, range, rows);
     return {
       days, since: range.since.toISOString(), until: now.toISOString(),
       funnel, speedToLead: handoffs.speed, logging: { ...handoffs.logging, ...(await this.autoRecorded(user, range)) },
-      lostReasons, people, ads
+      lostReasons, people, ads, campaigns: Analytics.byCampaign(ads)
     };
   }
 
-  /** Leads first seen in the period and the furthest stage each reached. */
-  async funnel(user = SYSTEM, range, names = {}) {
-    const rows = await this.funnelRows(user, range);
+  /** Leads first seen in the period and the furthest stage each reached. Pass `rows` (funnelRows) to reuse them. */
+  async funnel(user = SYSTEM, range, names = {}, rows = null) {
+    rows = rows || await this.funnelRows(user, range);
     const reached = Object.fromEntries(STAGE_ORDER.map(s => [s, 0]));
     let revenue = 0; let lost = 0;
     for (const r of rows) {
@@ -152,6 +154,7 @@ class Analytics {
         MAX(l.metadata -> 'referral' ->> 'source_id') AS ad_id,
         MAX(l.metadata -> 'referral' ->> 'headline') AS headline,
         MAX(l.metadata -> 'referral' ->> 'platform') AS platform,
+        BOOL_OR(jsonb_typeof(l.metadata -> 'referral') = 'object') AS from_ad,
         ARRAY_REMOVE(ARRAY_AGG(DISTINCT x.outcome), NULL) AS outcomes,
         ARRAY(SELECT DISTINCT y.details ->> 'from' FROM crm_activity_log y
           WHERE y.wa_id = l.wa_id AND y.action = 'status_change' AND y.details ->> 'from' IS NOT NULL) AS past,
@@ -170,22 +173,27 @@ class Analytics {
 
   /**
    * R6: the funnel per Click-to-WhatsApp ad. Leads first seen in the period, grouped by ad;
-   * revenue is what those leads paid (cohort). Sorted by revenue, then leads; the
-   * "not from an ad" row (adId null) comes last.
+   * revenue is what those leads paid (cohort). Each row has a `kind`: 'ad'; 'missing' for leads
+   * that came from an ad whose id Meta didn't send (still ad leads, never counted as organic);
+   * 'none' for leads not from an ad. Ads sorted by revenue, then leads; 'missing' then 'none' last.
+   * Pass `rows` (funnelRows) to reuse them.
    */
-  async byAd(user = SYSTEM, range) {
-    const rows = await this.funnelRows(user, range);
+  async byAd(user = SYSTEM, range, rows = null) {
+    rows = rows || await this.funnelRows(user, range);
     const groups = new Map();
     for (const r of rows) {
-      const key = r.ad_id || null;
-      if (!groups.has(key)) groups.set(key, { adId: key, headline: null, platform: null, reached: STAGE_ORDER.map(() => 0), revenue: 0, waIds: new Set() });
+      const kind = r.ad_id ? 'ad' : r.from_ad ? 'missing' : 'none';
+      const key = r.ad_id ? `ad:${r.ad_id}` : kind;
+      if (!groups.has(key)) {
+        groups.set(key, { kind, adId: r.ad_id || null, headline: null, platform: null, reached: STAGE_ORDER.map(() => 0), revenue: 0, waIds: [] });
+      }
       const g = groups.get(key);
       g.headline = g.headline || r.headline || null;
       g.platform = g.platform || r.platform || null;
       const top = furthestStage(r);
       for (let i = 0; i <= top; i++) g.reached[i]++;
       g.revenue += Number(r.revenue);
-      g.waIds.add(r.wa_id);
+      g.waIds.push(r.wa_id);
     }
     if (!groups.size) return [];
 
@@ -197,26 +205,58 @@ class Analytics {
       ${FIRST_CONTACT}
       WHERE ${leadScope(user, q)} AND h.created_at >= ${q.p(range.since.toISOString())} AND h.created_at < ${q.p(range.now.toISOString())}`, q.values);
     const spend = await this.adSpend(range);
+    // Minutes to first contact per lead, worked out once (not once per ad).
+    const minutesByLead = new Map();
+    for (const h of handoffs) {
+      if (!h.contact_at) continue;
+      if (!minutesByLead.has(h.wa_id)) minutesByLead.set(h.wa_id, []);
+      minutesByLead.get(h.wa_id).push(Analytics.minutesToContact(h, range.hours));
+    }
 
     const idx = Object.fromEntries(STAGE_ORDER.map((s, i) => [s, i]));
+    const order = { ad: 0, missing: 1, none: 2 };
     return [...groups.values()].map(g => {
       const n = s => g.reached[idx[s]];
       const leads = n('leads'); const won = n('won');
-      const mins = handoffs.filter(h => g.waIds.has(h.wa_id) && h.contact_at).map(h => Analytics.minutesToContact(h, range.hours));
+      const mins = g.waIds.flatMap(w => minutesByLead.get(w) || []);
       const qualifiedRate = pct(n('qualified'), leads);
       const s = g.adId ? spend.get(g.adId) : null;
       const cost = s && Number.isFinite(Number(s.spend)) ? Number(s.spend) : null;
       return {
-        adId: g.adId, headline: g.headline, platform: g.platform,
+        kind: g.kind, adId: g.adId, headline: g.headline, platform: g.platform,
         leads, contacted: n('contacted'), qualified: n('qualified'), visitBooked: n('visit_booked'), visited: n('visited'), won,
         revenueInr: g.revenue, qualifiedRate, winRate: pct(won, leads),
         medianMinutes: round1(median(mins)),
-        grade: g.adId ? gradeFor(leads, qualifiedRate) : null,
+        grade: g.kind === 'ad' ? gradeFor(leads, qualifiedRate) : null,
         campaignId: s ? s.campaignId || null : null, campaignName: s ? s.campaignName || null : null,
         spend: cost, costPerSale: cost !== null && won ? Math.round(cost / won) : null,
         roas: cost ? Math.round((g.revenue / cost) * 10) / 10 : null
       };
-    }).sort((a, b) => (a.adId === null) - (b.adId === null) || b.revenueInr - a.revenueInr || b.leads - a.leads || String(a.adId).localeCompare(String(b.adId)));
+    }).sort((a, b) => order[a.kind] - order[b.kind] || b.revenueInr - a.revenueInr || b.leads - a.leads || String(a.adId).localeCompare(String(b.adId)));
+  }
+
+  /**
+   * R6: the per-ad rows rolled up by campaign (campaigns come with spend from K5's adSpend()).
+   * Ads with no known campaign are left out; empty until K5. Sorted by revenue, then leads.
+   */
+  static byCampaign(adRows) {
+    const groups = new Map();
+    for (const r of adRows) {
+      if (r.kind !== 'ad' || !r.campaignId) continue;
+      if (!groups.has(r.campaignId)) {
+        groups.set(r.campaignId, { campaignId: r.campaignId, campaignName: r.campaignName, ads: 0, leads: 0, qualified: 0, visitBooked: 0, won: 0, revenueInr: 0, spend: null });
+      }
+      const c = groups.get(r.campaignId);
+      c.campaignName = c.campaignName || r.campaignName;
+      c.ads++; c.leads += r.leads; c.qualified += r.qualified; c.visitBooked += r.visitBooked; c.won += r.won; c.revenueInr += r.revenueInr;
+      if (r.spend !== null) c.spend = (c.spend || 0) + r.spend;
+    }
+    return [...groups.values()].map(c => ({
+      ...c,
+      qualifiedRate: pct(c.qualified, c.leads), winRate: pct(c.won, c.leads),
+      costPerSale: c.spend !== null && c.won ? Math.round(c.spend / c.won) : null,
+      roas: c.spend ? Math.round((c.revenueInr / c.spend) * 10) / 10 : null
+    })).sort((a, b) => b.revenueInr - a.revenueInr || b.leads - a.leads || String(a.campaignId).localeCompare(String(b.campaignId)));
   }
 
   /** Speed to lead and logging rate, from hand-offs opened in the period. */

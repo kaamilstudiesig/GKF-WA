@@ -81,7 +81,7 @@
 </section>
 
 <section class="<%= card %> mb-4" id="ads">
-  <% const hasSpend = adRows.some(x => x.spend !== null); const adOnly = adRows.filter(x => x.adId); %>
+  <% const hasSpend = adRows.some(x => x.spend !== null); const adOnly = adRows.filter(x => x.kind !== 'none'); %>
   <div class="mb-3 flex flex-wrap items-center justify-between gap-2">
     <h2>By ad (<%= a.days %>d)</h2>
     <% if (adRows.length) { %><div class="flex items-center gap-2">
@@ -97,12 +97,12 @@
   <div class="overflow-x-auto"><table class="table table-sm">
     <thead><tr><th>Ad</th><th class="text-right">Leads</th><th class="text-right">Qualified</th><th class="text-right"><%= OUTCOMES.visit_booked %></th><th class="text-right"><%= OUTCOMES.joined %></th><th class="text-right">Revenue</th><th class="text-right">Win rate</th><th class="text-right">Speed</th><% if (hasSpend) { %><th class="text-right">Spend</th><th class="text-right">Per sale</th><th class="text-right">ROAS</th><% } %></tr></thead>
     <tbody><% for (const x of adRows) { %>
-      <tr class="<%= x.adId ? '' : 'text-base-content/60' %>">
-        <td class="min-w-48"><% if (x.adId) { %>
+      <tr class="<%= x.kind === 'ad' ? '' : 'text-base-content/60' %>">
+        <td class="min-w-48"><% if (x.kind === 'ad') { %>
           <div class="flex items-center gap-1.5"><span class="badge badge-ghost badge-xs capitalize"><%= x.platform || 'meta' %></span><% if (x.grade) { %><span class="badge badge-xs <%= { A: 'badge-success', B: 'badge-info', C: 'badge-warning', D: 'badge-error' }[x.grade] %> badge-soft" title="Lead quality: share of leads that reached Qualified">Grade <%= x.grade %></span><% } %></div>
           <div class="mt-0.5 line-clamp-2"><%= x.headline || ('Ad ' + x.adId) %></div>
           <% if (x.campaignName) { %><div class="text-[11px] text-base-content/50"><%= x.campaignName %></div><% } %>
-        <% } else { %>Not from an ad<% } %></td>
+        <% } else if (x.kind === 'missing') { %><span title="These leads came from an ad, but Meta didn't send which one">Ad (id missing)</span><% } else { %>Not from an ad<% } %></td>
         <td class="text-right tabular-nums"><%= x.leads %></td>
         <td class="text-right tabular-nums"><%= x.qualified %> <span class="text-[11px] text-base-content/50"><%= pctText(x.qualifiedRate) %></span></td>
         <td class="text-right tabular-nums"><%= x.visitBooked %></td>
@@ -114,7 +114,19 @@
       </tr>
     <% } %></tbody>
   </table></div>
-  <p class="mt-2 text-xs text-base-content/50">Revenue: what these leads paid so far, whenever they paid. Speed: median working minutes from hand-off to first contact. Grade (from <%= GRADE_MIN_LEADS %> leads): A at least 50% qualified, B 30%, C 15%, D below.<% if (!hasSpend) { %> Spend, cost per sale and ROAS appear once ad spend is imported from Meta.<% } %></p>
+  <p class="mt-2 text-xs text-base-content/50">Revenue: what these leads paid so far, whenever they paid. Speed: median working minutes from hand-off to first contact. Grade (from <%= GRADE_MIN_LEADS %> leads): A at least 50% qualified, B 30%, C 15%, D below. "Ad (id missing)": leads from an ad Meta didn't name.<% if (!hasSpend) { %> Spend, cost per sale, ROAS and campaigns appear once ad spend is imported from Meta.<% } %></p>
+  <% } %>
+  <% if (a.campaigns.length) { %>
+  <h3 class="mt-4 mb-2 text-sm font-semibold">By campaign</h3>
+  <div class="overflow-x-auto"><table class="table table-sm">
+    <thead><tr><th>Campaign</th><th class="text-right">Ads</th><th class="text-right">Leads</th><th class="text-right">Qualified</th><th class="text-right"><%= OUTCOMES.joined %></th><th class="text-right">Revenue</th><th class="text-right">Spend</th><th class="text-right">Per sale</th><th class="text-right">ROAS</th></tr></thead>
+    <tbody><% for (const c of a.campaigns) { %>
+      <tr><td class="min-w-40"><%= c.campaignName || ('Campaign ' + c.campaignId) %></td><td class="text-right tabular-nums"><%= c.ads %></td><td class="text-right tabular-nums"><%= c.leads %></td>
+        <td class="text-right tabular-nums"><%= c.qualified %> <span class="text-[11px] text-base-content/50"><%= pctText(c.qualifiedRate) %></span></td><td class="text-right tabular-nums"><%= c.won %></td>
+        <td class="text-right tabular-nums <%= c.revenueInr ? 'font-semibold text-success' : '' %>"><%= inr(c.revenueInr) %></td>
+        <td class="text-right tabular-nums"><%= c.spend === null ? '—' : inr(c.spend) %></td><td class="text-right tabular-nums"><%= c.costPerSale === null ? '—' : inr(c.costPerSale) %></td><td class="text-right tabular-nums"><%= c.roas === null ? '—' : c.roas + '×' %></td></tr>
+    <% } %></tbody>
+  </table></div>
   <% } %>
 </section>
 

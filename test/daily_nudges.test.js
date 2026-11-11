@@ -7,6 +7,8 @@ const dailyNudges = require('../src/services/dailyNudges');
 const { LeadQueue } = require('../crm/src/queue');
 
 const sleep = ms => new Promise(r => setTimeout(r, ms));
+// The Telegram summary is sent in the background: wait for it (up to 3 s on a busy CI runner).
+const waitFor = async find => { for (let i = 0; i < 100; i++) { const hit = find(); if (hit) return hit; await sleep(30); } return undefined; };
 test.beforeEach(() => dailyNudges.resetForTests());
 const alertsTo = (db, phone) => db.many("SELECT dedup_key, text FROM outbound_messages WHERE wa_id = $1 AND dedup_key LIKE 'staff_alert:daily_nudge:%' ORDER BY id", [phone]);
 
@@ -45,8 +47,7 @@ test('R11b: the morning reminder goes out once a day at the start of the working
     assert.match(toManager[0].text, /Nobody is on these\. 1 lead waiting for an outcome: Meera/);
     assert.strictEqual((await alertsTo(db, '919000000013')).length, 0); // owner switched alerts off
 
-    await sleep(30);
-    const post = sent.find(t => /waiting for an outcome/.test(t));
+    const post = await waitFor(() => sent.find(t => /waiting for an outcome/.test(t)));
     assert.ok(post, 'one Telegram summary');
     assert.match(post, /3 leads are waiting for an outcome/);
     assert.match(post, /GKF Sales: 2 leads/);
@@ -119,8 +120,7 @@ test('R11b review: not at night; a failure gives the day back; two runs at once 
     assert.strictEqual(tpl.button, '919811300001'); // opens the oldest waiting lead
     assert.strictEqual(tpl.body[0], 'Leads waiting for an outcome');
 
-    await sleep(30);
-    const post = sent.find(x => /waiting for an outcome/.test(x.text));
+    const post = await waitFor(() => sent.find(x => /waiting for an outcome/.test(x.text)));
     assert.ok(post);
     assert.strictEqual(post.buttons[0][0].url, 'https://crm.example.com/leads?waiting=1&sort=waiting');
   } finally {

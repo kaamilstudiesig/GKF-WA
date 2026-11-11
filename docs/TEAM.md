@@ -70,7 +70,7 @@ Status: K14–K17 are built and K18 is written (PR `k14-k18-new-client`). R12 is
 - Speed to lead counts **working hours** everywhere (the R2 rule), so night leads don't make staff look slow.
 - Krishna may own a feature end to end, `src/` included, once a small contract PR is agreed. Kaamil keeps Meta access and tokens, AI prompts, tenancy and deploys.
 
-**Built and merged (6–8 Nov):** R2 lead queue (K19 built: owners can turn it on), R3 live board, R4 phone app, R5 analytics, R11 reminders (CRM list and the morning send, R11b), R13 bulk staff, Zoho status page, the follow-up fixes from every automatic review, and K20 Zoho sync. None of it is live until the next Heroku deploy.
+**Built and merged (6–8 Nov):** R2 lead queue (K19 built: owners can turn it on), R3 live board, R4 phone app, R5 analytics, R11 reminders (CRM list and the morning send, R11b), R13 bulk staff, Zoho status page, the follow-up fixes from every automatic review, and K20 Zoho sync. All of it is live since 11 Nov (Heroku v32). The lead queue stays off until an owner turns it on in Business settings.
 
 **Krishna, in this order** (one PR each; a contract PR first where marked):
 

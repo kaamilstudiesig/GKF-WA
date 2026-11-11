@@ -74,7 +74,7 @@ Status: K14–K17 are built and K18 is written (PR `k14-k18-new-client`). R12 is
 
 **Krishna, in this order** (one PR each; a contract PR first where marked):
 
-1. **Finish #42 (R14 demo kit) and #43 (lost-reason wording)** from their review comments. #42 first: the portfolio demos wait for it.
+1. ✅ **Finish #42 (R14 demo kit) and #43 (lost-reason wording)** from their review comments: both fixed to "Ready to merge" and merged 8 Nov.
 2. ✅ **R14 real estate demo kit** (PR `r14-realestate-demo`, how to run it: [OPERATIONS.md](OPERATIONS.md#demo-clients-r14)) (portfolio, this week): `npm run demo -- --tenant <slug> --preset realestate` fills one client with realistic sample data: projects, about 60 leads over 30 days with chats in English and Hinglish/Arabic, hand-offs, site visits, bookings with amounts, lost reasons, staff with a manager, and some leads waiting, so every screen (pipeline, reports, R11, R2 timers) looks alive. No real names or phone numbers (use +91 98000 / +971 50 000 test ranges). Safe to run twice. Builds on `scripts/demo-data.js`.
 3. **R15 currency per business** (contract drafted below: confirm or change it in a small docs PR, then build, with Kaamil): a `currency` field in the business profile (INR default, AED for Dubai). The CRM shows amounts in it, and payment fields and reports use it. The `amount_inr` column keeps its name (it holds the amount in the business's currency); document that. Kaamil handles the Conversions API currency and keeps Razorpay INR-only.
 4. **R16 lead intake** (contract drafted below: confirm or change it in a small docs PR, then build): leads from portals and website forms. A signed `POST` endpoint per client plus a copy-paste website form snippet: create or match the lead (phone, else email), record the source, open a hand-off, and send the first WhatsApp message as an approved template (leads from forms haven't messaged us, so the 24-hour window is closed). Adapters for specific portals (Property Finder, Bayut, Dubizzle) come once the Dubai client confirms which ones.
@@ -146,6 +146,26 @@ Off by default, so nothing changes for GKF until the owner turns it on in **Busi
 | Bot side | Conversions API `custom_data.currency` from the profile; `suggestedOutcome` strips any currency symbol (₹, AED, Rs) before parsing; Telegram/WhatsApp alert texts use the same money format; Zoho deals already carry the number as is | Kaamil |
 
 Done when: a Dubai client shows AED everywhere (lead page, outcome sheet, pipeline, reports, alerts) and GKF looks exactly as today. Tests: the money helper for each currency, the settings select, the hidden payment link, and a Purchase event in AED.
+
+*Confirmed by Krishna (11 Nov, PR `r15-currency-contract`), with these changes. Kaamil: agree or change them on that PR before the build starts.*
+
+1. **One shared module, `src/config/currency.js`, not `crm/src/util.js`.** The bot's alert texts need the same format, and #43's review asked us not to make `src/` depend on `crm/`. It holds:
+   - `CURRENCIES`: `INR` (`₹7,080`, Indian grouping), `AED` (`AED 950,000`), `SAR` (`SAR 950,000`), `USD` (`$950,000`), all in whole units.
+   - `money(amount, currency)`: the display format.
+   - `parseAmount(text)`: reads typed amounts ("₹7,080", "Rs 7080", "AED 950,000", "950000"). It strips the symbol, code, commas and spaces, and rejects decimals and anything else with a message.
+
+   The CRM uses `util.money`, which re-exports it. Kaamil's alert texts and `suggestedOutcome` use the same two functions.
+2. **Unknown codes become INR.** `normalize()` accepts only the four codes, so an old profile or a bad value falls back to INR. GKF needs no change.
+3. **Payment links are blocked on the server too.** When the currency isn't INR, the payment-link route returns 400 as well as hiding the button. The ₹10 lakh link limit stays.
+4. **The largest sale stays 100,000,000 whole units in any currency.** It fits the `INTEGER` columns (AED 100M or ₹10 crore), so there is no migration.
+5. **Typed amounts:** the outcome sheet (lead page and pipeline) labels the field "Amount paid (AED)", and the field accepts the currency's code or symbol.
+6. **AI cost on Reports stays our cost, in USD,** with the ₹ line shown only when the currency is INR. It's what the bot costs us, not the client's revenue.
+7. **Old text isn't rewritten.** Messages and activity entries that were already sent with ₹ stay as sent. Only numbers shown from `amount_inr` change format.
+8. **Examples follow the currency.** The plan-price example on Business settings (the `planPrice` label, e.g. "₹85L onwards") uses the business's currency, e.g. "AED 1.1M onwards".
+9. **R14 demo kit:** `--region ae` sets `currency: 'AED'` in the profile it writes, and `--region in` sets INR. The packs already carry the currency.
+10. **Bot side, one more item for Kaamil:** the AI prompt's `amount_inr` line says the number is in the business's currency (still one AI call). Zoho deals carry the number as is, so onboarding should check that the client's Zoho home currency matches `profile.currency`.
+
+Build order once agreed: shared module and profile field, then the CRM screens (lead page, outcome sheet, pipeline, reports, settings select with the warning, payment link), then the demo kit. One PR (`r15-currency`). Tests: `money` and `parseAmount` for each currency, the settings select and warning, the payment link hidden and refused, a Dubai lead page, pipeline and reports showing AED, and GKF pages unchanged.
 
 *R16: lead intake from portals and website forms*
 

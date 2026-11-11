@@ -175,6 +175,47 @@ Done when: a Dubai client shows AED everywhere (lead page, outcome sheet, pipeli
 
 Done when: an owner adds a project with three unit types, they appear in Meta Commerce Manager, and staff send them to a lead as a product list from the lead page. Tests with a fake catalog API.
 
+*Confirmed by Krishna (11 Nov, PR `r17-projects-contract`), with these changes. Kaamil: agree or change them on that PR before the build starts.*
+
+1. **Projects work without the catalog.** The Projects page and **Send projects** don't wait for K24.
+   - **When the catalog is on and the chosen units are synced**, Send projects sends a WhatsApp product list.
+   - **Otherwise** it sends a plain message: each unit's name, "from" price, area and handover, plus the brochure link.
+
+   **Why:** we haven't confirmed that Meta's commerce rules accept property listings in a catalog. Third-party guides don't list real estate as banned, but none of them is Meta's own wording. Setting up a catalog per client also takes time, and the demos are this week.
+
+   **K24 step 0 (Kaamil):** read the WhatsApp Commerce Policy and Meta's Commerce Policies, and get one test catalog with a unit approved, before building the sync.
+2. **Catalog fields come from our data.**
+   - **title:** "<project> · <unit>"
+   - **description:** area, kind, size and handover
+   - **price:** `price_from` in the business's currency, so R17 is built after R15
+   - **image:** the unit's photo, else the project's
+   - **link:** the brochure, else the business website
+   - **availability:** in stock, or out of stock when sold out
+   - **condition:** new
+   - **brand:** the business name
+
+   A unit with no https photo or no link isn't sent to the catalog, and the Projects page says **Needs a photo** or **Needs a link**.
+3. **Units get their own optional `photo_url`**, which falls back to the project's photo.
+4. **Retailer IDs:** `retailer_id` is generated (`u<id>`). It can't be edited and is never reused, so a renamed unit stays the same product in Meta.
+5. **Meta's limits:** at most 30 units per send, with one section per project and at most 10 projects. The picker enforces this.
+6. **Removing a unit hides it rather than deleting it.** It gets a new status, `archived`, and the sync removes it from the catalog. A unit that leads have already been sent stays readable in their history.
+7. **No cart (K24, Kaamil).** Nobody buys property through a cart, so K24 turns the cart off on the number.
+   - **The customer asks about a product** (`referred_product` on an inbound message): it becomes a note on the lead, "Asked about <unit>", and the bot answers as usual.
+   - **A cart order arrives anyway:** the bot gets a polite reply, and staff get a hand-off.
+8. **Who can do what:** owners and managers edit projects. Anyone who can see the lead can use Send projects.
+9. **Sends count as staff replies.** They're stored in `outbound_messages` with `metadata.source = 'crm'` and `metadata.units` (the unit IDs). That counts as a staff reply for R2 (picked up) and R5 (speed to lead), and it shows in the lead's history.
+10. **The bot's facts:** the business profile stays the bot's source of facts in v1, as the draft says. The Projects page notes that the bot still uses Business settings for its answers. When K24 lets the bot read projects, the profile's projects and unit types should be filled from this page, so the owner doesn't keep two lists (Kaamil decides, since he owns the prompts).
+11. **Migration numbers:** R16 and R17 each take the next free platform migration id when they are built. Neither id is fixed in advance.
+
+Build order once agreed (after R15): tables and Projects page, then Send projects (plain message), then the catalog columns that K24 uses. Tests:
+- adding, editing, sold out, archive and reorder
+- the per-tenant `retailer_id`
+- the 30-unit and 10-project limits
+- Send projects outside the window (disabled, with the reason)
+- the plain-message fallback, and the product list with a fake catalog
+- "Needs a photo"
+- tenant isolation
+
 **Kaamil, in this order**
 
 1. **Portfolio (this week):** create the 3 demo clients (`npm run tenant -- add`, with `"demo": true` in `settings` so `npm run demo` may fill them), each with a test WhatsApp number, real estate preset, branding and Krishna's R14 data. Then the DartIt name, logo and website, then `crm.inter-rootlabs.com`.

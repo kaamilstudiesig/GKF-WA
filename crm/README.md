@@ -67,9 +67,14 @@ Every lead page starts with **Log outcome** (`#outcome`, also where Telegram's "
 | Logging rate | Hand-offs with an outcome within 24 h. A hand-off younger than 24 h counts only once it has one. Target 80%+ |
 | Sales recorded automatically | Won outcomes in the period that a paid payment link logged (K11) |
 | Lost reasons | Lost outcomes logged in the period, by reason, with share |
+| By ad (R6) | `byAd(user, range)` (`range()` builds the period): the funnel's leads grouped by the Click-to-WhatsApp ad they came from (`metadata.referral.source_id`), with the same stage rules: leads, contacted, qualified, visit booked, visited, won, revenue from those leads (cohort, paid any time), qualified and win rate, and median speed to lead of their hand-offs. Leads with no ad are one "not from an ad" row, last, so the rows add up to the funnel. Sorted by revenue, then leads (Reports can sort by leads) |
+| Lead-quality grade | Per ad with at least 10 leads, from the share that reached Qualified: A 50%+, B 30%+, C 15%+, D below. Doesn't wait for sales, which take weeks |
+| Spend, cost per sale, ROAS, campaign | From `adSpend(range)`: a `Map` of ad id to `{ spend, campaignId, campaignName }`. It is empty until the ad spend import (K5), which replaces it with a read of its table; until then those columns are hidden and Reports says they appear once spend is imported. Cost per sale = spend ÷ sales; ROAS = revenue ÷ spend |
 | Per person (not owners) | First contacts made and their median time, outcomes logged, won, ₹, lost, and the logging rate of hand-offs on leads assigned to them |
 
 Scope follows the user like every other page (owner: all; manager: their team and unassigned leads).
+
+**Reports → By ad** shows `byAd` as a table (full width; scrolls sideways on a phone) and `GET /reports/ads.csv?days=` exports it (owners and managers, same scope and period; formula-looking text is made inert, as in the leads CSV). The old "Ads" table, which counted leads by status only, is gone.
 
 ## Adding many staff (R13)
 

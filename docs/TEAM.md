@@ -183,6 +183,45 @@ Build order once agreed: shared module and profile field, then the CRM screens (
 - **Portal adapters** (Property Finder, Bayut, Dubizzle) come later, once the Dubai client says which they use: each is a small mapper from that portal's payload or email to the body above.
 - **Tests (Krishna):** good signature, bad signature, form key + wrong origin, honeypot, rate limit, new lead vs existing lead, no phone, no consent, duplicate `sourceRef`, template queued once, and one client's intake never touching another client. Fakes only, never Meta.
 
+*Confirmed by Krishna (11 Nov, PR `r16-intake-contract`), with these changes. Kaamil: agree or change them on that PR before the build starts.*
+
+1. **A phone is required in v1.** A form with no phone gets `400 phone required`, and the website form marks phone as required. The reason: a lead's key must be a phone or a BSUID (`identity.isLeadKey`). A made-up key for an email-only lead (such as `EM.…`) would match the BSUID pattern, and the bot could try to send to it. Portals always send a phone. Email-only leads can come later, with a key type agreed with Kaamil.
+2. **A form lead must not look like it has an open 24-hour window.** Today `leads.last_inbound_message_at` is `NOT NULL DEFAULT now()`, and both the bot and the CRM use it for the window. A new form lead would show an open reply box, and staff replies would fail at Meta.
+   - **Proposed fix:** the R16 platform migration makes the column nullable, and form leads keep it `NULL` until they message on WhatsApp.
+   - **Why it's safe:** `windowOpen(null)` is already false in both places. The bot's upsert uses `GREATEST`, which ignores `NULL`, so the first real message fills it in.
+   - **The cost:** the four CRM sort orders on it (`recent`, `oldest`, `attention`, the pipeline) get `NULLS LAST`.
+   - **Tests:** a form lead shows the window closed, and it opens once the lead writes.
+   - **Alternative**, if Kaamil would rather not touch `leads`: a `metadata.intake.noWindow` flag checked by both `windowOpen` functions. It's messier, because two places must remember it.
+3. **A small `intake_submissions` table** goes in the same migration as the `form_lead` hand-off reason, with `tenancyPolicy`.
+   - **Columns:** `id`, `tenant_id`, `received_at`, `source`, `source_ref`, `wa_id`, `ip_hash` (a salted hash, never the raw IP), `status` (`accepted` / `duplicate` / `rejected` / `limited`) and `error`.
+   - **What it gives us:**
+     - The duplicate `sourceRef` check (same source and ref within 24 hours).
+     - Rate limits that work with several dynos (counted here, not in memory).
+     - The "last 20" list on **Lead sources**.
+   - `leads.metadata.intake` still keeps the latest submission, without the message.
+4. **Phone format moves to `src/`.** `normalizePhone` lives in `crm/src/users.js`. It moves to `src/services/identity.js` as `normalizePhone(raw, country)`, and the CRM imports it from there. That keeps `src/` from depending on `crm/`, as #43's review asked. Local numbers ("050 123 4567") need the client's country code, so there's a new setting, `phoneCountry`: `91` by default, `971` for Dubai.
+5. **The website form avoids CORS preflight.** It posts as `application/x-www-form-urlencoded`, which doesn't need a CORS preflight. The server:
+   - checks `Origin` against `intakeOrigins` and the form key, and sends `Access-Control-Allow-Origin` only to an allowed origin;
+   - treats the honeypot as a silent `202`, so bots don't learn it was caught.
+
+   The snippet has a consent checkbox, unticked by default, that names the business and WhatsApp. Server-to-server calls send signed JSON (the HMAC is over `req.rawBody`, which `express.json` already keeps).
+6. **The secret can only be regenerated, and is shown once** (owner only). A stored secret can't be shown again, so there's no "show". It's saved encrypted with `registry.update`. The public form key and the endpoint URL are always shown.
+7. **Rate limits:**
+   - Web form: 10 submissions per IP per hour, and 3 per phone per day, per client.
+   - Signed calls: no rate limit, only the duplicate `sourceRef` check.
+   - Over the limit: `429`, recorded as `limited`.
+8. **Existing leads:**
+   - **A hand-off is already open:** no second hand-off. The note and source are added, and staff get one alert.
+   - **The lead wrote on WhatsApp in the last 24 hours:** no template, because the conversation is live.
+   - **Status:** a lost or won lead isn't reopened silently. The hand-off summary says "came back through <source>".
+9. **The welcome template is optional per client.** It's a new setting, `leadWelcomeTemplate`. With no template set or approved, nothing is sent, and the hand-off says "WhatsApp welcome not sent: template not set up". Kaamil creates `lead_welcome` per client.
+10. **Notes from forms** use `crm_lead_notes` with `user_id NULL`, shown as "From the <source> form". The lead page shows the source badge, as in the draft.
+11. **Who builds what:**
+   - **Krishna:** the route, the migration, the identity move and the CRM screens. `docs/TEAM.md` (7 Nov) allows `src/` work once a contract is agreed.
+   - **Kaamil:** reviews the migration and the new registry keys (`intakeSecret`, `intakeFormKey`, `intakeOrigins`, `phoneCountry`, `leadWelcomeTemplate`), and adds `lead_welcome` to `scripts/create-template.js`.
+
+Extra tests on top of the draft: the window stays closed for a form lead, a local Dubai number becomes `971…`, honeypot submissions return `202` and are never saved as leads, the limits hold across two app instances, and regenerating the secret makes the old one fail.
+
 *R17: projects and units, in a Meta catalog*
 
 | What | Where | Owner |

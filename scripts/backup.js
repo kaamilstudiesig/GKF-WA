@@ -4,7 +4,8 @@
  *   node scripts/backup.js                 -> sends it to the operator's Telegram group
  *   node scripts/backup.js --out file.gz   -> writes it to a local file instead
  *
- * On Heroku, run it daily with the Heroku Scheduler add-on: `npm run backup`.
+ * On Heroku, run it daily with the Heroku Scheduler add-on: `npm run backup`. Heroku's own
+ * pg:backups can't dump this database: pg_dump refuses tables with FORCE ROW LEVEL SECURITY.
  * The file holds every client's leads and chats, so it goes to TELEGRAM_BACKUP_CHAT_ID
  * (or TELEGRAM_OPS_CHAT_ID): the operator's private group, never a client's staff group.
  * Tenant secrets stay encrypted in it.
@@ -17,8 +18,10 @@ const tenancy = require('../src/tenancy/context');
 // In restore order: parents before the rows that reference them. tenants comes first.
 const PLATFORM_TABLES = ['tenants'];
 const BOT_TABLES = ['leads', 'messages', 'handoffs', 'outbound_messages', 'ai_usage', 'webhook_events', 'business_profile'];
-const CRM_TABLES = ['crm_users', 'crm_lead_assignments', 'crm_lead_notes', 'crm_follow_ups', 'crm_lead_outcomes', 'crm_payment_links', 'crm_branding', 'crm_activity_log'];
-const TABLES = [...PLATFORM_TABLES, ...BOT_TABLES, ...CRM_TABLES];
+const CRM_TABLES = ['crm_users', 'crm_lead_assignments', 'crm_lead_notes', 'crm_follow_ups', 'crm_lead_outcomes', 'crm_payment_links', 'crm_branding', 'crm_activity_log', 'crm_settings'];
+// After leads and outcomes: restoring those makes the Zoho trigger add zoho_links rows.
+const ZOHO_TABLES = ['zoho_links', 'zoho_cursors'];
+const TABLES = [...PLATFORM_TABLES, ...BOT_TABLES, ...CRM_TABLES, ...ZOHO_TABLES];
 
 /** All tenants' rows (system context). */
 async function createBackup() {
@@ -29,7 +32,7 @@ async function backupAll() {
   const tables = {};
   for (const t of TABLES) {
     // CRM tables exist once the CRM migrations ran (always, on Heroku).
-    if (CRM_TABLES.includes(t) && !(await db.one('SELECT to_regclass($1) AS t', [t])).t) continue;
+    if ((CRM_TABLES.includes(t) || ZOHO_TABLES.includes(t)) && !(await db.one('SELECT to_regclass($1) AS t', [t])).t) continue;
     // Binary values (crm_branding.logo_data) are stored as { $base64 } so JSON keeps them intact.
     const bin = v => (Buffer.isBuffer(v) || v instanceof Uint8Array ? { $base64: Buffer.from(v).toString('base64') } : v);
     tables[t] = (await db.many(`SELECT * FROM ${t} ORDER BY 1`))
@@ -75,4 +78,4 @@ if (require.main === module) {
     .catch(err => { console.error(`Backup failed: ${err.message}`); process.exit(1); });
 }
 
-module.exports = { createBackup, TABLES, BOT_TABLES, CRM_TABLES, PLATFORM_TABLES };
+module.exports = { createBackup, TABLES, BOT_TABLES, CRM_TABLES, PLATFORM_TABLES, ZOHO_TABLES };

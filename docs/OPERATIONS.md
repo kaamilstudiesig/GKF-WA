@@ -81,8 +81,9 @@ All settings are environment variables; `.env.example` lists them with comments.
 | `MAX_BOT_REPLIES_PER_LEAD_PER_DAY` | Bot replies per lead per 24 hours (default 30). At the limit the lead gets one last reply and goes to staff; after that the bot stays quiet. |
 | `BOT_PAUSE_HOURS_AFTER_STAFF_REPLY` | Hours the bot stays quiet after a staff reply from the CRM (default 12). New messages from that lead are alerted to Telegram. `0` turns the pause off. |
 | `GYM_LATITUDE`, `GYM_LONGITUDE` | Map pin sent after the location answer. Leave empty to send the address only. |
-| `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID` | Staff alerts and daily backups. |
+| `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID` | Staff alerts. |
 | `TELEGRAM_OPS_CHAT_ID` | Optional separate Telegram group for technical alerts (failed sends, account warnings). Defaults to `TELEGRAM_CHAT_ID`. |
+| `TELEGRAM_BACKUP_CHAT_ID` | Optional Telegram group for the daily backup file. Defaults to `TELEGRAM_OPS_CHAT_ID`; the backup refuses to run without one of them, so it never goes to the staff group. |
 | `LEGAL_CONTACT_EMAIL`, `LEGAL_CONTACT_PHONE` | Contact shown on the public `/privacy`, `/terms` and `/data-deletion` pages (optional; without them the pages point to the WhatsApp number). |
 | `META_WABA_ID`, `META_DATASET_ID` | Conversions API: sends *Visit booked* (QualifiedLead) and *Joined* (Purchase, ₹) to Meta. Off until both are set. `node scripts/capi-setup.js --create` finds or creates the dataset. |
 | `META_PAGE_ID` | Optional. Lets leads without an ad click ID be matched by hashed phone (Meta attributes those only within 7 days of the ad). |
@@ -170,7 +171,20 @@ One Basic dyno ($7/month) and Heroku Postgres Essential-0 ($5/month), about $12/
 
 8. First login: open https://crm.goldkraftfitness.com, log in as the owner with the password from the seed file, and set a new password when asked (every seeded account must change its password at first login; at least 10 characters with letters and numbers). Then have the manager and sales accounts do the same, or reset their passwords from **Staff**. Add the rest of the team from **Staff**.
 
-9. Daily backup: Heroku Postgres takes a daily backup (`heroku pg:backups:schedule DATABASE_URL --at '03:00 Asia/Kolkata' -a <name>`, set up for `gkf-wa`). For an off-site copy, the free Heroku Scheduler can also run `npm run backup` daily; it sends a gzipped JSON of the bot and CRM tables (leads, chats, staff accounts, notes, assignments, follow-ups; not login sessions) to the staff Telegram group. To restore into an empty database, download the file from Telegram and run `heroku run --no-tty "node scripts/restore.js /dev/stdin" -a <name> < gkf-wa-....json.gz` (locally: `npm run restore -- <file>`).
+9. Daily backup: Heroku Postgres backups (`pg:backups`) don't work for this app. Every client table uses `FORCE ROW LEVEL SECURITY` (tenant isolation, `src/db/platformMigrations.js`); `pg_dump` runs with row security off, so it stops with *query would be affected by row-level security policy*. Essential plans can't add a database role that bypasses it, and turning `FORCE` off would let the app's own role see every tenant. So the backup is `npm run backup`, run daily by the free Heroku Scheduler add-on:
+
+   ```bash
+   heroku addons:create scheduler:standard -a gkf-wa
+   heroku addons:open scheduler -a gkf-wa
+   ```
+
+   Add a job: command `npm run backup`, dyno size Basic, every day at 21:30 UTC (03:00 India). The job runs a one-off Basic dyno for about a minute; Basic dynos are billed per second, so that's a few cents a month at most. The add-on itself is free.
+
+   The job sends a gzipped JSON of every table with client data (tenants, leads, chats, staff accounts, notes, assignments, follow-ups, CRM settings, Zoho sync state; not login sessions) to `TELEGRAM_BACKUP_CHAT_ID`, or `TELEGRAM_OPS_CHAT_ID` when that isn't set: the operator's private group, never a staff group. Check the group the next morning: a failed run sends nothing, so a missing file is the alert. To take one by hand: `heroku run "npm run backup" -a gkf-wa`.
+
+   To restore into an empty database, download the file from Telegram and run `heroku run --no-tty "node scripts/restore.js /dev/stdin" -a <name> < gkf-wa-....json.gz` (locally: `npm run restore -- <file>`). It runs the migrations first, then refuses if the database already has leads or staff accounts.
+
+   The old `heroku pg:backups:schedule` for `gkf-wa` still runs and fails every night; remove it with `heroku pg:backups:unschedule DATABASE_URL -a gkf-wa`.
 
 10. Check `https://wa.goldkraftfitness.com/health`, then in the Meta app dashboard (**WhatsApp → Configuration**) change the webhook URL to `https://wa.goldkraftfitness.com/webhook` with the same verify token. Send a test message.
 
@@ -214,7 +228,7 @@ Per-message failures (for example the 24h window closed for one lead) are logged
 3. Monthly budget reached (`AI_MONTHLY_TOKEN_BUDGET`, `AI_MONTHLY_REQUEST_BUDGET`).
 
 **Database**
-- `heroku pg:info -a gkf-wa`; backups: `heroku pg:backups -a gkf-wa`.
+- `heroku pg:info -a gkf-wa`. Backups are the daily Telegram file from `npm run backup` (setup step 9); `heroku pg:backups` fails on this database.
 - `heroku pg:psql` can fail on networks that block port 5432; use `heroku run` with a small node script instead.
 
 Errors also go to Sentry (`SENTRY_DSN`).

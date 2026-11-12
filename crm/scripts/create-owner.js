@@ -1,7 +1,8 @@
 /**
  * Creates the first owner login for a client, with a random one-time password.
- *   npm run crm:owner -- --tenant acme "Owner Name" owner@client.com
- *   On Heroku: heroku run npm run crm:owner -- --tenant acme "Owner Name" owner@client.com -a <app>
+ *   npm run crm:owner -- --tenant acme "Owner Name" owner@client.com ["+91 98450 12345"]
+ *   On Heroku: heroku run npm run crm:owner -- --tenant acme "Owner Name" owner@client.com "+91 98450 12345" -a <app>
+ * The phone number is optional; with it the owner can sign in with phone or email.
  * --tenant may be left out while there is only one tenant.
  * Prints the password once. The owner must change it at first login.
  * Use this, not crm:seed, on a client's deployment: the seed file's passwords are public.
@@ -9,11 +10,11 @@
 const { Users } = require('../src/users');
 const { oneTimePassword } = require('../src/auth');
 
-async function createOwner(db, { name, email }) {
+async function createOwner(db, { name, email, phone = null }) {
   const users = new Users(db);
   if (await users.findByEmail(email)) return null;
   const password = oneTimePassword();
-  await users.create({ name, email, role: 'owner', managerId: null, password, mustChange: true });
+  await users.create({ name, email, role: 'owner', managerId: null, password, mustChange: true, loginPhone: phone });
   return password;
 }
 
@@ -26,13 +27,13 @@ if (require.main === module) {
     try {
       await migrateAll();
       const { tenant, args } = await tenantFromArgs();
-      const [name, email] = args;
+      const [name, email, phone] = args;
       if (!name || !email || !email.includes('@')) {
-        throw new Error('Usage: npm run crm:owner -- --tenant <slug> "Owner Name" owner@client.com');
+        throw new Error('Usage: npm run crm:owner -- --tenant <slug> "Owner Name" owner@client.com ["+91 98450 12345"]');
       }
-      const password = await tenancy.run(tenant.id, () => createOwner(db, { name, email: email.toLowerCase() }));
+      const password = await tenancy.run(tenant.id, () => createOwner(db, { name, email: email.toLowerCase(), phone }));
       console.log(password
-        ? `Owner created for ${tenant.name} (${tenant.slug}): ${email}\nOne-time password: ${password}\nShare it privately. It must be changed at first login.`
+        ? `Owner created for ${tenant.name} (${tenant.slug}): ${email}${phone ? ` / ${phone}` : ''}\nOne-time password: ${password}\nShare it privately. It must be changed at first login.`
         : `A user with ${email} already exists for ${tenant.slug}. Nothing changed.`);
     } finally {
       await db.close();

@@ -207,7 +207,8 @@ migrations, on every start and in the Heroku release phase.
   (`Secure` when `NODE_ENV=production`); only a SHA-256 hash of it is stored.
   Login sessions are not included in backups.
 - Every form carries a per-session CSRF token.
-- Failed logins are throttled per IP and email.
+- Sign-in takes a phone number or an email, plus the password. The owner sets each person's sign-in phone on **Staff** (or when adding them; `crm_users.login_phone`, digits with country code, unique per client, platform migration 5). A number typed without the country code (`98450 12345`, `098450 12345`) matches the one stored number ending with it; if two people match, the page asks for the country code. Wrong password and unknown number get the same message.
+- Failed logins are throttled per IP and email or phone (spaces and dashes ignored).
 - CSV exports neutralise spreadsheet formulas.
 - CRM pages get their own security headers and Content-Security-Policy; the
   bot's JSON-only `default-src 'none'` policy and JSON 404 apply only to the

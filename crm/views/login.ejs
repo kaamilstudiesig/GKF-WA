@@ -6,7 +6,7 @@
     <p class="mb-4 text-sm text-base-content/60">WhatsApp leads, follow-ups and reports for the <%= brand.name %> team.</p>
     <% if (error) { %><div role="alert" class="alert alert-error alert-soft mb-4 text-sm"><%= error %></div><% } %>
     <form method="post" action="/login" class="space-y-3">
-      <fieldset class="fieldset py-0"><legend class="fieldset-legend">Email</legend><input id="email" name="email" type="email" autocomplete="username" required value="<%= email %>" autofocus class="input w-full"></fieldset>
+      <fieldset class="fieldset py-0"><legend class="fieldset-legend">Phone number or email</legend><input id="login" name="login" type="text" autocomplete="username" autocapitalize="none" spellcheck="false" required value="<%= login %>" autofocus placeholder="+91 98450 12345" class="input w-full"></fieldset>
       <fieldset class="fieldset py-0"><legend class="fieldset-legend">Password</legend><input id="password" name="password" type="password" autocomplete="current-password" required class="input w-full"></fieldset>
       <button class="btn btn-primary w-full" type="submit">Sign in</button>
     </form>

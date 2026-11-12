@@ -150,7 +150,8 @@ test('a short number never matches by suffix', async () => {
     await setSalesPhone(ctx, '+91 98000 00003');
     const r = await signIn(ctx.app, '80000003', creds('sales').password);
     assert.strictEqual(r.status, 401);
-    assert.strictEqual((await signIn(ctx.app, '000 00003', creds('sales').password)).status, 401);
+    // Leading 0 plus 9 digits: still too short to match by suffix.
+    assert.strictEqual((await signIn(ctx.app, '0 8000 00003', creds('sales').password)).status, 401);
   } finally { await ctx.cleanup(); }
 });
 

@@ -39,9 +39,21 @@ class Users {
   /**
    * Finds the user for a sign-in box value (email or phone).
    * Returns { user } (user may be null), or { error } when the input can't be used.
-   * A phone typed without the country code matches the one stored number that ends
-   * with it (leading 0 dropped); two matches means the country code is needed.
+   * A phone typed without the country code (10+ digits, leading 0 dropped) matches the
+   * one stored number that ends with it; no match or two matches gives { user: null }.
    */
+  /**
+   * Key for the sign-in throttle: one budget per person however the number is typed.
+   * Phones use their last 10 digits (`+919845012345`, `9845012345` and `09845012345`
+   * share one); emails are lowercased and otherwise kept as typed.
+   */
+  static throttleKey(input) {
+    const p = parseLogin(input);
+    if (p.kind === 'phone') return 'p:' + p.digits.slice(-10);
+    if (p.kind === 'email') return 'e:' + p.email.toLowerCase();
+    return 'x:' + String(input || '').trim().toLowerCase();
+  }
+
   async findByLogin(input) {
     const p = parseLogin(input);
     if (p.kind === 'empty') return { error: 'Enter your phone number or email.' };
@@ -49,11 +61,14 @@ class Users {
     if (p.kind === 'email') return { user: await this.findByEmail(p.email) };
     const exact = await this.db.one('SELECT * FROM crm_users WHERE login_phone = $1', [p.digits]);
     if (exact || !p.local) return { user: exact };
+    // Only a full national number (10+ digits) may match by suffix, so a short or
+    // mistyped number never lands on someone else's account.
     const national = p.digits.replace(/^0/, '');
-    if (national.length < 8) return { user: null };
+    if (national.length < 10) return { user: null };
     const rows = await this.db.many('SELECT * FROM crm_users WHERE login_phone LIKE $1 LIMIT 2', ['%' + national]);
-    if (rows.length > 1) return { error: 'Add your country code, for example +91 98450 12345.' };
-    return { user: rows[0] || null };
+    // Two matches: treat as not found (the caller's generic message), so nothing is
+    // revealed about which numbers exist. The message already suggests the country code.
+    return { user: rows.length === 1 ? rows[0] : null };
   }
 
   /** null for empty; throws a 400 for a number we can't use. */

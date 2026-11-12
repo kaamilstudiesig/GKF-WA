@@ -2,7 +2,7 @@ const { setup, login, creds } = require('./helpers');
 const test = require('node:test');
 const assert = require('node:assert');
 const request = require('supertest');
-const { parseLogin } = require('../../crm/src/users');
+const { parseLogin, Users } = require('../../crm/src/users');
 const { createOwner } = require('../../crm/scripts/create-owner');
 
 const SALES_PHONE = '919800000003';
@@ -70,12 +70,31 @@ test('sign-in errors are clear and never say whether an account exists', async (
   } finally { await ctx.cleanup(); }
 });
 
-test('repeated wrong passwords on one phone are throttled however the number is typed', async () => {
+test('one phone typed different ways shares one throttle budget; dotted emails do not collide', async () => {
   const ctx = await setup();
   try {
     await setSalesPhone(ctx);
-    for (let i = 0; i < 8; i++) await signIn(ctx.app, i % 2 ? '+91 98000 00003' : '+91-98000-00003', 'wrong-pass-123');
-    assert.strictEqual((await signIn(ctx.app, '+919800000003', creds('sales').password)).status, 429);
+    assert.strictEqual(Users.throttleKey('+919800000003'), Users.throttleKey('09800000003'));
+    assert.strictEqual(Users.throttleKey('9800000003'), Users.throttleKey('0091 98000-00003'));
+    assert.notStrictEqual(Users.throttleKey('john.doe@x.test'), Users.throttleKey('johndoe@x.test'));
+    assert.strictEqual(Users.throttleKey('John.Doe@X.test'), Users.throttleKey('john.doe@x.test'));
+
+    const spellings = ['+91 98000 00003', '9800000003', '098000 00003', '+91-98000-00003'];
+    for (let i = 0; i < 8; i++) await signIn(ctx.app, spellings[i % spellings.length], 'wrong-pass-123');
+    for (const typed of ['+919800000003', '9800000003', '09800000003']) {
+      assert.strictEqual((await signIn(ctx.app, typed, creds('sales').password)).status, 429, typed);
+    }
+    // A different email that only differs by a dot is not locked out.
+    for (let i = 0; i < 8; i++) await signIn(ctx.app, 'sa.les@goldkraftfitness.com', 'wrong-pass-123');
+    assert.strictEqual((await signIn(ctx.app, creds('sales').email, creds('sales').password)).status, 302);
+  } finally { await ctx.cleanup(); }
+});
+
+test('junk input counts towards the throttle', async () => {
+  const ctx = await setup();
+  try {
+    for (let i = 0; i < 8; i++) assert.strictEqual((await signIn(ctx.app, 'not a number', 'x')).status, 400);
+    assert.strictEqual((await signIn(ctx.app, 'not a number', 'x')).status, 429);
   } finally { await ctx.cleanup(); }
 });
 
@@ -107,16 +126,31 @@ test('bad and duplicate sign-in phones are rejected with a message; empty clears
   } finally { await ctx.cleanup(); }
 });
 
-test('a phone typed without a country code that matches two people asks for the code', async () => {
+test('a local number matching two people gets the normal message and is throttled', async () => {
   const ctx = await setup();
   try {
     const { owner } = await setSalesPhone(ctx, '+91 98000 00003');
     const managerId = await ctx.userId('manager');
     await owner.agent.post(`/users/${managerId}/login-phone`).type('form').send({ _csrf: owner.csrf, login_phone: '+971 98000 00003' });
     const r = await signIn(ctx.app, '98000 00003', creds('sales').password);
-    assert.strictEqual(r.status, 400);
-    assert.match(r.text, /Add your country code/);
-    assert.strictEqual((await signIn(ctx.app, '+91 98000 00003', creds('sales').password)).status, 302);
+    assert.strictEqual(r.status, 401);
+    assert.match(r.text, /Phone number, email or password is incorrect/);
+    assert.match(r.text, /try it with the country code/);
+    assert.doesNotMatch(r.text, /Add your country code/);
+    for (let i = 0; i < 7; i++) await signIn(ctx.app, '98000 00003', creds('sales').password);
+    assert.strictEqual((await signIn(ctx.app, '98000 00003', creds('sales').password)).status, 429);
+    // Their email has its own budget, so they can still get in.
+    assert.strictEqual((await signIn(ctx.app, creds('sales').email, creds('sales').password)).status, 302);
+  } finally { await ctx.cleanup(); }
+});
+
+test('a short number never matches by suffix', async () => {
+  const ctx = await setup();
+  try {
+    await setSalesPhone(ctx, '+91 98000 00003');
+    const r = await signIn(ctx.app, '80000003', creds('sales').password);
+    assert.strictEqual(r.status, 401);
+    assert.strictEqual((await signIn(ctx.app, '000 00003', creds('sales').password)).status, 401);
   } finally { await ctx.cleanup(); }
 });
 

@@ -14,7 +14,7 @@ const express = require('express');
 const config = require('./config');
 const auth = require('./auth');
 const { Crm, HttpError } = require('./crm');
-const { Users } = require('./users');
+const { Users, parseLogin } = require('./users');
 const { LiveBoard } = require('./liveBoard');
 const tenancy = require('../../src/tenancy/context');
 const { ZohoStatus } = require('./zohoStatus');
@@ -217,16 +217,21 @@ function createCrmApp({
   // Sign in with a phone number or an email (the form field was called `email` before).
   app.post('/login', h(async (req, res) => {
     const login = String(req.body.login ?? req.body.email ?? '').trim();
-    const throttleKey = login.replace(/[\s\-().]/g, '');
+    const throttleKey = Users.throttleKey(login);
     if (throttle.blocked(req.ip, throttleKey)) {
       return res.status(429).render('login', { login, error: 'Too many failed attempts. Try again in 15 minutes.' });
     }
     const found = await users.findByLogin(login);
-    if (found.error) return res.status(400).render('login', { login, error: found.error });
+    if (found.error) { // empty or not a phone/email: says nothing about accounts
+      throttle.fail(req.ip, throttleKey);
+      return res.status(400).render('login', { login, error: found.error });
+    }
     const user = found.user;
     if (!user || !user.active || !auth.verifyPassword(String(req.body.password || ''), user.password_hash)) {
       throttle.fail(req.ip, throttleKey);
-      return res.status(401).render('login', { login, error: 'Phone number, email or password is incorrect.' });
+      // The hint depends only on what was typed, never on which accounts exist.
+      const hint = parseLogin(login).local ? ' If you typed a phone number, try it with the country code, for example +91 98450 12345.' : '';
+      return res.status(401).render('login', { login, error: 'Phone number, email or password is incorrect.' + hint });
     }
     throttle.reset(req.ip, throttleKey);
     await db.query('UPDATE crm_users SET last_login_at = now() WHERE id = $1', [user.id]);

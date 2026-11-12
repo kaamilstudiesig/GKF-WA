@@ -285,6 +285,8 @@ Build order once agreed (after R15): tables and Projects page, then Send project
 6. **K5 ad spend import** (with R6), then **K21 analyser** on R5/R6 numbers. One AI call per report, not per lead.
 7. **K9 Embedded Signup** (with R8), **K7b** Conversions API on for GKF, then the GKF case study.
 
+**K25 phone sign-in (GKF handover, 12 Nov, PR #55, Kaamil, touches `crm/`):** staff sign in with phone or email. Changes in Krishna's area: login view, Staff page (sign-in phone per person and on Add staff), `Users.findByLogin` / `setLoginPhone` / `throttleKey`, platform migration 5 `login_phone`. Krishna to confirm. Bulk add (R13) does not take a sign-in phone yet.
+
 **Needs credentials (do later, from a machine with `.env` or Heroku access).** Nothing here can run in a cloud session without them:
 
 - Check the `staff_lead_alert` review: `node scripts/create-template.js --status` (needs `META_WABA_ID`, `META_ACCESS_TOKEN`). Then add staff WhatsApp numbers on **Staff**.

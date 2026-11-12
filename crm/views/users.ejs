@@ -12,7 +12,7 @@
           <div class="avatar avatar-placeholder"><div class="w-10 rounded-full bg-neutral text-neutral-content"><span class="text-sm"><%= u.name.split(' ').map(s => s[0]).join('').slice(0, 2).toUpperCase() %></span></div></div>
           <div class="min-w-0 flex-1">
             <div class="flex flex-wrap items-center gap-1.5"><span class="font-semibold"><%= u.name %></span><span class="badge badge-ghost badge-xs"><%= ROLE_LABELS[u.role] %></span><% if (!u.active) { %><span class="badge badge-error badge-soft badge-xs">Disabled</span><% } else if (u.role === 'sales' && u.accepting === false) { %><span class="badge badge-warning badge-soft badge-xs">Not taking leads</span><% } %><% if (u.alert_mode && u.alert_mode !== 'off') { %><span class="badge badge-success badge-soft badge-xs">WhatsApp alerts</span><% } %></div>
-            <div class="truncate text-xs text-base-content/60"><%= u.email %> · <%= u.lead_count %> leads · <%= u.last_login_at ? 'seen ' + util.timeAgo(u.last_login_at) : 'never logged in' %><%= u.must_change_password ? ' · temp password' : '' %></div>
+            <div class="truncate text-xs text-base-content/60"><%= u.login_phone ? '+' + u.login_phone + ' · ' : '' %><%= u.email %> · <%= u.lead_count %> leads · <%= u.last_login_at ? 'seen ' + util.timeAgo(u.last_login_at) : 'never logged in' %><%= u.must_change_password ? ' · temp password' : '' %></div>
           </div>
         </summary>
         <div class="collapse-content space-y-4">
@@ -24,6 +24,11 @@
             <fieldset class="fieldset py-0"><legend class="fieldset-legend">Manager (sales)</legend><select name="manager_id" class="select w-full"><option value="">None</option><% for (const m of managers) { %><option value="<%= m.id %>" <%= m.id === u.manager_id ? 'selected' : '' %>><%= m.name %></option><% } %></select></fieldset>
             <label class="label tap cursor-pointer gap-2"><input type="checkbox" name="active" value="1" class="toggle toggle-primary toggle-sm" <%= u.active ? 'checked' : '' %>> Active</label>
             <button class="btn btn-primary sm:justify-self-end" type="submit">Save</button>
+          </form>
+          <form method="post" action="/users/<%= u.id %>/login-phone" class="grid gap-2 border-t border-base-300 pt-3 sm:grid-cols-2">
+            <%- include('partials/csrf') %>
+            <fieldset class="fieldset py-0"><legend class="fieldset-legend">Phone number for sign-in</legend><input name="login_phone" type="tel" inputmode="tel" autocomplete="off" value="<%= u.login_phone ? '+' + u.login_phone : '' %>" placeholder="+91 98450 12345" class="input w-full"><p class="label">Leave empty to sign in with email only.</p></fieldset>
+            <button class="btn sm:self-start sm:justify-self-end sm:mt-7" type="submit">Save sign-in phone</button>
           </form>
           <form method="post" action="/users/<%= u.id %>/alerts" class="grid gap-2 border-t border-base-300 pt-3 sm:grid-cols-2">
             <%- include('partials/csrf') %>
@@ -51,6 +56,7 @@
       <%- include('partials/csrf') %>
       <fieldset class="fieldset py-0"><legend class="fieldset-legend">Name</legend><input id="n" name="name" required value="<%= form.name || '' %>" class="input w-full"></fieldset>
       <fieldset class="fieldset py-0"><legend class="fieldset-legend">Email</legend><input id="e" name="email" type="email" required value="<%= form.email || '' %>" class="input w-full"></fieldset>
+      <fieldset class="fieldset py-0"><legend class="fieldset-legend">Phone number for sign-in (optional)</legend><input id="lp" name="login_phone" type="tel" inputmode="tel" autocomplete="off" value="<%= form.login_phone || '' %>" placeholder="+91 98450 12345" class="input w-full"></fieldset>
       <div class="grid grid-cols-2 gap-2">
         <fieldset class="fieldset py-0"><legend class="fieldset-legend">Role</legend><select id="r" name="role" class="select w-full"><% for (const r of ROLES) { %><option value="<%= r %>" <%= (form.role || 'sales') === r ? 'selected' : '' %>><%= ROLE_LABELS[r] %></option><% } %></select></fieldset>
         <fieldset class="fieldset py-0"><legend class="fieldset-legend">Manager</legend><select id="m" name="manager_id" class="select w-full"><option value="">None</option><% for (const m of managers) { %><option value="<%= m.id %>"><%= m.name %></option><% } %></select></fieldset>

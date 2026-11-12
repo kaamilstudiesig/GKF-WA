@@ -30,7 +30,7 @@ Check early: business verification (a new number can message only 250 people a d
 1. Copy `clients/tenant.example.json` to `clients/<client>.json` and fill it in (git-ignored): slug, name, business type, WhatsApp phone number id, WABA id, CRM host, and the secrets (token, app secret). Run `heroku run npm run tenant -- add clients/<client>.json -a gkf-wa`. Secrets are encrypted with `TENANT_SECRETS_KEY` (set once on the app). It prints the webhook URL, the verify token and the next steps.
 2. Connect WhatsApp by path A, B or C above.
 3. CRM domain: `heroku domains:add crm.<client>.com -a gkf-wa`, then the client points DNS at the target it prints.
-4. Create the owner login: `heroku run npm run crm:owner -- --tenant <slug> "Owner Name" owner@client.com -a gkf-wa`. Never run `crm:seed` for a client: its passwords are in the repo. Add staff on **Staff → Add many** (R13): paste their list, then share each one-time password privately. Optional: a Telegram group for their alerts (`settings.telegramChatId`).
+4. Create the owner login: `heroku run npm run crm:owner -- --tenant <slug> "Owner Name" owner@client.com "+91 98450 12345" -a gkf-wa` (the phone is optional; with it the owner can sign in with phone or email). Never run `crm:seed` for a client: its passwords are in the repo. Add staff on **Staff → Add many** (R13): paste their list, then share each one-time password privately. Optional: a Telegram group for their alerts (`settings.telegramChatId`).
 5. The owner fills **Business settings** with the facts and business type, and reads the prompt preview. Until then the assistant uses neutral placeholders, never another client's facts.
 6. Run the test checklist from a fresh phone. Then the client goes live.
 

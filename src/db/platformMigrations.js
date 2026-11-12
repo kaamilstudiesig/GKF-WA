@@ -240,6 +240,16 @@ const PLATFORM_MIGRATIONS = [
       'CREATE TRIGGER followups_board AFTER INSERT OR UPDATE ON crm_follow_ups FOR EACH ROW EXECUTE FUNCTION crm_board_notify()',
       'CREATE TRIGGER handoffs_board AFTER INSERT OR UPDATE ON handoffs FOR EACH ROW EXECUTE FUNCTION crm_board_notify()'
     ]
+  },
+  {
+    // CRM sign-in with a phone number (crm/src/users.js findByLogin). Digits with the country
+    // code, like alert_phone. Optional; unique inside one client.
+    id: 5,
+    name: 'login_phone',
+    up: [
+      'ALTER TABLE crm_users ADD COLUMN login_phone TEXT',
+      'CREATE UNIQUE INDEX crm_users_login_phone_idx ON crm_users (tenant_id, login_phone) WHERE login_phone IS NOT NULL'
+    ]
   }
 ];
 

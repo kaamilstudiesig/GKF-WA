@@ -14,7 +14,7 @@ const express = require('express');
 const config = require('./config');
 const auth = require('./auth');
 const { Crm, HttpError } = require('./crm');
-const { Users } = require('./users');
+const { Users, parseLogin } = require('./users');
 const { LiveBoard } = require('./liveBoard');
 const tenancy = require('../../src/tenancy/context');
 const { ZohoStatus } = require('./zohoStatus');
@@ -212,19 +212,28 @@ function createCrmApp({
   app.get('/offline', (req, res) => res.render('offline'));
 
   // ---- auth ----
-  app.get('/login', (req, res) => (req.user ? res.redirect('/') : res.render('login', { email: '' })));
+  app.get('/login', (req, res) => (req.user ? res.redirect('/') : res.render('login', { login: '' })));
 
+  // Sign in with a phone number or an email (the form field was called `email` before).
   app.post('/login', h(async (req, res) => {
-    const email = String(req.body.email || '').trim();
-    if (throttle.blocked(req.ip, email)) {
-      return res.status(429).render('login', { email, error: 'Too many failed attempts. Try again in 15 minutes.' });
+    const login = String(req.body.login ?? req.body.email ?? '').trim();
+    const throttleKey = Users.throttleKey(login);
+    if (throttle.blocked(req.ip, throttleKey)) {
+      return res.status(429).render('login', { login, error: 'Too many failed attempts. Try again in 15 minutes.' });
     }
-    const user = await users.findByEmail(email);
+    const found = await users.findByLogin(login);
+    if (found.error) { // empty or not a phone/email: says nothing about accounts
+      throttle.fail(req.ip, throttleKey);
+      return res.status(400).render('login', { login, error: found.error });
+    }
+    const user = found.user;
     if (!user || !user.active || !auth.verifyPassword(String(req.body.password || ''), user.password_hash)) {
-      throttle.fail(req.ip, email);
-      return res.status(401).render('login', { email, error: 'Email or password is incorrect.' });
+      throttle.fail(req.ip, throttleKey);
+      // The hint depends only on what was typed, never on which accounts exist.
+      const hint = parseLogin(login).local ? ' If you typed a phone number, try it with the country code, for example +91 98450 12345.' : '';
+      return res.status(401).render('login', { login, error: 'Phone number, email or password is incorrect.' + hint });
     }
-    throttle.reset(req.ip, email);
+    throttle.reset(req.ip, throttleKey);
     await db.query('UPDATE crm_users SET last_login_at = now() WHERE id = $1', [user.id]);
     const { token, expires } = await auth.createSession(db, user.id, sessionTtlHours);
     setSessionCookie(res, token, expires);
@@ -512,7 +521,7 @@ function createCrmApp({
   }));
   app.post('/users', allow(can.manageUsers), h(async (req, res) => {
     try {
-      await users.create({ name: req.body.name, email: req.body.email, role: req.body.role, managerId: req.body.manager_id || null, password: req.body.password });
+      await users.create({ name: req.body.name, email: req.body.email, role: req.body.role, managerId: req.body.manager_id || null, password: req.body.password, loginPhone: req.body.login_phone });
       res.redirect('/users?ok=' + encodeURIComponent('User created. They must change the password at first login.'));
     } catch (err) {
       if (!(err instanceof HttpError)) throw err;
@@ -528,6 +537,17 @@ function createCrmApp({
       // or stops being sales (managers and owners are not in the round-robin).
       const moved = updated.active && updated.role === 'sales' ? 0 : await queue.release(updated.id);
       res.redirect('/users?ok=' + encodeURIComponent(`User updated.${moved ? ` ${moved} lead${moved === 1 ? '' : 's'} went to someone else.` : ''}`));
+    } catch (err) {
+      if (!(err instanceof HttpError)) throw err;
+      res.status(err.status); await usersPage(res, { error: err.message });
+    }
+  }));
+  // Phone number the person signs in with (optional; email always works too).
+  app.post('/users/:id/login-phone', allow(can.manageUsers), h(async (req, res) => {
+    try {
+      const u = await users.setLoginPhone(req.params.id, req.body.login_phone);
+      await crm.log(req.user, null, 'staff_login_phone_updated', { user_id: u.id, set: Boolean(u.login_phone) });
+      res.redirect('/users?ok=' + encodeURIComponent(u.login_phone ? `${u.name} can now sign in with +${u.login_phone}.` : 'Sign-in phone removed. They sign in with email.'));
     } catch (err) {
       if (!(err instanceof HttpError)) throw err;
       res.status(err.status); await usersPage(res, { error: err.message });

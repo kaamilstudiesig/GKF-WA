@@ -76,13 +76,16 @@ Status: K14–K17 are built and K18 is written (PR `k14-k18-new-client`). R12 is
 
 1. ✅ **Finish #42 (R14 demo kit) and #43 (lost-reason wording)** from their review comments: both fixed to "Ready to merge" and merged 8 Nov.
 2. ✅ **R14 real estate demo kit** (PR `r14-realestate-demo`, how to run it: [OPERATIONS.md](OPERATIONS.md#demo-clients-r14)) (portfolio, this week): `npm run demo -- --tenant <slug> --preset realestate` fills one client with realistic sample data: projects, about 60 leads over 30 days with chats in English and Hinglish/Arabic, hand-offs, site visits, bookings with amounts, lost reasons, staff with a manager, and some leads waiting, so every screen (pipeline, reports, R11, R2 timers) looks alive. No real names or phone numbers (use +91 98000 / +971 50 000 test ranges). Safe to run twice. Builds on `scripts/demo-data.js`.
-3. **R15 currency per business** (contract drafted below: confirm or change it in a small docs PR, then build, with Kaamil): a `currency` field in the business profile (INR default, AED for Dubai). The CRM shows amounts in it, and payment fields and reports use it. The `amount_inr` column keeps its name (it holds the amount in the business's currency); document that. Kaamil handles the Conversions API currency and keeps Razorpay INR-only.
-4. **R16 lead intake** (contract drafted below: confirm or change it in a small docs PR, then build): leads from portals and website forms. A signed `POST` endpoint per client plus a copy-paste website form snippet: create or match the lead (phone, else email), record the source, open a hand-off, and send the first WhatsApp message as an approved template (leads from forms haven't messaged us, so the 24-hour window is closed). Adapters for specific portals (Property Finder, Bayut, Dubizzle) come once the Dubai client confirms which ones.
-5. **R17 projects and units** (contract drafted below: confirm or change it in a small docs PR, then build, with Kaamil's K24): a Projects page where the owner manages projects and units (name, area, type, size, price from, handover date, brochure link, photo), stored in the client's Meta catalog so the bot can send them as WhatsApp product messages.
-6. **R6 revenue per ad** (Turiya): per ad and campaign: leads, qualified, site visits, sales, revenue, cost per customer and ROAS once K5 brings spend. Reuse `crm/src/analytics.js`. *Built (PR `r6-revenue-per-ad`):* `Analytics.byAd` and **Reports → By ad** + CSV, with a lead-quality grade per ad. **For K5 (Kaamil):** fill `Analytics.adSpend(range)` (a `Map` of ad id to `{ spend, campaignId, campaignName }`) from your spend table; cost per sale, ROAS, campaign and the **By campaign** roll-up then show with no other change. Click-to-WhatsApp referrals carry the ad id, not the campaign, so campaigns come from K5.
+3. **R15 currency per business** (contract agreed 11 Nov, below; the Dubai client needs it): build it as one PR, `r15-currency`. Kaamil does the bot side (Conversions API currency, alert texts) after it merges.
+4. **R19 data export** (the client agreement promises it; small): see "Before the first paying client signs" below.
+5. **R16 lead intake** (contract agreed 11 Nov, below; Dubai portals and website forms). Show K30's "Opted out" badge on the lead page once Kaamil's opt-out lands, because R16 sends welcome templates.
+6. **R17 projects and units** (contract agreed 11 Nov, below; after R15). Projects work without the catalog; Kaamil's K24 adds the Meta catalog later.
 7. **R18 value page per client** (Turiya): one shareable screen for the owner or agency: leads, speed to lead, logging rate, sales, revenue, cost per customer, plus "what the system did" (replies sent, leads qualified, hand-offs timed, sales sent to Meta). Demo data until real numbers exist.
 8. **R8 onboarding wizard** (Turiya: easy onboarding): profile, business-type preset, brand, team (R13), test chat, checklist. Pairs with Kaamil's K9.
-9. **R19 data export** (before the first paying client signs; can go before R16 if R15 is waiting on review): see "Before the first paying client signs" below.
+
+Small extras when Kaamil's side is ready: the two K26 screens (lead count on Business settings and the dashboard) and K30's "Opted out" badge. Also confirm K25 (phone sign-in, PR #55), which changed files in `crm/`; see the note under Kaamil's list.
+
+✅ **R6 revenue per ad** (built, PR #53): `Analytics.byAd` and **Reports → By ad** + CSV, with a lead-quality grade per ad. **For K5 (Kaamil):** fill `Analytics.adSpend(range)` (a `Map` of ad id to `{ spend, campaignId, campaignName }`) from your spend table; cost per sale, ROAS, campaign and the **By campaign** roll-up then show with no other change. Click-to-WhatsApp referrals carry the ad id, not the campaign, so campaigns come from K5.
 
 **Before the first paying client signs (from the client agreement, 14 Nov)**
 
@@ -166,7 +169,7 @@ Off by default, so nothing changes for GKF until the owner turns it on in **Busi
 
 Done when: a Dubai client shows AED everywhere (lead page, outcome sheet, pipeline, reports, alerts) and GKF looks exactly as today. Tests: the money helper for each currency, the settings select, the hidden payment link, and a Purchase event in AED.
 
-*Confirmed by Krishna (11 Nov, PR `r15-currency-contract`), with these changes. Kaamil: agree or change them on that PR before the build starts.*
+*Confirmed by Krishna (11 Nov, PR `r15-currency-contract`), with these changes. Agreed by Kaamil (merged 11 Nov): build it as written below.*
 
 1. **One shared module, `src/config/currency.js`, not `crm/src/util.js`.** The bot's alert texts need the same format, and #43's review asked us not to make `src/` depend on `crm/`. It holds:
    - `CURRENCIES`: `INR` (`₹7,080`, Indian grouping), `AED` (`AED 950,000`), `SAR` (`SAR 950,000`), `USD` (`$950,000`), all in whole units.
@@ -202,7 +205,7 @@ Build order once agreed: shared module and profile field, then the CRM screens (
 - **Portal adapters** (Property Finder, Bayut, Dubizzle) come later, once the Dubai client says which they use: each is a small mapper from that portal's payload or email to the body above.
 - **Tests (Krishna):** good signature, bad signature, form key + wrong origin, honeypot, rate limit, new lead vs existing lead, no phone, no consent, duplicate `sourceRef`, template queued once, and one client's intake never touching another client. Fakes only, never Meta.
 
-*Confirmed by Krishna (11 Nov, PR `r16-intake-contract`), with these changes. Kaamil: agree or change them on that PR before the build starts.*
+*Confirmed by Krishna (11 Nov, PR `r16-intake-contract`), with these changes. Agreed by Kaamil (merged 11 Nov): build it as written below.*
 
 1. **A phone is required in v1.** A form with no phone gets `400 phone required`, and the website form marks phone as required. The reason: a lead's key must be a phone or a BSUID (`identity.isLeadKey`). A made-up key for an email-only lead (such as `EM.…`) would match the BSUID pattern, and the bot could try to send to it. Portals always send a phone. Email-only leads can come later, with a key type agreed with Kaamil.
 2. **A form lead must not look like it has an open 24-hour window.** Today `leads.last_inbound_message_at` is `NOT NULL DEFAULT now()`, and both the bot and the CRM use it for the window. A new form lead would show an open reply box, and staff replies would fail at Meta.
@@ -253,7 +256,7 @@ Extra tests on top of the draft: the window stays closed for a form lead, a loca
 
 Done when: an owner adds a project with three unit types, they appear in Meta Commerce Manager, and staff send them to a lead as a product list from the lead page. Tests with a fake catalog API.
 
-*Confirmed by Krishna (11 Nov, PR `r17-projects-contract`), with these changes. Kaamil: agree or change them on that PR before the build starts.*
+*Confirmed by Krishna (11 Nov, PR `r17-projects-contract`), with these changes. Agreed by Kaamil (merged 11 Nov): build it as written below.*
 
 1. **Projects work without the catalog.** The Projects page and **Send projects** don't wait for K24.
    - **When the catalog is on and the chosen units are synced**, Send projects sends a WhatsApp product list.

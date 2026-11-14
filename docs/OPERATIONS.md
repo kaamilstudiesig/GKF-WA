@@ -186,6 +186,15 @@ heroku run "npm run delete-lead -- <lead key>" -a gkf-wa
 
 That's a dry run showing what would go; add `--confirm` to delete. The lead key is the part after `/leads/` in the CRM URL. Then tell the lead on WhatsApp it's done (the reply must go out before deleting, or within their 24h window).
 
+## Data breach
+
+The client agreement (clause 7.5) promises a first notice to the client within 24 hours of learning about a breach of their personal data, and details within 48 hours. A breach is any access, loss, change or disclosure that shouldn't have happened: a leaked token or key, a lost laptop with a `.env`, data sent to the wrong client, a public backup.
+
+1. **Contain (first hour).** Rotate whatever leaked: Meta token (Business settings → System users), `TENANT_SECRETS_KEY`-encrypted keys (re-save them), Razorpay and Zoho keys, OpenRouter key, Heroku API key, CRM sessions (`DELETE FROM crm_sessions` for the client). Turn off the affected feature if needed.
+2. **Work out the scope.** Which clients, which data (names, phones, chats, amounts), how many people, from when to when. Use Heroku logs, Sentry and `crm_activity_log`. Keep notes with times.
+3. **Tell each affected client within 24 hours** (owner and the privacy contact in their Annexure C): what happened, what data, what we did, what they need to do. Follow up with details within 48 hours. The client decides whether to notify its regulator (in India, the Data Protection Board within 72 hours under the DPDP Rules once in force) and its customers; help them with facts.
+4. **Fix the cause** and write a short note in this file: date, cause, fix.
+
 ## Incident runbook
 
 **Automatic alerts** (Telegram ops group + Sentry, at most once per problem every 30 minutes):

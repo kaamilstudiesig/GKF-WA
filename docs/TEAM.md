@@ -82,6 +82,25 @@ Status: K14–K17 are built and K18 is written (PR `k14-k18-new-client`). R12 is
 6. **R6 revenue per ad** (Turiya): per ad and campaign: leads, qualified, site visits, sales, revenue, cost per customer and ROAS once K5 brings spend. Reuse `crm/src/analytics.js`. *Built (PR `r6-revenue-per-ad`):* `Analytics.byAd` and **Reports → By ad** + CSV, with a lead-quality grade per ad. **For K5 (Kaamil):** fill `Analytics.adSpend(range)` (a `Map` of ad id to `{ spend, campaignId, campaignName }`) from your spend table; cost per sale, ROAS, campaign and the **By campaign** roll-up then show with no other change. Click-to-WhatsApp referrals carry the ad id, not the campaign, so campaigns come from K5.
 7. **R18 value page per client** (Turiya): one shareable screen for the owner or agency: leads, speed to lead, logging rate, sales, revenue, cost per customer, plus "what the system did" (replies sent, leads qualified, hand-offs timed, sales sent to Meta). Demo data until real numbers exist.
 8. **R8 onboarding wizard** (Turiya: easy onboarding): profile, business-type preset, brand, team (R13), test chat, checklist. Pairs with Kaamil's K9.
+9. **R19 data export** (before the first paying client signs; can go before R16 if R15 is waiting on review): see "Before the first paying client signs" below.
+
+**Before the first paying client signs (from the client agreement, 14 Nov)**
+
+The client agreement ([CLIENT_AGREEMENT.md](CLIENT_AGREEMENT.md), templates in `docs/legal/`) promises these outright. They're small, so they come before the next feature work, except the Dubai and portfolio items already under way. Each is one PR.
+
+| # | Task | Owner | Done when |
+| --- | --- | --- | --- |
+| K26 | **Lead usage meter.** Count each person once per calendar month across channels (first inbound or intake that month, per tenant). Show "Leads this month: 412 of 500" on Business settings and the dashboard; WhatsApp/Telegram alert to owners at 80% and 100%, once each per month; `npm run usage -- --month 2026-11` prints every client's count for invoicing. No billing | Kaamil (bot side and script), Krishna (the two screens, small contract in the PR) | The count matches a hand count on GKF for one month, and the alert fires once |
+| K27 | **Uptime and reply time.** An external uptime monitor on `/health/ready` every minute (free tier, alerts to the ops group). Store the reply time per message (last inbound in a burst → reply sent) and show the monthly p95 and availability on an owner-only ops line in Reports | Kaamil | A month of numbers we can quote under Annexure B |
+| K28 | **Encrypted backups.** The off-site daily backup is encrypted (AES-256-GCM, key in a config var) and stored in private object storage, not posted to Telegram. `npm run restore` decrypts. Keep the Heroku daily backup. Do one restore drill and note the date in OPERATIONS.md | Kaamil | No plain lead data leaves Heroku; a restore from the encrypted copy works |
+| K29 | **No storage or training by AI providers.** Send OpenRouter's provider preferences on every call (`provider: { data_collection: 'deny' }`, zero data retention where offered), confirm both models still route, and list every provider (Heroku, OpenRouter, Telegram, Sentry, backup storage) on the public privacy page. Test with the fake transport only; one paid check call needs Kaamil's OK | Kaamil | Annexure C can say "Yes" in the no-training column |
+| K30 | **Opt-out.** STOP, UNSUBSCRIBE or "don't message me" (any language the bot supports) marks the lead opted out (`leads.opted_out_at`, platform migration). Template sends to that lead are refused (not the 24-hour replies the lead starts); START or a new message from them turns it off. The CRM lead page shows "Opted out". Needed before R16 sends welcome templates | Kaamil (bot), Krishna (the badge) | A STOP lead gets no template, and the CRM shows it |
+| R19 | **Full data export.** Owners download a ZIP from Business settings: leads, messages, outcomes, notes, assignments and hand-offs as CSV (one file each), for the whole client. Owner only, logged in the activity log. Also what we hand over at exit (clause 12.5) | Krishna | An owner gets every conversation without asking us |
+| K33 | **Health-related businesses.** A business profile setting `healthRelated`. When on: the bot answers only admin questions (services, prices, timings, location, appointments), sends symptoms and medical questions to staff, never gives advice, and Conversions API events carry no health detail. Generic, works for any business type | Kaamil | Only needed before signing a clinic; tests with a sample clinic profile |
+
+Ops, no code (Kaamil): turn on 2FA on Heroku, GitHub, Meta Business, OpenRouter, Zoho and Google admin accounts; set up a support email and a WhatsApp support number for Annexure B; move hosting off student credits (and choose the region) before the first invoice; fill Annexure C with what's true on the day.
+
+Later, listed with a Feature Date until built: **K31 automatic deletion** (delete or anonymise leads with no activity for the client's retention period, default 24 months; before 13 May 2027 for DPDP) and **K32 Instagram DM capture** (an Instagram DM or comment reply gets one automatic answer that moves the lead to WhatsApp, after the Dubai client; needs `instagram_manage_messages` in App Review).
 
 **Contract: R2 hot-lead queue (Krishna builds the CRM side, Kaamil wires it into the bot as K19)**
 
@@ -277,6 +296,7 @@ Build order once agreed (after R15): tables and Projects page, then Send project
 
 **Kaamil, in this order**
 
+0. **Before the first paying client signs:** K26–K30 and the ops list above (K33 before a clinic). Small PRs; they unblock the client agreement.
 1. **Portfolio (this week):** create the 3 demo clients (`npm run tenant -- add`, with `"demo": true` in `settings` so `npm run demo` may fill them), each with a test WhatsApp number, real estate preset, branding and Krishna's R14 data. Then the DartIt name, logo and website, then `crm.inter-rootlabs.com`.
 2. ✅ **K19:** R2 wired into the bot (9 Nov). ✅ **R11b:** the morning "waiting for an outcome" reminder on Telegram and staff WhatsApp (9 Nov).
 3. **Dubai discovery:** ask the client for their CRM, lead sources and portals, languages, team size and Meta setup. Then **K22**: turn K20 into a general CRM connector and add their CRM. Test Arabic replies.
@@ -350,13 +370,13 @@ Build order once agreed (after R15): tables and Projects page, then Send project
 | K9 | Embedded Signup v4 backend: code → token exchange, number registration, coexistence states | Kaamil |
 | R8 | Onboarding wizard UI (profile, business-type preset, preview chat, team, dataset check, test checklist) | Krishna |
 | R9 | Agency dashboard + white-label (logo, domain) | Krishna |
-| R10 | Billing UI (Razorpay subscriptions) | Krishna |
+| R10 | Billing UI (Razorpay subscriptions). Not needed for the first clients: we invoice by hand and K26 gives the lead counts | Krishna |
 
 Both: line up a partner agency with a few paying clients (any industry) while this is built.
 
 ### 7. Compounding
 
-Cross-client benchmarks, score trained on every client's outcomes, outcome-based pricing pilot, win-back templates, Instagram capture (comment/DM → WhatsApp). Owners decided when we get there.
+Cross-client benchmarks, score trained on every client's outcomes, outcome-based pricing pilot, win-back templates. Owners decided when we get there. (Instagram capture moved up as K32, because the sales deck and client agreement include it.)
 
 ## Contract: R11 daily reminder (Krishna built the CRM side; Kaamil sends it as R11b, ✅ built 9 Nov)
 

@@ -141,7 +141,7 @@ In Velocify's study of 3.5M leads, leads called within a minute converted at alm
 - Self-serve onboarding in under an hour (see [ONBOARDING.md](ONBOARDING.md)): Embedded Signup v4 (with coexistence), business profile with a business-type preset, team, ad account, dataset check, test checklist.
 - Agency layer: one login for many clients, white-label logo and domain, cross-client dashboard.
 - Billing: Razorpay subscriptions + AI usage.
-- Compliance: consent log, opt-out, data export and delete (India's DPDP obligations apply from May 2027).
+- Compliance: consent log, opt-out (K30), full data export (R19), automatic deletion after the retention period (K31), no storage or training by AI providers (K29), encrypted backups (K28). India's DPDP obligations apply from May 2027; the client agreement already promises most of these (see [CLIENT_AGREEMENT.md](CLIENT_AGREEMENT.md)).
 
 ### 5.7 Channels: Instagram and others
 Instagram click-to-WhatsApp ads already reach us (`adAttribution.js` tags them `instagram_ad`). A separate Instagram DM bot is **not a priority**:
@@ -149,7 +149,7 @@ Instagram click-to-WhatsApp ads already reach us (`adAttribution.js` tags them `
 - There are no paid templates to re-engage a lead.
 - There's no phone number for sales to call.
 
-When we add Instagram, it's a narrow capture feature: a comment or DM gets one private reply that moves the lead to WhatsApp, where the sales loop and proof live. Build it when agencies ask for it.
+We add Instagram as a narrow capture feature (K32): a comment or DM gets one private reply that moves the lead to WhatsApp, where the sales loop and proof live. The sales deck and client agreement include it, so it comes after the Dubai client rather than waiting for agencies to ask. A full Instagram DM bot is still out.
 
 ## 6. Order of work
 
@@ -164,7 +164,7 @@ Stage 0 comes first and pauses the other stages until it is done. After that the
 | 4 | **Early signal** | Lead score from the chat + early qualified event (K12), Lead Ads webhook → instant WhatsApp (K6), Conversion Leads stages | A campaign fed by our events shows lower cost per paying customer than before |
 | 5 | **First paying agency** | Manual onboarding of a few of the agency's clients, whatever their business (separate deployments are fine) | An agency pays for one client and asks to add another |
 | 6 | **Platform** | Tenants + RLS (K8), Embedded Signup v4 (K9), onboarding wizard, agency dashboard and white-label, billing | A new client goes live in under an hour without code |
-| 7 | **Compounding** | Cross-client benchmarks, score trained on all clients' outcomes, outcome-based pricing pilot, win-back templates, Instagram capture | The score and benchmarks measurably beat what one client's data gives |
+| 7 | **Compounding** | Cross-client benchmarks, score trained on all clients' outcomes, outcome-based pricing pilot, win-back templates | The score and benchmarks measurably beat what one client's data gives |
 
 ## 7. What we don't build
 
@@ -199,13 +199,17 @@ Cost rules in code: fixed answers first, one AI call per reply, cached prompt pr
 
 Price on value: one extra customer a month should pay for the product.
 
-| Plan | Price | Includes |
-| --- | --- | --- |
-| Core | ₹4,999/mo per client | AI front desk, sales floor, outcomes, basic reports, 5 users |
-| Growth | ₹9,999/mo per client | + proof of sale, revenue per ad, Meta loop (Conversions API + early signal), weekly agency report, 15 users |
-| Agency wholesale | ₹2,999-5,999 per client | White-label; agency resells it bundled with its ad management |
-| Outcome-based (later) | ₹X per verified customer | Only once outcome capture is reliable |
-| Setup | ₹10,000-25,000 once | Profile, FAQs, dataset check, test pass, team training |
+The client agreement ([CLIENT_AGREEMENT.md](CLIENT_AGREEMENT.md)) uses these draft prices. The sales deck sells two plans, Chat and Growth; Scale is Growth for bigger teams, and Agency is Growth across several clients.
+
+| Plan | Monthly (India, excl. GST) | Leads / month | Users | Includes |
+| --- | --- | --- | --- | --- |
+| Chat | ₹9,999 | 500 (₹8 each after) | 3 | AI front desk on WhatsApp, lead intake (forms, portals, Instagram capture), qualification, handoff briefs, lead queue, outcomes, reminders, live pipeline, phone app |
+| Growth | ₹24,999 | 2,000 (₹6) | 10 | Chat + revenue and ROAS per ad, the Analyser, weekly reports, Conversions API, Zoho sync, payment links |
+| Scale | ₹59,999 | 6,000 (₹4) | 30 | Growth for large teams |
+| Agency | ₹29,999 | 3,000 pooled (₹5) | 10 pooled | Growth for 3 client Workspaces, white-label, dashboard across clients; ₹3,999 per extra Workspace |
+| Setup | ₹7,500–30,000 once | | | Waived on annual billing (annual is 15% off) |
+
+International clients pay in USD or AED (proposals in the international template: Chat USD 149, Growth USD 349, Scale USD 799, Agency USD 449). Meta's message charges are always paid by the client to Meta directly; we never resell them. Outcome-based pricing (₹X per verified customer) comes only once outcome capture is reliable.
 
 Charge the agency where possible. Agencies have more clients per sale and a direct reason to pay: keeping their accounts. Before fixing prices, interview 10 agencies and 10 business owners from different industries. Free pilots don't prove willingness to pay; even a small fee does.
 

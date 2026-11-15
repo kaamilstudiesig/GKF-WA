@@ -223,11 +223,19 @@ async function many(sql, params) { return (await query(sql, params)).rows; }
 /** First row or null. */
 async function one(sql, params) { return (await query(sql, params)).rows[0] || null; }
 
-async function tx(fn) {
-  if (txStore.getStore()) return fn(); // already inside a transaction
+/**
+ * `repeatableRead`: every read sees one snapshot (consistent exports, e.g. backups).
+ * Postgres only accepts it as the first statement, so it can't apply to an outer transaction.
+ */
+async function tx(fn, { repeatableRead = false } = {}) {
+  if (txStore.getStore()) {
+    if (repeatableRead) throw new Error('A repeatable-read transaction cannot run inside another transaction.');
+    return fn(); // already inside a transaction
+  }
   const settings = tenantSettings();
   const d = driver || await init();
   return d.transaction(async client => {
+    if (repeatableRead) await d.query(client, 'SET TRANSACTION ISOLATION LEVEL REPEATABLE READ', []);
     await d.query(client, SET_TENANT, [settings.tenant, settings.all, true]); // LOCAL: ends with the transaction
     return txStore.run({ client }, fn);
   });

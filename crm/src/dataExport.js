@@ -10,11 +10,11 @@ const { makeZip } = require('./zip');
 const FILES = [
   {
     name: 'leads.csv',
-    about: 'One row per lead. wa_id is the lead key (a phone number, or Meta\'s user id when the phone is hidden). metadata holds what came with the lead (for example the ad it came from).',
+    about: 'One row per lead. wa_id is the lead key (a phone number, or Meta\'s user id when the phone is hidden). metadata holds what came with the lead (for example the ad it came from). opted_out_at is when they wrote STOP: keep honouring it.',
     columns: ['wa_id', 'phone', 'username', 'display_name', 'status', 'interest', 'source', 'needs_human', 'handoff_reason', 'notes',
-      'first_contact_at', 'last_inbound_message_at', 'last_outbound_message_at', 'created_at', 'updated_at', 'metadata'],
+      'first_contact_at', 'last_inbound_message_at', 'last_outbound_message_at', 'opted_out_at', 'created_at', 'updated_at', 'metadata'],
     sql: `SELECT wa_id, phone, username, display_name, status, interest, source, needs_human, handoff_reason, notes,
-      first_contact_at, last_inbound_message_at, last_outbound_message_at, created_at, updated_at, metadata
+      first_contact_at, last_inbound_message_at, last_outbound_message_at, opted_out_at, created_at, updated_at, metadata
       FROM leads ORDER BY first_contact_at, wa_id`
   },
   {

@@ -41,3 +41,20 @@ test('delete-lead removes the lead and everything linked to it', async () => {
   assert.strictEqual((await db.one(`SELECT COUNT(*)::int AS n FROM leads WHERE wa_id = '919877700002'`)).n, 1);
   assert.strictEqual((await deleteLead('919800000000')).found, false);
 });
+
+test('K29: the privacy page promises no storage only while zero retention is on', async () => {
+  const env = require('../src/config/env');
+  const saved = env.openRouterZdr;
+  try {
+    env.openRouterZdr = true;
+    let text = (await request(getApp()).get('/privacy')).text;
+    assert.match(text, /do not store your messages or use them to train AI models/);
+    assert.match(text, /Cloudflare/);
+    env.openRouterZdr = false;
+    text = (await request(getApp()).get('/privacy')).text;
+    assert.doesNotMatch(text, /do not store your messages/);
+    assert.match(text, /do not use your messages to train AI models/);
+  } finally {
+    env.openRouterZdr = saved;
+  }
+});

@@ -58,14 +58,15 @@ All commands run on Heroku (they need `DATABASE_URL` and `TENANT_SECRETS_KEY`). 
    ```bash
    heroku run -a gkf-wa "npm run tenant -- connect-link <slug>"
    ```
-   Valid 72 hours (`connect-link <slug> 24` for 24). The link is for **new numbers only**. For a number on the WhatsApp Business app, add `--app-number`, after reading [the limits](#limits-of-whatsapp-business-app-numbers). Anyone with the link can connect a number to this client, so send it privately to the person with Facebook admin.
+   Valid 72 hours (`connect-link <slug> 24` for 24). The link is for **new numbers only**. For a number on the WhatsApp Business app, add `--app-number`, after reading [the limits](#limits-of-whatsapp-business-app-numbers). The link is a secret: anyone with it can connect a number to this client until it is used or expires, so send it privately to the person with Facebook admin (it is hidden from our logs and Sentry). Use a shorter life when you can, e.g. `connect-link <slug> 24`.
 3. **The client connects** (5 minutes): opens the link on a computer or phone, picks the kind of number, logs in with Facebook, chooses or creates the business and WhatsApp account, adds the number and enters Meta's code. The page says "Connected: <number>". Behind it:
    - the code from Facebook (valid 30 seconds) is exchanged for the client's own business token;
    - we check that token really controls the WhatsApp account and number the page named, then save it encrypted;
    - our app is subscribed to their WhatsApp account's webhooks;
    - a new number is registered with a random 6-digit PIN (stored encrypted; Meta asks for it if the number is ever moved). A WhatsApp Business app number is not registered again; instead the contacts and history sync starts (Meta requires it within 24 hours).
 
-   The ops Telegram group gets "WhatsApp connected for <client>". If it says a step failed, run `heroku run -a gkf-wa "npm run tenant -- whatsapp-finish <slug>"`; it retries only the failed steps and prints Meta's error. Cancels and errors in the Facebook popup are logged as `Embedded Signup session event` (`heroku logs -a gkf-wa | grep "session event"`).
+   The ops Telegram group gets "WhatsApp connected for <client>". If registration fails with a **two-step verification PIN** error, the number was on WhatsApp before and has its own PIN: the client turns off two-step verification for it in WhatsApp Manager (Phone numbers → Settings), then you run `whatsapp-finish`.
+   If it says a step failed, run `heroku run -a gkf-wa "npm run tenant -- whatsapp-finish <slug>"`; it retries only the failed steps and prints Meta's error. Cancels and errors in the Facebook popup are logged as `Embedded Signup session event` (`heroku logs -a gkf-wa | grep "session event"`).
 4. **Payment method (client).** Meta Business Suite → WhatsApp Manager → **Payment methods**. Meta bills them directly for messages at Meta's rates for their country. Without a payment method, paid messages fail once any free allowance is used.
 5. **Display name.** WhatsApp Manager → Phone numbers: the display name must be approved. Meta checks it against the business; a mismatch delays it.
 6. **Staff alert template** on their WhatsApp account (needs their WABA id and token; run where `TENANT_SECRETS_KEY` is set):

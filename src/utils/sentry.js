@@ -1,4 +1,5 @@
 const tenancy = require('../tenancy/context');
+const { redactConnectLinksDeep } = require('./redact');
 const SentryLib = require('@sentry/node');
 const env = require('../config/env');
 const logger = require('./logger');
@@ -191,7 +192,9 @@ function initSentry() {
       release: `${env.clientId}@${process.env.HEROKU_RELEASE_VERSION || 'dev'}`,
       initialScope: { tags: { client: env.clientId } },
       tracesSampleRate: env.nodeEnv === 'production' ? 0.2 : 1.0,
-      beforeSend: sanitizeSentryEvent
+      beforeSend: event => redactConnectLinksDeep(sanitizeSentryEvent(event)),
+      // Performance traces carry request URLs too (K9 connect links are secrets).
+      beforeSendTransaction: event => redactConnectLinksDeep(event)
     });
 
     isInitialized = true;

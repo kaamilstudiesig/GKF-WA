@@ -31,6 +31,9 @@ class SignupError extends Error {
   }
 }
 
+// Meta's error when /register is sent a PIN that doesn't match the number's existing two-step PIN.
+const PIN_MISMATCH_CODES = [133005];
+
 const enabled = () => Boolean(env.metaAppId && env.metaEsConfigId && env.metaAppSecret);
 
 // ---- connect links ----
@@ -115,7 +118,23 @@ async function findNumber(token, wabaId, phoneNumberId) {
  * { code, event, phone_number_id, waba_id }. `appNumbers`: the link allows WhatsApp
  * Business app numbers. Returns { setup, errors }.
  */
-async function completeSignup(tenantId, session, { appNumbers = false } = {}) {
+// One signup at a time per tenant (one dyno), so a double tap or two people with
+// the same link can't both connect a number and overwrite each other.
+const locks = new Map();
+function withTenantLock(tenantId, fn) {
+  const prev = locks.get(tenantId) || Promise.resolve();
+  const run = prev.catch(() => {}).then(fn);
+  const tail = run.catch(() => {});
+  locks.set(tenantId, tail);
+  tail.then(() => { if (locks.get(tenantId) === tail) locks.delete(tenantId); });
+  return run;
+}
+
+function completeSignup(tenantId, session, opts = {}) {
+  return withTenantLock(Number(tenantId), () => completeSignupNow(tenantId, session, opts));
+}
+
+async function completeSignupNow(tenantId, session, { appNumbers = false } = {}) {
   const tenant = registry.config(tenantId);
   const blocked = blockedReason(tenant);
   if (blocked) throw new SignupError(409, blocked);
@@ -193,7 +212,10 @@ async function finishSetup(tenantId) {
       const out = await fn();
       setup.steps[name] = { at: new Date().toISOString(), ...(out || {}) };
     } catch (err) {
-      errors.push({ step: name, message: err.message, code: err.code ?? null });
+      const message = name === 'registered' && PIN_MISMATCH_CODES.includes(err.code)
+        ? 'This number already has a two-step verification PIN. Ask the client to turn off two-step verification for it in WhatsApp Manager (Phone numbers → Settings), then run whatsapp-finish.'
+        : err.message;
+      errors.push({ step: name, message, code: err.code ?? null });
       logger.warn('Embedded Signup setup step failed', { tenant: tenant.slug, step: name, error: err.message, code: err.code });
     }
   };
@@ -229,7 +251,7 @@ async function finishSetup(tenantId) {
 /** One line to our ops group (tenant 1's), never the client's staff group. */
 async function alertOps(tenant, { setup, errors }) {
   const expiry = setup.tokenExpiresAt ? ` Token expires ${setup.tokenExpiresAt.slice(0, 10)}: they must reconnect before then.` : '';
-  const status = errors.length ? `setup step failed: ${errors.map(e => e.step).join(', ')}. Run npm run tenant -- whatsapp-finish ${tenant.slug}` : 'setup complete';
+  const status = errors.length ? `setup step failed: ${errors.map(e => `${e.step} (${e.message})`).join('; ')}. Then run npm run tenant -- whatsapp-finish ${tenant.slug}` : 'setup complete';
   const text = `WhatsApp connected for ${tenant.name} (${tenant.slug}): ${setup.number || 'number'} (${setup.mode === 'coexistence' ? 'WhatsApp Business app number' : 'new Cloud API number'}), ${status}.${expiry}`;
   try {
     await tenancy.run(registry.DEFAULT_TENANT_ID, () => {

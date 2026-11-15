@@ -10,6 +10,7 @@ const { legalRouter } = require('./routes/legal');
 const { connectRouter } = require('./routes/connect');
 const logger = require('./utils/logger');
 const { captureException } = require('./utils/sentry');
+const { redactConnectLinks } = require('./utils/redact');
 const { createCrmApp } = require('../crm/src');
 const { Crm } = require('../crm/src/crm');
 const razorpay = require('./services/razorpay');
@@ -88,7 +89,7 @@ function createApp({
 
   app.use((req, res, next) => {
     const start = Date.now();
-    res.on('finish', () => logger.debug(`HTTP ${req.method} ${req.path} -> ${res.statusCode} (${Date.now() - start}ms)`));
+    res.on('finish', () => logger.debug(`HTTP ${req.method} ${redactConnectLinks(req.path)} -> ${res.statusCode} (${Date.now() - start}ms)`));
     next();
   });
 
@@ -163,7 +164,7 @@ function createApp({
   // eslint-disable-next-line no-unused-vars
   app.use((err, req, res, next) => {
     if (err.type === 'entity.parse.failed') return res.status(400).json({ error: 'Invalid JSON' });
-    captureException(err, { component: 'express', path: req.path });
+    captureException(err, { component: 'express', path: redactConnectLinks(req.path) });
     logger.error('Unhandled request error', { request_id: req.id, error: err.message });
     res.status(500).json({ error: 'Internal Server Error' });
   });

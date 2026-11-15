@@ -273,3 +273,29 @@ test('cancel and error steps are logged for Meta session logging; bad links are 
   assert.strictEqual((await request(app).post('/connect/nope/session').send(CLOUD)).status, 404);
   assert.strictEqual(calls.length, 0);
 });
+
+test('two signups at once for one client: only the first connects, the second is refused', async () => {
+  const [a, b] = await Promise.all([finish(CLOUD), finish({ ...CLOUD, code: 'CODE456' })]);
+  assert.deepStrictEqual([a.status, b.status].sort(), [200, 409]);
+  assert.strictEqual(calls.filter(c => c.path === 'oauth/access_token').length, 1);
+  assert.strictEqual(registry.config(acme.id).whatsapp.phoneNumberId, PN);
+});
+
+test('a number with an existing two-step PIN gets a clear fix in the error and the ops alert', async () => {
+  fakeMeta({ fail: { registered: new MetaGraphError('Two step verification PIN Mismatch', { code: 133005 }) } });
+  const res = await finish(CLOUD);
+  assert.strictEqual(res.body.complete, false);
+  const err = registry.config(acme.id).whatsapp.setup.lastError;
+  assert.strictEqual(err.code, 133005);
+  assert.match(err.message, /turn off two-step verification/);
+  assert.match(alerts[0].text, /turn off two-step verification.*whatsapp-finish acme/);
+});
+
+test('connect links never reach logs or Sentry', () => {
+  const { redactConnectLinks, redactConnectLinksDeep } = require('../src/utils/redact');
+  const t = token();
+  assert.strictEqual(redactConnectLinks(`/connect/${t}/session`), '/connect/[REDACTED]/session');
+  const ev = redactConnectLinksDeep({ request: { url: `https://wa.example.test/connect/${t}` }, transaction: `GET /connect/${t}` });
+  assert.ok(!JSON.stringify(ev).includes(t));
+  assert.strictEqual(redactConnectLinks('/webhook'), '/webhook');
+});

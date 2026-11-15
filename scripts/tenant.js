@@ -108,8 +108,9 @@ async function main() {
     if (!tenant) throw new Error(`No tenant "${a}"`);
     const blocked = embeddedSignup.blockedReason(tenant);
     if (blocked) throw new Error(blocked);
+    if (b && !/^[0-9]+$/.test(b)) throw new Error(`Give hours as a whole number, like 48 (got "${b}").`);
     const hours = b ? Number(b) : embeddedSignup.LINK_HOURS;
-    if (!Number.isFinite(hours) || hours <= 0 || hours > 24 * 14) throw new Error('hours must be between 1 and 336.');
+    if (hours < 1 || hours > 24 * 14) throw new Error('Hours must be between 1 and 336 (14 days).');
     console.log(`Connect link for ${tenant.name} (${tenant.slug}), valid ${hours} hours${appNumbers ? ', new or WhatsApp Business app numbers' : ', new numbers only'}:\n${embeddedSignup.linkUrl(tenant.id, { hours, appNumbers })}`);
     console.log('Send it to the person who manages their Facebook business. Anyone with the link can connect a number, so share it privately.');
     return;

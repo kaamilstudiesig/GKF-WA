@@ -24,12 +24,8 @@ const { LeadQueue, QueueError, TIMEZONES } = require('./queue');
 const { MIN_AGE_HOURS } = require('./nudges');
 const { Analytics, GRADE_MIN_LEADS } = require('./analytics');
 
-/** One CSV cell: quoted when needed, and formula-looking text made inert (spreadsheet injection). */
-function csvCell(v) {
-  let s = v === null || v === undefined ? '' : String(v);
-  if (/^[=+\-@\t\r]/.test(s)) s = `'${s}`;
-  return /[",\n\r]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
-}
+const { csvCell } = require('./csv'); // shared with the R19 data export
+const { buildExport } = require('./dataExport');
 const { Branding } = require('./branding');
 const { can } = require('./permissions');
 const { LEAD_STATUSES, ROLE_LABELS, ROLES, OUTCOMES, LOST_REASONS, STAGES } = require('./constants');
@@ -464,6 +460,20 @@ function createCrmApp({
     }
     await crm.log(req.user, null, 'business_profile_updated');
     res.redirect(withOk('/settings', 'Saved. The WhatsApp assistant uses the new details from its next reply.'));
+  }));
+
+  // R19: the full data export. Owner only; every download is in the activity log.
+  app.get('/settings/export.zip', allow(can.manageBusiness), h(async (req, res) => {
+    const profile = gymConfig ? gymConfig.profile : {};
+    const when = new Date();
+    const { zip, counts } = await buildExport(db, {
+      businessName: profile.name || res.locals.brand.name, currency: profile.currency || 'INR', when
+    });
+    await crm.log(req.user, null, 'data_exported', { files: counts, bytes: zip.length });
+    res.setHeader('Content-Type', 'application/zip');
+    res.setHeader('Content-Disposition', `attachment; filename="${res.locals.brand.fileSlug}-data-${util.localDay(when.toISOString())}.zip"`);
+    res.setHeader('Cache-Control', 'no-store'); // private data: never kept by a browser or proxy cache
+    res.send(zip);
   }));
 
   // Branding (R12): logo letters, colour and logo image, on the Business settings page.

@@ -42,7 +42,7 @@ Checked against the code on 14 Nov 2026. "Before signing" means it must be done 
 | Encrypted backups | C1 | Backups go to Telegram unencrypted today. **Before signing** | K28 |
 | AI providers don't store or train on data | 7.7, C | Not configured. **Before signing** | K29 |
 | STOP opt-out recorded, templates stop | 5.2 | Not built. **Before signing**, and before R16 sends templates | K30 |
-| Owners export leads, conversations, outcomes and notes | 7.6, 12.5 | Lead CSV only. **Before signing** | R19 |
+| Owners export leads, conversations, outcomes and notes | 7.6, 12.5 | Built (PR `r19-data-export`): Business settings → **Your data** downloads a ZIP of CSVs | R19 |
 | Health-related businesses: medical questions go to staff | 5.9 | Not in the presets. Before signing a clinic | K33 |
 | Automatic deletion after the retention period | 7.6, C | Not built. Before 13 May 2027 (DPDP); until then list it with a Feature Date | K31 |
 | 2FA on our hosting, GitHub, Meta and AI admin accounts | C1 | Settings, not code. **Before signing** | Ops |

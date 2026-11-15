@@ -36,7 +36,7 @@ Checked against the code on 14 Nov 2026. "Before signing" means it must be done 
 | Meta lead forms | 3.3 | Not built | K6 |
 | Instagram DM capture (one reply that moves the lead to WhatsApp) | 3.3 | Not built | K32 |
 | Connect the client's WhatsApp through Meta's signup flow | 3.5, 3.13 | Not built (manual setup today) | K9 |
-| Amounts in the client's currency (international) | Schedule A | Contract agreed | R15 |
+| Amounts in the client's currency (international) | Schedule A | CRM built (PR `r15-currency`); bot side (Meta events, alert texts) next | R15 |
 | Monthly lead count and 80% alert | 1 "Lead", 4.3 | Not built. **Before signing** | K26 |
 | Uptime monitor and reply-time measurement | Annexure B | Not built. **Before signing** | K27 |
 | Encrypted backups | C1 | Backups go to Telegram unencrypted today. **Before signing** | K28 |

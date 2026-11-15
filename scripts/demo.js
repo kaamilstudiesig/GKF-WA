@@ -159,10 +159,10 @@ async function resetDemo(db, { slug }) {
 const stable = v => (Array.isArray(v) ? v.map(stable) : v && typeof v === 'object'
   ? Object.fromEntries(Object.keys(v).sort().map(k => [k, stable(v[k])])) : v);
 
-/** True when a saved profile is still the untouched starter (name and type aside). */
+/** True when a saved profile is still the untouched starter (name, type and currency aside: profiles saved before R15 have no currency). */
 function isStarterProfile(profile, starterProfile) {
   const starter = starterProfile({ name: profile.name, type: profile.type });
-  const strip = p => { const { name, type, ...rest } = p; return JSON.stringify(stable(rest)); };
+  const strip = p => { const { name, type, currency, ...rest } = p; return JSON.stringify(stable(rest)); };
   return strip(profile) === strip(starter);
 }
 

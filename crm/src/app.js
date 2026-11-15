@@ -49,7 +49,7 @@ function profileFromForm(b) {
   const names = toArray(b.plan_name); const prices = toArray(b.plan_price); const details = toArray(b.plan_details);
   const pNames = toArray(b.policy_name); const pTexts = toArray(b.policy_text);
   return {
-    name: b.name, type: b.type, area: b.area, address: b.address, parking: b.parking, facility: b.facility,
+    name: b.name, type: b.type, currency: b.currency, area: b.area, address: b.address, parking: b.parking, facility: b.facility,
     latitude: b.latitude, longitude: b.longitude, voice: b.voice,
     hours: b.hours, programs: b.programs, sellingPoints: b.selling_points,
     plans: names.map((n, i) => ({ name: n, price: prices[i], details: details[i] })),
@@ -58,13 +58,14 @@ function profileFromForm(b) {
   };
 }
 const util = require('./util');
+const { currencyOptions } = require('../../src/config/currency');
 const razorpay = require('../../src/services/razorpay');
 const botGuard = require('../../src/services/botGuard');
 const { labelsFor, lostReasonsFor } = require('../../src/config/verticals');
 
 /** Outcome, stage and settings names for the business type (real estate says "Booked", not "Joined"). */
-function namesFor(type) {
-  const l = labelsFor(type);
+function namesFor(type, currency = 'INR') {
+  const l = labelsFor(type, currency);
   const pick = base => Object.fromEntries(Object.entries(base).map(([k, v]) => [k, l[k] || v]));
   return { OUTCOMES: pick(OUTCOMES), STAGES: pick(STAGES), LABELS: l, LOST_REASONS: lostReasonsFor(type) };
 }
@@ -131,10 +132,15 @@ function createCrmApp({
     req.sessionToken = token;
     req.user = session ? session.user : null;
     req.csrfToken = session ? session.csrfToken : null;
+    // R15: the business's currency. Every amount on the page goes through money(); Razorpay
+    // links are INR-only, so they're off for other currencies.
+    const CURRENCY = util.currencyCode(gymConfig ? gymConfig.profile.currency : 'INR');
     Object.assign(res.locals, {
       MIN_AGE_HOURS,
-      user: req.user, csrfToken: req.csrfToken, can, util, LEAD_STATUSES, ROLE_LABELS, ROLES, LOST_REASONS, PLAN_OPTIONS: planOptions(), PAYMENTS_ON: razorpay.enabled(),
-      ...namesFor(gymConfig ? gymConfig.profile.type : 'gym'),
+      user: req.user, csrfToken: req.csrfToken, can, util, LEAD_STATUSES, ROLE_LABELS, ROLES, LOST_REASONS, PLAN_OPTIONS: planOptions(),
+      PAYMENTS_ON: razorpay.enabled() && CURRENCY === 'INR',
+      CURRENCY, CURRENCY_SHORT: util.CURRENCIES[CURRENCY].prefix.trim(), money: v => util.money(v, CURRENCY),
+      ...namesFor(gymConfig ? gymConfig.profile.type : 'gym', CURRENCY),
       path: req.path, query: req.query, flash: req.query.ok || null, error: req.query.err || null,
       brand: await branding.get()
     });
@@ -419,7 +425,7 @@ function createCrmApp({
     const L = res.locals.OUTCOMES;
     const AD_KIND_LABEL = { missing: 'Ad (id missing)', none: 'Not from an ad' };
     const cols = [['ad_id', 'adId'], ['platform', 'platform'], ['headline', 'headline'], ['campaign', 'campaignName'], ['leads', 'leads'],
-      ['qualified', 'qualified'], [L.visit_booked, 'visitBooked'], [L.visited, 'visited'], [L.joined, 'won'], ['revenue', 'revenueInr'],
+      ['qualified', 'qualified'], [L.visit_booked, 'visitBooked'], [L.visited, 'visited'], [L.joined, 'won'], [`revenue_${res.locals.CURRENCY.toLowerCase()}`, 'revenueInr'],
       ['win_rate_pct', 'winRate'], ['median_minutes_to_contact', 'medianMinutes'], ['grade', 'grade'], ['spend', 'spend'],
       ['cost_per_sale', 'costPerSale'], ['roas', 'roas']];
     const lines = [cols.map(([h]) => csvCell(h)).join(','),
@@ -446,7 +452,11 @@ function createCrmApp({
       profile: gymConfig.profile, meta: await businessProfile.meta(), verticals: VERTICALS,
       prompt: gymConfig.getSystemPrompt(), limits: businessProfile.LIMITS, brandForm: null,
       queueSettings: await queue.settings(), TIMEZONES, queueBotWired: LeadQueue.botWired,
-      zoho: await zoho.summary(), ...extra
+      zoho: await zoho.summary(),
+      // R15: the currency select, and the warning when sales already have amounts.
+      currencyOptions: currencyOptions(),
+      salesCount: (await db.one("SELECT COUNT(*)::int AS c FROM crm_lead_outcomes WHERE outcome = 'joined' AND amount_inr IS NOT NULL")).c,
+      ...extra
     });
   };
   app.get('/settings', allow(can.manageBusiness), h(async (req, res) => {

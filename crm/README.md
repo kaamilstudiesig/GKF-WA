@@ -54,6 +54,18 @@ prefixed `crm_`.
 
 Every lead page starts with **Log outcome** (`#outcome`, also where Telegram's "✅ Log outcome" button lands): one tap for *Called, spoke · No answer · WhatsApp sent · Visited · No-show*, and short forms for *Visit booked* (date/time), *Joined* (plan + ₹ paid) and *Lost* (reason). Each outcome updates the lead's status, resolves the bot's hand-off once someone has actually been in touch, and books the next follow-up automatically (no answer → retry in 2h, next day, 3 days, weekly). The rules are in `docs/TEAM.md` under "Lead outcomes".
 
+## Currency (R15)
+
+Each business has one currency: `profile.currency` (`INR` default, `AED`, `SAR`, `USD`), chosen on **Business settings → Basics**. Unknown or missing codes are INR, so GKF is unchanged.
+
+- **Stored:** every `amount_inr` column (`crm_lead_outcomes`, `crm_payment_links`) holds **whole units of the business's currency**, despite its name (AED 950000 for a Dubai sale). No migration. The largest sale is 100,000,000 units in any currency.
+- **Shown:** `src/config/currency.js` (shared with the bot): `money(amount, currency)` gives `₹7,080` / `₹9,50,000` (Indian grouping only for INR), `AED 950,000`, `SAR 950,000`, `$950,000`. Pages use `money()` from `res.locals` (the business's currency); `util.money` re-exports it. Lead page, outcome sheet, pipeline, suggested outcome and Reports all use it; Reports headers say "Revenue (AED)" (GKF keeps "Revenue"), and the ads CSV's column is `revenue_<code>`.
+- **Typed:** `parseAmount(text)` reads "₹7,080", "Rs 7080", "AED 950,000", "950000" and refuses decimals. The outcome sheet's field says "Amount paid (AED)".
+- **Payment links:** Razorpay is INR-only, so **Send payment link** is hidden and the route refuses (400) when the currency isn't INR.
+- **AI cost on Reports** stays in USD (our cost); the ₹ estimate shows only for INR businesses.
+- **Changing it:** allowed; Business settings warns when sales exist, because amounts are not converted. Text already sent with ₹ (messages, activity) stays as sent.
+- The plan-price example on Business settings follows the currency (`labelsFor(type, currency)`, `planPriceByCurrency` in `src/config/verticals.js`).
+
 ## Analytics (R5)
 
 `crm/src/analytics.js`: `new Analytics(db).summary(user, { days, now, names, lostNames | type })` returns plain objects (the Reports page renders them; K21 and scripts can call it with no user for the whole business, inside `tenancy.run`). `names` is `namesFor(type).OUTCOMES`, so stage labels follow the business type (real estate: Site visit booked, Booked). Lost reasons use the business type's words: pass `lostNames` (`namesFor(type).LOST_REASONS`, as the Reports page does) or `type`; with neither, the current client's own business type (from its business profile) is used.

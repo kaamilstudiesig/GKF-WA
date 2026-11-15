@@ -83,4 +83,7 @@ class Params {
   p(value) { this.values.push(value); return `$${this.values.length}`; }
 }
 
-module.exports = { Params, localInputToIso, localDay, fmtDate, fmtTime, dayLabel, timeAgo, cleanWaId, leadPhone, contactLabel, leadTitle, humanize, tzOffsetMs };
+// R15: amounts in the business's currency (src/config/currency.js; shared with the bot).
+const { money, parseAmount, currencyCode, CURRENCIES } = require('../../src/config/currency');
+
+module.exports = { money, parseAmount, currencyCode, CURRENCIES, Params, localInputToIso, localDay, fmtDate, fmtTime, dayLabel, timeAgo, cleanWaId, leadPhone, contactLabel, leadTitle, humanize, tzOffsetMs };

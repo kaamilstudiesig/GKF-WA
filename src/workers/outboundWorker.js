@@ -29,6 +29,11 @@ async function sendOne(job) {
       });
     await outboundRepository.markSent(job.id, providerId);
   } catch (err) {
+    if (err.optedOut) { // K30: expected, not an error: never retry, never page anyone
+      logger.info('Template not sent: lead opted out', { id: job.id });
+      await outboundRepository.markFailed(job.id, err.message, false);
+      return;
+    }
     const retryable = isRetryable(err);
     const detail = err.response?.data ? JSON.stringify(err.response.data) : err.message;
     captureException(err, { component: 'outbound_worker', jobId: job.id, retryable });

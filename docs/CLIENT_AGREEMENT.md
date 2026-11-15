@@ -41,7 +41,7 @@ Checked against the code on 14 Nov 2026. "Before signing" means it must be done 
 | Uptime monitor and reply-time measurement | Annexure B | Not built. **Before signing** | K27 |
 | Encrypted backups | C1 | Backups go to Telegram unencrypted today. **Before signing** | K28 |
 | AI providers don't store or train on data | 7.7, C | Not configured. **Before signing** | K29 |
-| STOP opt-out recorded, templates stop | 5.2 | Not built. **Before signing**, and before R16 sends templates | K30 |
+| STOP opt-out recorded, templates stop | 5.2 | Built (K30): STOP/UNSUBSCRIBE/"don't message me" in English, Hinglish/Hindi, Kannada, Arabic sets `leads.opted_out_at`, sends a fixed confirmation, and every template send to that lead is refused. The CRM badge is Krishna's (R16). **Before signing** | K30 |
 | Owners export leads, conversations, outcomes and notes | 7.6, 12.5 | Lead CSV only. **Before signing** | R19 |
 | Health-related businesses: medical questions go to staff | 5.9 | Not in the presets. Before signing a clinic | K33 |
 | Automatic deletion after the retention period | 7.6, C | Not built. Before 13 May 2027 (DPDP); until then list it with a Feature Date | K31 |

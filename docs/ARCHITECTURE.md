@@ -232,6 +232,7 @@ src/
   workers/               queueWorker base, inbound (webhookWorker), outbound, Conversions API, Zoho sync
   services/
     deterministicRouter  fixed answers, language detection, buttons
+    optOut               STOP / START (K30): fixed reply, blocks templates to opted-out leads
     aiService            prompt building, OpenRouter call, JSON parsing, cleanup
     aiPolicy             what the AI may change; medical safety check
     botGuard             staff pause + per-lead daily cap

@@ -19,6 +19,19 @@ const leadRepository = {
     return { ...row, metadata: row.metadata || {}, window_open: this.windowOpen(row.last_inbound_message_at) };
   },
 
+  /** K30: marks a lead opted out (on) or back in. Returns the lead, or null if unknown. */
+  async setOptedOut(waId, on) {
+    return this.format(await db.one(
+      'UPDATE leads SET opted_out_at = CASE WHEN $2 THEN COALESCE(opted_out_at, now()) ELSE NULL END, updated_at = now() WHERE wa_id = $1 RETURNING *',
+      [waId, Boolean(on)]));
+  },
+
+  /** K30: whether the lead with this key or phone number opted out. */
+  async isOptedOut(waIdOrPhone) {
+    const row = await db.one('SELECT 1 AS yes FROM leads WHERE (wa_id = $1 OR phone = $1) AND opted_out_at IS NOT NULL LIMIT 1', [String(waIdOrPhone || '')]);
+    return Boolean(row);
+  },
+
   async findByWaId(waId) {
     return this.format(await db.one('SELECT * FROM leads WHERE wa_id = $1', [waId]));
   },

@@ -12,6 +12,7 @@ const STATUSES = ['active', 'sold_out', 'archived'];
 // Meta's limits for one product list message: 30 products in at most 10 sections (one per project).
 const SEND_LIMITS = { units: 30, projects: 10 };
 const MAX_PRICE = 100000000; // whole units of the business's currency, like sales (R15)
+const MAX_TEXT = 4096; // WhatsApp's limit for one text message
 
 const str = (v, max) => String(v ?? '').replace(/\s+/g, ' ').trim().slice(0, max);
 const isId = v => Number.isInteger(Number(v)) && Number(v) > 0 && Number(v) <= 2147483647;
@@ -190,6 +191,8 @@ class Projects {
     });
     const text = [`Here are the options${businessName ? ` from ${businessName}` : ''}:`, ...blocks,
       'Tell me which one you like and I will share more details or set up a visit.'].join('\n\n');
+    // Long brochure links can push 30 units past WhatsApp's limit even inside Meta's product limits.
+    if (text.length > MAX_TEXT) throw new HttpError(400, 'That is too long for one WhatsApp message. Pick fewer units or projects and send the rest next.');
     return { text, units: units.map(u => u.id), projects: projectIds };
   }
 }

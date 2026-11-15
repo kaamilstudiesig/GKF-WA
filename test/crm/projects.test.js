@@ -147,3 +147,30 @@ test('R17 one client\'s projects never show for another', async () => {
     assert.strictEqual((await new Projects(ctx.db).sendable()).length, 0);
   } finally { await ctx.cleanup(); }
 });
+
+test('R17 review fixes: WhatsApp\'s 4096-character limit, and no projects list to a lead who wrote STOP', async () => {
+  const ctx = await setup();
+  try {
+    const p = new Projects(ctx.db);
+    // 10 projects with long brochure links, 3 units each: inside Meta's limits, too long for one text.
+    const ids = [];
+    for (let i = 0; i < 10; i++) {
+      const proj = await p.addProject({ name: `Project ${i}`, area: 'Somewhere', brochure_url: `https://example.com/${'b'.repeat(400)}/${i}.pdf` });
+      for (let j = 0; j < 3; j++) ids.push((await p.addUnit(proj.id, { name: `Unit ${j}`, price_from: '1000000' })).id);
+    }
+    await assert.rejects(p.message(ids), /too long for one WhatsApp message\. Pick fewer units or projects/);
+    assert.ok((await p.message(ids.slice(0, 3))).text.length < 4096);
+
+    // Opted out (K30): the section says why, the form is disabled, the server refuses.
+    asDubai();
+    const owner = await login(ctx.app, 'owner');
+    await ctx.db.query('UPDATE leads SET opted_out_at = now() WHERE wa_id = $1', [LEAD]);
+    const page = (await owner.agent.get(`/leads/${LEAD}`)).text;
+    assert.match(page, /They wrote STOP, so no projects lists/);
+    assert.match(page, /<fieldset disabled class="space-y-2">/);
+    const before = (await ctx.db.one('SELECT COUNT(*)::int AS c FROM outbound_messages')).c;
+    const r = await owner.agent.post(`/leads/${LEAD}/projects`).type('form').send({ _csrf: owner.csrf, units: String(ids[0]) });
+    assert.match(r.headers.location || '', /err=They\+wrote\+STOP/);
+    assert.strictEqual((await ctx.db.one('SELECT COUNT(*)::int AS c FROM outbound_messages')).c, before);
+  } finally { gymConfig.resetToDefault(); await ctx.cleanup(); }
+});

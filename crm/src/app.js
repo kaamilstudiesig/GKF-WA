@@ -372,6 +372,8 @@ function createCrmApp({
   // R17: send chosen units to the lead as one WhatsApp message (plain text until K24's catalog).
   // A CRM reply like any other (counts as picked up and for speed to lead), with the unit ids kept.
   app.post('/leads/:waId/projects', leadAction(async (req, waId) => {
+    const lead = await crm.getLead(req.user, waId);
+    if (lead && lead.opted_out_at) throw new HttpError(400, 'They wrote STOP, so no projects lists. Reply normally if they write to you.');
     const { text, units } = await projects.message(req.body.units, {
       businessName: gymConfig ? gymConfig.profile.name : '', currency: businessCurrency()
     });

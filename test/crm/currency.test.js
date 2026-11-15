@@ -26,10 +26,10 @@ test('R15 money: each currency, Indian grouping only for INR', () => {
 
 test('R15 parseAmount: symbols, codes and commas; whole numbers only', () => {
   for (const [typed, amount] of [['₹7,080', 7080], ['Rs 7080', 7080], ['Rs. 7,080', 7080], ['INR 7080', 7080], ['AED 950,000', 950000],
-    ['aed950000', 950000], ['Dhs 1,200', 1200], ['SAR 12,000', 12000], ['$1,200', 1200], ['USD 99', 99], [' 950000 ', 950000]]) {
+    ['aed950000', 950000], ['7080.00', 7080], ['AED 950,000.00', 950000], ['Dhs 1,200', 1200], ['SAR 12,000', 12000], ['$1,200', 1200], ['USD 99', 99], [' 950000 ', 950000]]) {
     assert.deepStrictEqual(parseAmount(typed), { amount }, typed);
   }
-  for (const typed of ['7080.50', '1.1M', '', 'abc', '-500', '12 lakh', null]) assert.ok(parseAmount(typed).error, String(typed));
+  for (const typed of ['7080.50', '7080.', '1.1M', '', 'abc', '-500', '12 lakh', null]) assert.ok(parseAmount(typed).error, String(typed));
 });
 
 test('R15 profile: currency is one of four codes, else INR; examples follow it', () => {
@@ -167,6 +167,24 @@ test('R15 Business settings: currency select saves, warning once sales exist', a
 
     // A made-up code is saved as INR.
     await owner.agent.post('/settings').type('form').send({ ...form(owner.csrf, 'EUR'), currency_confirm: '1' });
+    assert.strictEqual(gymConfig.profile.currency, 'INR');
+  } finally { await ctx.cleanup(); gymConfig.resetToDefault(); }
+});
+
+test('R15 a business with only payment links also needs the box ticked to change currency', async () => {
+  const ctx = await setup();
+  const form = (csrf, currency) => ({
+    _csrf: csrf, name: 'Goldkraft Fitness', type: 'gym', currency, facility: 'Big gym', area: 'J.P. Nagar', address: 'ITI Layout, Bengaluru',
+    parking: '', latitude: '', longitude: '', hours: 'Mon-Sat 5 AM - 10 PM', programs: 'CrossFit', selling_points: '',
+    plan_name: ['Monthly', ''], plan_price: ['₹4,500/month', ''], plan_details: ['', ''], policy_name: [''], policy_text: [''],
+    voice: 'Friendly', fallback_error: 'We will get back to you.', fallback_media: 'Got your file.'
+  });
+  try {
+    const owner = await login(ctx.app, 'owner');
+    await ctx.db.query("INSERT INTO crm_payment_links (wa_id, user_id, reference_id, plan, amount_inr) VALUES ($1, $2, 'ref-r15', 'Monthly', 7080)",
+      [LEAD, await ctx.userId('sales')]);
+    assert.match((await owner.agent.get('/settings')).text, /You have 1 payment link. Changing the currency/);
+    assert.strictEqual((await owner.agent.post('/settings').type('form').send(form(owner.csrf, 'AED'))).status, 400);
     assert.strictEqual(gymConfig.profile.currency, 'INR');
   } finally { await ctx.cleanup(); gymConfig.resetToDefault(); }
 });

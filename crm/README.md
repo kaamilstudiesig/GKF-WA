@@ -65,7 +65,8 @@ Each business has one currency: `profile.currency` (`INR` default, `AED`, `SAR`,
 - **Typed:** `parseAmount(text)` reads "₹7,080", "Rs 7080", "AED 950,000", "950000" and refuses decimals. The outcome sheet's field says "Amount paid (AED)".
 - **Payment links:** Razorpay is INR-only, so **Send payment link** is hidden and the route refuses (400) when the currency isn't INR.
 - **AI cost on Reports** stays in USD (our cost); the ₹ estimate shows only for INR businesses.
-- **Changing it:** allowed. Once sales exist, Business settings warns that amounts are not converted, the owner must tick **I understand** to change it, and the change is logged (`currency_changed`, from and to). Text already sent with ₹ (messages, activity) stays as sent.
+- **Ad spend** (R6, from K5) is assumed to be in the business's currency; K5 converts it if the Meta ad account bills in another one.
+- **Changing it:** allowed. Once sales or payment links exist, Business settings warns that amounts are not converted, the owner must tick **I understand** to change it, and the change is logged (`currency_changed`, from and to). Text already sent with ₹ (messages, activity) stays as sent.
 - The plan-price example on Business settings follows the currency (`labelsFor(type, currency)`, `planPriceByCurrency` in `src/config/verticals.js`).
 
 ## Analytics (R5)

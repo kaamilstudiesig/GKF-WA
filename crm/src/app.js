@@ -446,6 +446,11 @@ function createCrmApp({
   // ---- users (owner only) ----
   const usersPage = async (res, extra = {}) => res.render('users', { list: await users.list(), managers: await users.managers(), form: {}, ...extra });
   // ---- business settings (owner only, K10) ----
+  // R15: stored amounts that a currency change would re-label: recorded sales and payment links.
+  // One query for the Business settings warning and the confirm check, so they can't drift apart.
+  const storedAmounts = async () => (await db.one(`SELECT
+      (SELECT COUNT(*) FROM crm_lead_outcomes WHERE outcome = 'joined' AND amount_inr IS NOT NULL)::int AS sales,
+      (SELECT COUNT(*) FROM crm_payment_links)::int AS links`));
   const settingsPage = async (res, extra = {}) => {
     const { VERTICALS } = require('../../src/config/verticals');
     res.render('settings', {
@@ -455,7 +460,7 @@ function createCrmApp({
       zoho: await zoho.summary(),
       // R15: the currency select, and the warning when sales already have amounts.
       currencyOptions: currencyOptions(),
-      salesCount: (await db.one("SELECT COUNT(*)::int AS c FROM crm_lead_outcomes WHERE outcome = 'joined' AND amount_inr IS NOT NULL")).c,
+      amounts: await storedAmounts(),
       ...extra
     });
   };
@@ -474,8 +479,8 @@ function createCrmApp({
     const fromCurrency = util.currencyCode(gymConfig.profile.currency);
     const toCurrency = util.currencyCode(submitted.currency);
     if (fromCurrency !== toCurrency && req.body.currency_confirm !== '1') {
-      const { c: sales } = await db.one("SELECT COUNT(*)::int AS c FROM crm_lead_outcomes WHERE outcome = 'joined' AND amount_inr IS NOT NULL");
-      if (sales) return formAgain(`Tick the box under Currency to change it from ${fromCurrency} to ${toCurrency}. Your ${sales} recorded sale${sales === 1 ? '' : 's'} keep their numbers in the new currency.`);
+      const { sales, links } = await storedAmounts();
+      if (sales || links) return formAgain(`Tick the box under Currency to change it from ${fromCurrency} to ${toCurrency}. Amounts already recorded keep their numbers in the new currency.`);
     }
     try {
       await businessProfile.save(submitted, req.user.email);

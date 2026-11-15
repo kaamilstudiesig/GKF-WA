@@ -42,9 +42,11 @@ const AMOUNT_ERROR = 'Enter the amount as a whole number, for example 7080.';
 function parseAmount(text) {
   const s = String(text ?? '').replace(AMOUNT_NOISE, '');
   if (!s) return { error: AMOUNT_ERROR };
-  if (/^\d+\.\d+$/.test(s)) return { error: 'Use a whole number, without paise, fils or cents.' };
-  if (!/^\d{1,15}$/.test(s)) return { error: AMOUNT_ERROR };
-  return { amount: Number(s) };
+  // "7080.00" (pasted from a sheet or a bank app) is a whole number; "7080.50" is not.
+  const whole = s.replace(/\.0+$/, '');
+  if (/^\d+\.\d+$/.test(whole)) return { error: 'Use a whole number, without paise, fils or cents.' };
+  if (!/^\d{1,15}$/.test(whole)) return { error: AMOUNT_ERROR };
+  return { amount: Number(whole) };
 }
 
 /** The settings select: [{ code, label }] in a fixed order. */

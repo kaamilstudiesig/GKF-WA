@@ -250,6 +250,13 @@ const PLATFORM_MIGRATIONS = [
       'ALTER TABLE crm_users ADD COLUMN login_phone TEXT',
       'CREATE UNIQUE INDEX crm_users_login_phone_idx ON crm_users (tenant_id, login_phone) WHERE login_phone IS NOT NULL'
     ]
+  },
+  {
+    // K30: a lead who wrote STOP (src/services/optOut.js). Templates to them are refused;
+    // START or any new message from them clears it.
+    id: 6,
+    name: 'opt_out',
+    up: ['ALTER TABLE leads ADD COLUMN opted_out_at TIMESTAMPTZ']
   }
 ];
 

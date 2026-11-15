@@ -1,5 +1,7 @@
 # Meta App Review: Tech Provider
 
+**Status: approved 15 Nov 2026.** Advanced access to both permissions; we are a Tech Provider. Set-up and client onboarding: [ONBOARDING.md](ONBOARDING.md). The steps below are kept for a future review (e.g. a new app under our own company).
+
 Step-by-step for getting **Advanced access** to `whatsapp_business_messaging` and `whatsapp_business_management`, the last step to become a WhatsApp Tech Provider. Business verification for the app's business portfolio is already approved.
 
 App: **Goldkraft Fitness** (App ID `4690351227913482`), business portfolio `1811197356702097` (legal name Goldkraft Fitness). Owner context: GKF's owner is part of the startup, so the Tech Provider status sits with this portfolio for now. If the startup later gets its own company, we repeat App Review on a new app under it.
@@ -69,5 +71,6 @@ Typical turnaround is a few days to two weeks. If rejected, paste Meta's message
 ## After approval
 
 - The app can manage WhatsApp accounts that other businesses share with it.
-- Next build steps: Embedded Signup (Facebook Login for Business configuration → code → business token → register number → subscribe webhooks), tracked as task K9 in [TEAM.md](TEAM.md). Meta's [sample Tech Provider app](https://github.com/fbsamples/business-messaging-sample-tech-provider-app) (MIT) shows the full flow in Next.js; we'll implement the same steps in our Express app.
+- Embedded Signup is built (K9): `src/services/embeddedSignup.js`, `src/routes/connect.js`, `npm run tenant -- connect-link <slug>`. One-time Meta app and Heroku set-up: [ONBOARDING.md §1](ONBOARDING.md#1-one-time-set-up-us-once-per-meta-app).
+- Not in this review: `catalog_management` and `whatsapp_business_manage_events` for other businesses' assets (K24, K7b) need their own requests.
 - Upgrade to **Tech Partner** later (needs ≥2,500 messages/day, ≥10 monthly active customers, quality ≥90%).

@@ -7,6 +7,7 @@ const { verifyWebhookSignature } = require('./middleware/webhookSecurity');
 const { webhookRateLimiter } = require('./middleware/rateLimiter');
 const webhookController = require('./controllers/webhookController');
 const { legalRouter } = require('./routes/legal');
+const { connectRouter } = require('./routes/connect');
 const logger = require('./utils/logger');
 const { captureException } = require('./utils/sentry');
 const { createCrmApp } = require('../crm/src');
@@ -111,6 +112,9 @@ function createApp({
 
   // Public privacy policy, terms and data-deletion pages (Meta App Review).
   app.use(asDefault, legalRouter());
+
+  // K9: clients connect their own WhatsApp number (Embedded Signup) from a signed link.
+  app.use(connectRouter());
 
   // A tenant from the :slug in the URL (its own Meta app or Razorpay account), or 404.
   const tenantFromSlug = h(async (req, res, next) => {

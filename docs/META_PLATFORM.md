@@ -126,9 +126,9 @@ Rules:
 
 ## 8. Checklist before onboarding client #2
 
-- [ ] Meta Business verification for our company + apply for **Tech Provider**
-- [ ] App Review for the permissions we need (WhatsApp management/messaging, `leads_retrieval`, Pages, `ads_read`)
-- [ ] Embedded Signup **v4** page (with coexistence option) + code → token exchange + number registration
+- [x] Meta Business verification + **Tech Provider** (App Review approved 15 Nov 2026, on the GKF portfolio for now)
+- [ ] App Review for the permissions we need: WhatsApp management/messaging ✅ approved; still to request: `leads_retrieval`, Pages, `ads_read`, `catalog_management`, `whatsapp_business_manage_events`
+- [x] Embedded Signup page (with coexistence option) + code → token exchange + number registration (K9, [ONBOARDING.md](ONBOARDING.md)); live once `META_APP_ID` and `META_ES_CONFIG_ID` are set
 - [ ] `account_update` and quality webhooks handled, with alerts
 - [ ] BSUID-safe lead identity (section 5)
 - [ ] Per-tenant encrypted tokens, `tenant_id` + row-level security

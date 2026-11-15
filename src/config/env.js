@@ -19,6 +19,12 @@ const env = {
   metaWebhookVerifyToken: process.env.META_WEBHOOK_VERIFY_TOKEN || '',
   metaAppSecret: process.env.META_APP_SECRET || '',
   metaGraphApiVersion: process.env.META_GRAPH_API_VERSION || 'v23.0',
+  // K9 Embedded Signup (Tech Provider): our Meta app id and the Facebook Login for Business
+  // configuration id. Both set = clients can connect their own WhatsApp number from a link.
+  metaAppId: process.env.META_APP_ID || '',
+  metaEsConfigId: process.env.META_ES_CONFIG_ID || '',
+  // Public https address of the bot host (connect links). Must be an allowed JS SDK domain in the Meta app.
+  botBaseUrl: String(process.env.BOT_BASE_URL || (process.env.HEROKU_APP_NAME ? `https://${process.env.HEROKU_APP_NAME}.herokuapp.com` : '')).replace(/\/+$/, ''),
   // Conversions API (K7): send Visit booked / Joined back to Meta. Off until META_DATASET_ID is set.
   metaWabaId: process.env.META_WABA_ID || '',
   metaDatasetId: process.env.META_DATASET_ID || '',

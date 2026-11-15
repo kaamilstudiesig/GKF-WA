@@ -21,7 +21,9 @@ const MISS_RELOAD_MS = 10 * 1000;
 const SLUG_RE = /^[a-z0-9][a-z0-9-]{1,29}$/;
 const HOST_RE = /^(?=.{1,253}$)([a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z0-9-]{2,63}$/;
 const SECRET_KEYS = ['metaAccessToken', 'metaAppSecret', 'metaVerifyToken', 'razorpayKeyId', 'razorpayKeySecret', 'razorpayWebhookSecret',
-  'zohoClientId', 'zohoClientSecret', 'zohoRefreshToken'];
+  'zohoClientId', 'zohoClientSecret', 'zohoRefreshToken',
+  // K9 Embedded Signup: the number's two-step verification PIN we set when registering it.
+  'metaTwoStepPin'];
 const SETTING_KEYS = ['crmBaseUrl', 'telegramChatId', 'telegramOpsChatId', 'metaDatasetId', 'metaPageId', 'metaCapiTestEventCode',
   'botPauseHours', 'dailyReplyCap', 'aiMonthlyTokenBudget', 'aiMonthlyRequestBudget', 'staffAlertTemplate',
   // K20 Zoho CRM sync (scripts/zoho-connect.js sets these). No env fallback, tenant 1 included:
@@ -29,7 +31,9 @@ const SETTING_KEYS = ['crmBaseUrl', 'telegramChatId', 'telegramOpsChatId', 'meta
   'zohoSync', 'zohoAccountsUrl', 'zohoApiDomain', 'zohoIdField', 'zohoLinkField', 'zohoLeadSource',
   'zohoDealPipeline', 'zohoWonStage', 'zohoLostStage', 'zohoLostStatuses', 'zohoStatusMap',
   // R14: a demo client (portfolio). Only demo clients can be filled with sample data in production.
-  'demo'];
+  'demo',
+  // K9: how the WhatsApp number was connected and which setup steps are done (src/services/embeddedSignup.js).
+  'whatsappSetup'];
 
 // Our lead status -> Zoho's standard Lead Status values. A client can override any of them (zohoStatusMap).
 const ZOHO_STATUS_MAP = {
@@ -80,7 +84,9 @@ function resolve(entry) {
       wabaId: pick(row.waba_id, env.metaWabaId),
       accessToken: pick(sec.metaAccessToken, env.metaAccessToken),
       appSecret: pick(sec.metaAppSecret, env.metaAppSecret),
-      verifyToken: pick(sec.metaVerifyToken, env.metaWebhookVerifyToken)
+      verifyToken: pick(sec.metaVerifyToken, env.metaWebhookVerifyToken),
+      twoStepPin: sec.metaTwoStepPin || '',
+      setup: s.whatsappSetup || null // K9: set when the number was connected through Embedded Signup
     },
     crm: {
       host: row.crm_host || null,

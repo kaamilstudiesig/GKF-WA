@@ -73,7 +73,7 @@ test('signed portal lead: new lead, window closed, note, hand-off, welcome templ
   assert.deepStrictEqual([note.user_id, note.body], [null, 'From the Bayut form: 2BR in Dubai Hills?']);
   const handoff = await one('SELECT reason, status, summary FROM handoffs WHERE wa_id = $1', [DUBAI]);
   assert.strictEqual(handoff.reason, 'form_lead');
-  assert.match(handoff.summary, /New lead from the Bayut form: Layla Q, layla@example\.com\. WhatsApp welcome sent\./);
+  assert.match(handoff.summary, /New lead from the Bayut form: Layla Q, layla@example\.com\. WhatsApp welcome queued\./);
 
   const out = await many("SELECT wa_id, metadata FROM outbound_messages WHERE metadata ->> 'source' = 'intake'");
   assert.strictEqual(out.length, 1);
@@ -198,4 +198,56 @@ test('a lead who wrote STOP (K30) gets no welcome from a form, and stays opted o
   assert.strictEqual((await many("SELECT id FROM outbound_messages WHERE metadata ->> 'source' = 'intake'")).length, 0);
   assert.match((await one('SELECT summary FROM handoffs WHERE wa_id = $1', [DUBAI])).summary, /Opted out of WhatsApp \(wrote STOP\)/);
   assert.ok((await one('SELECT opted_out_at FROM leads WHERE wa_id = $1', [DUBAI])).opted_out_at);
+});
+
+test('review fixes: a second submission keeps the first touch and a short history', async () => {
+  await api({ name: 'Nadia', phone: DUBAI, source: 'bayut', sourceRef: 'BY-9', utm: { campaign: 'first' }, consent: true });
+  await form({ name: 'Nadia', phone: '0501234567', utm_campaign: 'second' });
+  const m = (await one('SELECT metadata FROM leads WHERE wa_id = $1', [DUBAI])).metadata;
+  assert.strictEqual(m.intake.source, 'website'); // latest
+  assert.deepStrictEqual([m.intake_first.source, m.intake_first.sourceRef, m.intake_first.utm.campaign, m.intake_first.consent], ['bayut', 'BY-9', 'first', true]);
+  assert.deepStrictEqual(m.intake_history.map(x => x.source), ['bayut', 'website']);
+});
+
+test('review fixes: two portal retries arriving together make one lead note and one duplicate', async () => {
+  const body = { name: 'Twin', phone: DUBAI, message: 'retry me', source: 'property_finder', sourceRef: 'PF-SAME' };
+  const [a, b] = await Promise.all([api(body), api(body)]);
+  assert.deepStrictEqual([a.status, b.status], [202, 202]);
+  assert.strictEqual([a.body.duplicate, b.body.duplicate].filter(Boolean).length, 1);
+  assert.strictEqual((await many('SELECT id FROM crm_lead_notes WHERE wa_id = $1', [DUBAI])).length, 1);
+  assert.deepStrictEqual((await many('SELECT status FROM intake_submissions ORDER BY id')).map(r => r.status).sort(), ['accepted', 'duplicate']);
+  // Two different submissions for the same new phone at once: one lead, no error.
+  const [c, d] = await Promise.all([api({ name: 'N1', phone: '971501112222', source: 'bayut' }), api({ name: 'N2', phone: '971501112222', source: 'dubizzle' })]);
+  assert.deepStrictEqual([c.status, d.status], [202, 202]);
+  assert.strictEqual((await many("SELECT wa_id FROM leads WHERE wa_id = '971501112222'")).length, 1);
+});
+
+test('review fixes: refused requests are recorded and stopped after 30 an hour; honeypot counts too', async () => {
+  for (let i = 0; i < 29; i++) assert.strictEqual((await form({ name: 'G', phone: '0501234567', form_key: `guess${i}` })).status, 401);
+  assert.strictEqual((await form({ name: 'Bot', phone: '0501234567', company_url: 'x' })).status, 202); // the 30th refusal, silent
+  const refused = await many("SELECT error, ip_hash FROM intake_submissions WHERE status = 'rejected'");
+  assert.strictEqual(refused.length, 30);
+  assert.ok(refused.every(r => /^[0-9a-f]{32}$/.test(r.ip_hash)));
+  assert.ok(refused.some(r => r.error === 'honeypot') && refused.some(r => r.error === 'bad form key'));
+  const blocked = await form({ name: 'Real', phone: '0501234567' }); // right key, but this address is blocked for the hour
+  assert.strictEqual(blocked.status, 429);
+  assert.strictEqual((await many('SELECT wa_id FROM leads')).length, 0);
+});
+
+test('review fixes: the welcome uses the template\'s language and is "queued", not "sent"', async () => {
+  await registry.update(acme.id, { settings: { leadWelcomeLanguage: 'ar' } });
+  await api({ name: 'Omar', phone: DUBAI, source: 'bayut', consent: true });
+  const out = await one("SELECT metadata FROM outbound_messages WHERE metadata ->> 'source' = 'intake'");
+  assert.strictEqual(out.metadata.template.language, 'ar');
+  assert.match((await one('SELECT summary FROM handoffs WHERE wa_id = $1', [DUBAI])).summary, /WhatsApp welcome queued\./);
+  await registry.update(acme.id, { settings: { leadWelcomeLanguage: 'not a code!' } });
+  assert.strictEqual(registry.config(acme.id).intake.welcomeLanguage, 'en'); // bad values fall back
+});
+
+test('review fixes: no fixed IP-hash key in production', () => {
+  const { ipKey } = require('../src/routes/intake');
+  assert.strictEqual(ipKey({ NODE_ENV: 'production' }), null); // the route then answers 503 and logs an error
+  assert.strictEqual(ipKey({ NODE_ENV: 'production', TENANT_SECRETS_KEY: 'k' }), 'k');
+  assert.strictEqual(ipKey({ NODE_ENV: 'production', INTAKE_IP_KEY: 'i', TENANT_SECRETS_KEY: 'k' }), 'i');
+  assert.strictEqual(ipKey({ NODE_ENV: 'test' }), 'local-dev-intake');
 });

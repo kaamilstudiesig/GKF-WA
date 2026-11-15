@@ -19,9 +19,12 @@ const h = fn => (req, res, next) => Promise.resolve(fn(req, res, next)).catch(ne
 const HONEYPOT = 'company_url'; // hidden in the snippet; people never fill it, bots do
 
 // IPs are stored only as a keyed hash (rate limits). The key is server-side, so a hash can't be
-// reversed by trying every address.
-function ipHash(ip, slug) {
-  const key = process.env.INTAKE_IP_KEY || process.env.TENANT_SECRETS_KEY || 'local-dev-intake';
+// reversed by trying every address. Production must have INTAKE_IP_KEY or TENANT_SECRETS_KEY (which
+// production needs anyway for client secrets); the fixed fallback is for tests and local dev only.
+function ipKey(env = process.env) {
+  return env.INTAKE_IP_KEY || env.TENANT_SECRETS_KEY || (env.NODE_ENV === 'production' ? null : 'local-dev-intake');
+}
+function ipHash(ip, slug, key) {
   return crypto.createHmac('sha256', key).update(`${slug}:${ip}`).digest('hex').slice(0, 32);
 }
 
@@ -46,31 +49,48 @@ function intakeRouter() {
     if (!tenant || tenant.status !== 'active') return res.status(404).json({ ok: false, error: 'Not found' });
     const cfg = tenant.intake;
     res.setHeader('Cache-Control', 'no-store');
+    const key = ipKey();
+    if (!key) {
+      logger.error('Lead intake is off: set INTAKE_IP_KEY or TENANT_SECRETS_KEY');
+      return res.status(503).json({ ok: false, error: 'Lead intake is not set up yet' });
+    }
+    const hash = ipHash(req.ip, tenant.slug, key);
+    const asTenant = fn => tenancy.run(tenant.id, fn);
+    // Refused requests are recorded per IP (hashed); after too many in an hour, stop answering
+    // them one by one, so a form key or signature can't be guessed at full speed.
+    if (await asTenant(() => leadIntake.tooManyFailures(hash))) {
+      return res.status(429).json({ ok: false, error: 'Too many refused requests. Try again later.' });
+    }
+    const refuse = async (channelName, error, status, message) => {
+      await asTenant(() => leadIntake.recordRefused({ channel: channelName, ipHash: hash, error }));
+      return res.status(status).json(status === 202 ? { ok: true } : { ok: false, error: message });
+    };
 
     let channel;
     if (req.get('x-intake-signature') !== undefined) {
       channel = 'api';
       if (!req.is('application/json') || !signatureOk(req.rawBody, req.get('x-intake-signature'), cfg.secret)) {
-        return res.status(401).json({ ok: false, error: 'Bad signature' });
+        return refuse('api', 'bad signature', 401, 'Bad signature');
       }
     } else {
       channel = 'form';
       const origin = String(req.get('origin') || '').toLowerCase().replace(/\/+$/, '');
       const allowed = origin && cfg.origins.includes(origin);
       if (allowed) { res.setHeader('Access-Control-Allow-Origin', origin); res.setHeader('Vary', 'Origin'); }
-      if (!allowed || !sameKey(req.body && req.body.form_key, cfg.formKey)) {
-        return res.status(401).json({ ok: false, error: 'This website is not allowed to send leads here' });
-      }
-      if (String((req.body && req.body[HONEYPOT]) || '').trim()) return res.status(202).json({ ok: true }); // a bot: say nothing
+      const notAllowed = 'This website is not allowed to send leads here';
+      if (!allowed) return refuse('form', 'website not allowed', 401, notAllowed);
+      if (!sameKey(req.body && req.body.form_key, cfg.formKey)) return refuse('form', 'bad form key', 401, notAllowed);
+      // A bot filled the hidden field: recorded (it counts towards the limit), but it is told nothing.
+      if (String((req.body && req.body[HONEYPOT]) || '').trim()) return refuse('form', 'honeypot', 202);
     }
 
     const body = req.body && typeof req.body === 'object' ? req.body : {};
-    const result = await tenancy.run(tenant.id, async () => {
+    const result = await asTenant(async () => {
       // Load this client's profile first: without it, gymConfig falls back to the default
       // profile and the welcome message would carry another business's name.
       await require('../services/businessProfile').ensureLoaded();
       const gymConfig = require('../config/gymConfig');
-      return leadIntake.accept({ channel, body, ipHash: ipHash(req.ip, tenant.slug), businessName: gymConfig.profile.name || tenant.name });
+      return leadIntake.accept({ channel, body, ipHash: hash, businessName: gymConfig.profile.name || tenant.name });
     });
     res.status(result.status).json(result.body);
   }));
@@ -84,4 +104,4 @@ function intakeRouter() {
   return router;
 }
 
-module.exports = { intakeRouter, signatureOk, HONEYPOT };
+module.exports = { intakeRouter, signatureOk, ipKey, HONEYPOT };

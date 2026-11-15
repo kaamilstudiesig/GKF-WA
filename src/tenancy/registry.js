@@ -38,7 +38,7 @@ const SETTING_KEYS = ['crmBaseUrl', 'telegramChatId', 'telegramOpsChatId', 'meta
   'whatsappSetup',
   // R16 lead intake: the website form's public key and allowed origins, the country code for local
   // phone numbers ("91", "971"), and the approved welcome template (empty = no welcome message).
-  'intakeFormKey', 'intakeOrigins', 'phoneCountry', 'leadWelcomeTemplate'];
+  'intakeFormKey', 'intakeOrigins', 'phoneCountry', 'leadWelcomeTemplate', 'leadWelcomeLanguage'];
 
 // Our lead status -> Zoho's standard Lead Status values. A client can override any of them (zohoStatusMap).
 const ZOHO_STATUS_MAP = {
@@ -124,7 +124,9 @@ function resolve(entry) {
       formKey: s.intakeFormKey || '',
       origins: (Array.isArray(s.intakeOrigins) ? s.intakeOrigins : []).map(o => String(o).trim().toLowerCase().replace(/\/+$/, '')).filter(Boolean),
       phoneCountry: /^[1-9][0-9]{0,3}$/.test(String(s.phoneCountry || '')) ? String(s.phoneCountry) : '91',
-      welcomeTemplate: s.leadWelcomeTemplate || ''
+      welcomeTemplate: s.leadWelcomeTemplate || '',
+      // The template's language code as approved by Meta ("en", "ar", "en_US").
+      welcomeLanguage: /^[a-z]{2,3}(_[A-Z]{2})?$/.test(String(s.leadWelcomeLanguage || '')) ? s.leadWelcomeLanguage : 'en'
     },
     zoho: {
       on: s.zohoSync === 'on' && Boolean(sec.zohoClientId && sec.zohoClientSecret && sec.zohoRefreshToken),

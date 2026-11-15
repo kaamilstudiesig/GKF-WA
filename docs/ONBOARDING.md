@@ -108,7 +108,7 @@ If the client gets leads from their website or property portals:
 
 1. On **Business settings → Lead sources** (as the owner): add their website address(es), set the country code for local numbers (91 India, 971 UAE), and **Make a form key**. Send the **Website form** code to whoever runs their website; it needs a phone number, and it asks for WhatsApp consent.
 2. For a portal or Zapier: **Make a signing secret** (shown once) and give the portal the address and secret. They send signed JSON (`docs/TEAM.md`, R16).
-3. WhatsApp welcome message: create `lead_welcome` on the client's WhatsApp account, and once Meta approves it set `leadWelcomeTemplate` for the client (`npm run tenant -- set <slug> <file.json>` with `{ "settings": { "leadWelcomeTemplate": "lead_welcome" } }`). Until then, form leads get a hand-off but no WhatsApp message.
+3. WhatsApp welcome message: create `lead_welcome` on the client's WhatsApp account, and once Meta approves it set `leadWelcomeTemplate` for the client (and `leadWelcomeLanguage`, e.g. `ar`, if the template isn't English) (`npm run tenant -- set <slug> <file.json>` with `{ "settings": { "leadWelcomeTemplate": "lead_welcome" } }`). Until then, form leads get a hand-off but no WhatsApp message.
 4. Test with the client: submit the form once, check the lead, the hand-off and **Last 20 submissions**.
 
 ## Test checklist

@@ -15,7 +15,8 @@ const signals = require('../workers/signals');
 
 const SOURCES = ['website', 'property_finder', 'bayut', 'dubizzle', 'other'];
 const SOURCE_LABELS = { website: 'website', property_finder: 'Property Finder', bayut: 'Bayut', dubizzle: 'Dubizzle', other: 'portal' };
-const LIMITS = { formPerIpPerHour: 10, formPerPhonePerDay: 3 };
+const LIMITS = { formPerIpPerHour: 10, formPerPhonePerDay: 3, failuresPerIpPerHour: 30 };
+const HISTORY_KEEP = 10; // submissions kept on a lead (metadata.intake_history)
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const DAY_MS = 24 * 60 * 60 * 1000;
 
@@ -56,8 +57,35 @@ const windowOpen = lead => {
 };
 
 /**
+ * Refused requests (bad form key, origin or signature, and honeypot posts) are recorded too, so
+ * someone guessing a key from one address is stopped after FAILURES_PER_IP_PER_HOUR.
+ */
+async function recordRefused({ channel, ipHash, error }) {
+  await record({ channel, ipHash, status: 'rejected', error });
+}
+async function tooManyFailures(ipHash) {
+  if (!ipHash) return false;
+  const r = await db.one(`SELECT COUNT(*)::int AS c FROM intake_submissions WHERE ip_hash = $1 AND status = 'rejected'
+    AND received_at > now() - interval '1 hour'`, [ipHash]);
+  return r.c >= LIMITS.failuresPerIpPerHour;
+}
+
+const setStatus = (id, status, error = null) => db.query('UPDATE intake_submissions SET status = $2, error = $3 WHERE id = $1', [id, status, error]);
+
+/** Keeps the latest submission, the first one (first touch) and the last few, so a second form never erases the first. */
+function withIntake(metadata, entry) {
+  const m = metadata || {};
+  const history = [...(Array.isArray(m.intake_history) ? m.intake_history : []), entry].slice(-HISTORY_KEEP);
+  return { ...m, intake: entry, intake_first: m.intake_first || m.intake || entry, intake_history: history };
+}
+
+/**
  * Handles one submission. channel: 'form' (website snippet) or 'api' (signed, server to server).
  * Returns { status: 202 | 400 | 429, body }.
+ *
+ * Race-safe without locks: the submission's row is written first (claimed as accepted), and the
+ * duplicate and rate-limit checks count only the rows written before it (lower id). Of two portal
+ * retries arriving together, the second always sees the first and becomes the duplicate.
  */
 async function accept({ channel, body, ipHash = null, businessName = '' }) {
   const cfg = registry.config().intake;
@@ -67,43 +95,57 @@ async function accept({ channel, body, ipHash = null, businessName = '' }) {
     return { status: 400, body: { ok: false, error: cleaned.error } };
   }
   const input = cleaned.input;
-  const base = { channel, source: input.source, sourceRef: input.sourceRef, waId: input.phone, ipHash };
+  const claim = await record({ channel, source: input.source, sourceRef: input.sourceRef, waId: input.phone, ipHash, status: 'accepted' });
 
   // Website forms are limited per IP and per phone (signed calls only get the duplicate check).
   if (channel === 'form') {
     const c = await db.one(`SELECT
-        (SELECT COUNT(*) FROM intake_submissions WHERE channel = 'form' AND ip_hash = $1 AND received_at > now() - interval '1 hour')::int AS ip,
-        (SELECT COUNT(*) FROM intake_submissions WHERE channel = 'form' AND wa_id = $2 AND status = 'accepted' AND received_at > now() - interval '1 day')::int AS phone`,
-    [ipHash, input.phone]);
+        (SELECT COUNT(*) FROM intake_submissions WHERE id < $3 AND channel = 'form' AND ip_hash = $1 AND received_at > now() - interval '1 hour')::int AS ip,
+        (SELECT COUNT(*) FROM intake_submissions WHERE id < $3 AND channel = 'form' AND wa_id = $2 AND status = 'accepted' AND received_at > now() - interval '1 day')::int AS phone`,
+    [ipHash, input.phone, claim.id]);
     if (c.ip >= LIMITS.formPerIpPerHour || c.phone >= LIMITS.formPerPhonePerDay) {
-      await record({ ...base, status: 'limited', error: c.ip >= LIMITS.formPerIpPerHour ? 'too many from this address' : 'too many for this phone' });
+      await setStatus(claim.id, 'limited', c.ip >= LIMITS.formPerIpPerHour ? 'too many from this address' : 'too many for this phone');
       return { status: 429, body: { ok: false, error: 'Too many submissions. Try again later.' } };
     }
   }
 
   // The same portal reference within 24 hours does nothing (portals retry).
   if (input.sourceRef) {
-    const dup = await db.one(`SELECT id FROM intake_submissions WHERE source = $1 AND source_ref = $2 AND status = 'accepted'
-      AND received_at > now() - interval '1 day' LIMIT 1`, [input.source, input.sourceRef]);
+    const dup = await db.one(`SELECT id FROM intake_submissions WHERE id < $3 AND source = $1 AND source_ref = $2 AND status = 'accepted'
+      AND received_at > now() - interval '1 day' LIMIT 1`, [input.source, input.sourceRef, claim.id]);
     if (dup) {
-      await record({ ...base, status: 'duplicate' });
+      await setStatus(claim.id, 'duplicate');
       return { status: 202, body: { ok: true, duplicate: true } };
     }
   }
 
+  try {
+    await handle({ input, cfg, businessName, channel });
+  } catch (err) {
+    await setStatus(claim.id, 'rejected', 'could not be saved');
+    throw err;
+  }
+  return { status: 202, body: { ok: true } };
+}
+
+async function handle({ input, cfg, businessName, channel }) {
   const label = SOURCE_LABELS[input.source];
-  const intakeMeta = { channel, source: input.source, sourceRef: input.sourceRef, name: input.name || null, email: input.email,
+  const entry = { channel, source: input.source, sourceRef: input.sourceRef, name: input.name || null, email: input.email,
     utm: input.utm, consent: input.consent, at: new Date().toISOString() };
   let lead = await findLead(input.phone);
-  const isNew = !lead;
-  if (isNew) {
+  let isNew = false;
+  if (!lead) {
     // last_inbound_message_at stays NULL: they haven't written on WhatsApp, so the 24-hour window is closed.
+    // ON CONFLICT: another submission for the same new phone may have created it a moment ago.
     lead = await db.one(`INSERT INTO leads (wa_id, phone, display_name, source, first_contact_at, last_inbound_message_at, metadata)
-      VALUES ($1, $1, $2, $3, now(), NULL, $4::jsonb) RETURNING *`,
-    [input.phone, input.name || null, `intake_${input.source}`, JSON.stringify({ intake: intakeMeta })]);
-  } else {
-    lead = await db.one(`UPDATE leads SET metadata = metadata || $2::jsonb, display_name = COALESCE(display_name, $3), updated_at = now()
-      WHERE wa_id = $1 RETURNING *`, [lead.wa_id, JSON.stringify({ intake: intakeMeta }), input.name || null]);
+      VALUES ($1, $1, $2, $3, now(), NULL, $4::jsonb) ON CONFLICT (tenant_id, wa_id) DO NOTHING RETURNING *`,
+    [input.phone, input.name || null, `intake_${input.source}`, JSON.stringify(withIntake({}, entry))]);
+    isNew = Boolean(lead);
+    if (!lead) lead = await findLead(input.phone);
+  }
+  if (!isNew) {
+    lead = await db.one(`UPDATE leads SET metadata = $2::jsonb, display_name = COALESCE(display_name, $3), updated_at = now()
+      WHERE wa_id = $1 RETURNING *`, [lead.wa_id, JSON.stringify(withIntake(lead.metadata, entry)), input.name || null]);
   }
   const waId = lead.wa_id;
 
@@ -112,9 +154,9 @@ async function accept({ channel, body, ipHash = null, businessName = '' }) {
   }
 
   // The first WhatsApp message: the approved welcome template, only with consent, never during a live
-  // conversation, at most once per phone per 24 hours. K30 (opt-out) refuses it at send time for STOP leads.
+  // conversation, at most once per phone per 24 hours. K30 also refuses it at send time for STOP leads.
   let welcome;
-  if (lead.opted_out_at) welcome = 'Opted out of WhatsApp (wrote STOP): not messaged.'; // K30; a form is not a WhatsApp message, so it stays opted out
+  if (lead.opted_out_at) welcome = 'Opted out of WhatsApp (wrote STOP): not messaged.'; // a form is not a WhatsApp message, so it stays opted out
   else if (!input.consent) welcome = 'No WhatsApp consent on the form: not messaged.';
   else if (!cfg.welcomeTemplate) welcome = 'WhatsApp welcome not sent: template not set up.';
   else if (windowOpen(lead)) welcome = null; // they are chatting with us already
@@ -128,10 +170,11 @@ async function accept({ channel, body, ipHash = null, businessName = '' }) {
         dedupKey: `lead_welcome:${input.phone}:${Math.floor(Date.now() / DAY_MS)}`,
         waId: input.phone,
         text: `[Welcome template ${cfg.welcomeTemplate}] ${input.name || 'there'} · ${businessName}`,
-        metadata: { source: 'intake', template: { name: cfg.welcomeTemplate, language: 'en', body: [input.name || 'there', businessName] } }
+        metadata: { source: 'intake', template: { name: cfg.welcomeTemplate, language: cfg.welcomeLanguage, body: [input.name || 'there', businessName] } }
       });
       if (queued) signals.emit('outbound');
-      welcome = queued ? 'WhatsApp welcome sent.' : null;
+      // Queued, not sent: the outbound worker sends it (and K30 may still refuse it).
+      welcome = queued ? 'WhatsApp welcome queued.' : null;
     }
   }
 
@@ -149,10 +192,7 @@ async function accept({ channel, body, ipHash = null, businessName = '' }) {
     await handoffRepository.open({ waId, reason: 'form_lead', summary });
   }
   await db.query("UPDATE leads SET needs_human = true, handoff_reason = 'form_lead', updated_at = now() WHERE wa_id = $1", [waId]);
-
-  await record({ ...base, waId, status: 'accepted' });
   logger.info('Lead intake accepted', { channel, source: input.source, new_lead: isNew, wa_suffix: waId.slice(-4) });
-  return { status: 202, body: { ok: true } };
 }
 
-module.exports = { accept, clean, SOURCES, SOURCE_LABELS, LIMITS };
+module.exports = { accept, clean, recordRefused, tooManyFailures, withIntake, SOURCES, SOURCE_LABELS, LIMITS };

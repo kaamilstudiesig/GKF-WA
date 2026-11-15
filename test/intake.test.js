@@ -270,3 +270,22 @@ test('review fixes (2): a portal\'s own 400s never lock it out; a valid signatur
   assert.strictEqual((await api(body)).status, 202); // not a duplicate any more, so it runs again
   assert.strictEqual((await many("SELECT id FROM crm_lead_notes WHERE wa_id = '971509990000'")).length, 1);
 });
+
+test('review fixes (3): refused posts don\'t use up a website\'s form limit; history merges atomically; old rows are cleaned up', async () => {
+  // 10 honeypot posts from one address, then a real visitor behind the same IP: accepted.
+  for (let i = 0; i < 10; i++) assert.strictEqual((await form({ name: 'Bot', phone: '0501234567', company_url: 'x' })).status, 202);
+  assert.strictEqual((await form({ name: 'Real visitor', phone: '0501234567' })).status, 202);
+  assert.strictEqual((await many('SELECT wa_id FROM leads WHERE wa_id = $1', [DUBAI])).length, 1);
+
+  // Two submissions for the same existing lead at once: both land in the history.
+  await Promise.all([api({ name: 'A', phone: DUBAI, source: 'bayut', sourceRef: 'X1' }), api({ name: 'A', phone: DUBAI, source: 'dubizzle', sourceRef: 'X2' })]);
+  const m = (await one('SELECT metadata FROM leads WHERE wa_id = $1', [DUBAI])).metadata;
+  assert.deepStrictEqual(m.intake_history.map(x => x.source).sort(), ['bayut', 'dubizzle', 'website']);
+  assert.strictEqual(m.intake_first.source, 'website');
+
+  // Housekeeping removes submissions older than 90 days, for every client.
+  await asAcme(() => db.query("UPDATE intake_submissions SET received_at = now() - interval '91 days' WHERE source = 'dubizzle'"));
+  const removed = await tenancy.runAsSystem(() => require('../src/services/leadIntake').cleanup(90));
+  assert.strictEqual(removed, 1);
+  assert.strictEqual((await many("SELECT id FROM intake_submissions WHERE source = 'dubizzle'")).length, 0);
+});

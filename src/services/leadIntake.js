@@ -103,7 +103,8 @@ async function accept({ channel, body, ipHash = null, businessName = '' }) {
   // Website forms are limited per IP and per phone (signed calls only get the duplicate check).
   if (channel === 'form') {
     const c = await db.one(`SELECT
-        (SELECT COUNT(*) FROM intake_submissions WHERE id < $3 AND channel = 'form' AND ip_hash = $1 AND received_at > now() - interval '1 hour')::int AS ip,
+        (SELECT COUNT(*) FROM intake_submissions WHERE id < $3 AND channel = 'form' AND ip_hash = $1 AND status IN ('accepted', 'limited')
+          AND received_at > now() - interval '1 hour')::int AS ip, -- refused posts (bad key, honeypot, 400s) have their own limit
         (SELECT COUNT(*) FROM intake_submissions WHERE id < $3 AND channel = 'form' AND wa_id = $2 AND status = 'accepted' AND received_at > now() - interval '1 day')::int AS phone`,
     [ipHash, input.phone, claim.id]);
     if (c.ip >= LIMITS.formPerIpPerHour || c.phone >= LIMITS.formPerPhonePerDay) {
@@ -147,8 +148,16 @@ async function handle({ input, cfg, businessName, channel }) {
     if (!lead) lead = await findLead(input.phone);
   }
   if (!isNew) {
-    lead = await db.one(`UPDATE leads SET metadata = $2::jsonb, display_name = COALESCE(display_name, $3), updated_at = now()
-      WHERE wa_id = $1 RETURNING *`, [lead.wa_id, JSON.stringify(withIntake(lead.metadata, entry)), input.name || null]);
+    // One UPDATE that merges in SQL: two submissions for the same lead at once can't overwrite each
+    // other (Postgres re-reads the locked row for the second one). Same result as withIntake().
+    lead = await db.one(`UPDATE leads SET display_name = COALESCE(display_name, $3), updated_at = now(),
+        metadata = metadata || jsonb_build_object(
+          'intake', $2::jsonb,
+          'intake_first', COALESCE(metadata -> 'intake_first', metadata -> 'intake', $2::jsonb),
+          'intake_history', (SELECT COALESCE(jsonb_agg(e ORDER BY ord), '[]'::jsonb) FROM (
+            SELECT e, ord FROM jsonb_array_elements(COALESCE(metadata -> 'intake_history', '[]'::jsonb) || jsonb_build_array($2::jsonb))
+              WITH ORDINALITY AS h(e, ord) ORDER BY ord DESC LIMIT $4) last))
+      WHERE wa_id = $1 RETURNING *`, [lead.wa_id, JSON.stringify(entry), input.name || null, HISTORY_KEEP]);
   }
   const waId = lead.wa_id;
 
@@ -201,4 +210,10 @@ async function handle({ input, cfg, businessName, channel }) {
   logger.info('Lead intake accepted', { channel, source: input.source, new_lead: isNew, wa_suffix: waId.slice(-4) });
 }
 
-module.exports = { accept, clean, recordRefused, tooManyFailures, AUTH_REFUSALS, withIntake, SOURCES, SOURCE_LABELS, LIMITS };
+/** Daily clean-up (src/server.js housekeeping, all tenants): submissions older than `days`. */
+async function cleanup(days = 90) {
+  const r = await db.query(`DELETE FROM intake_submissions WHERE received_at < now() - ($1 || ' days')::interval`, [String(days)]);
+  return r.rowCount;
+}
+
+module.exports = { accept, cleanup, clean, recordRefused, tooManyFailures, AUTH_REFUSALS, withIntake, SOURCES, SOURCE_LABELS, LIMITS };

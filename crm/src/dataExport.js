@@ -85,6 +85,7 @@ function readme({ businessName, currency, when, counts }) {
     ...FILES.map(f => `- ${f.name} (${counts[f.name]}): ${f.about}`),
     '',
     'Every file is UTF-8 CSV with a header row. Leads are linked across files by wa_id.',
+    'A cell that starts with = + - or @ (for example a message like "- 2 months free?") has an apostrophe added in front, so a spreadsheet never runs it as a formula. Ignore that apostrophe: the rest is exactly what was written.',
     ''
   ].join('\r\n');
 }

@@ -59,6 +59,7 @@ test('R19 owner downloads every table as CSV in one ZIP; logged; no secrets', as
     assert.match(files['outcomes.csv'], /,joined,Monthly,7080,/);
     assert.match(files['notes.csv'], /"'=cmd\|calc, ""quoted""\nsecond line"/); // formula made inert, quotes and new line kept
     assert.match(files['README.txt'], /Amounts are whole units of INR\./);
+    assert.match(files['README.txt'], /has an apostrophe added in front/); // the formula guard is explained
     assert.match(files['README.txt'], new RegExp(`leads\\.csv \\(${leadsCount}\\)`));
 
     // No password hashes, sessions or tokens anywhere.

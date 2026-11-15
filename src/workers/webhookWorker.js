@@ -18,6 +18,7 @@ const gymConfig = require('../config/gymConfig');
 const businessProfile = require('../services/businessProfile');
 const logger = require('../utils/logger');
 const { captureException } = require('../utils/sentry');
+const optOut = require('../services/optOut');
 
 /** Text the lead actually sent, including taps on buttons and list items. */
 function textOf(msg) {
@@ -84,6 +85,30 @@ async function processEvent(event) {
         text: text !== null ? text : `[${String(msg.type || 'unknown').toUpperCase()} message]`
       });
     }
+    // K30: STOP is handled before anything else (even a burst or staff pause), with a fixed
+    // reply and no AI. START, or any other message from an opted-out lead, opts them back in.
+    // Typed text only: a button or list title is the business's wording, never an opt-out.
+    const optKind = msg.type === 'text' && text !== null ? optOut.classify(text) : null;
+    if (optKind === 'stop' || (optKind === 'start' && lead.opted_out_at)) {
+      await leadRepository.setOptedOut(waId, optKind === 'stop');
+      logger.info(optKind === 'stop' ? 'Lead opted out' : 'Lead opted back in', { wa_id: waId });
+      whatsappService.markReadWithTyping(msg.id, { typing: false });
+      await outboundRepository.enqueue({ dedupKey: replyKey, waId, text: optOut.replyFor(optKind, text), metadata: { in_reply_to: msg.id, opt_out: optKind } });
+      if (outboundWorker.running) outboundWorker.kick();
+      await eventRepository.complete(event.id);
+      return;
+    }
+    if (lead.opted_out_at) {
+      if (optOut.isAcknowledgement(text)) { // "ok", "thanks", 👍 after STOP: stay opted out, no reply
+        whatsappService.markReadWithTyping(msg.id, { typing: false });
+        logger.info('Opted-out lead acknowledged; no reply', { wa_id: waId });
+        await eventRepository.complete(event.id);
+        return;
+      }
+      await leadRepository.setOptedOut(waId, false); // they wrote to us again
+      logger.info('Lead opted back in by messaging', { wa_id: waId });
+    }
+
     // A newer text from the same lead is waiting: let that one answer the whole burst.
     if (text !== null && await eventRepository.hasNewerText(waId, event.id)) {
       logger.info('Burst: answering with the next message', { wa_id: waId });

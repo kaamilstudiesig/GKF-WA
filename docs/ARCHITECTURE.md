@@ -81,7 +81,7 @@ flowchart TB
 | Staff CRM | `crm/` | Roles owner/manager/sales, chat, pipeline, notes, follow-ups, reports, CSV |
 | Business facts + AI prompt | `business_profile` table → `src/config/gymConfig.js` (live view) + `src/config/verticals.js` (selling method per business type) | Edited on the CRM's owner-only **Business settings** page; the prompt and fixed answers are generated from it |
 | Migrations | `src/db/schema.js`, `crm/src/migrations.js` | Run in Heroku's release phase and on boot, under advisory locks |
-| Backups | Heroku PG daily schedule + `scripts/backup.js` to Telegram | |
+| Backups | Daily encrypted backup made by the web dyno (`src/services/dailyBackup.js`) to private Cloudflare R2, EU (K28). Heroku `pg:backups` can't dump this database (forced row-level security) | |
 
 ## 3. Life of a WhatsApp message
 
@@ -232,6 +232,7 @@ src/
   workers/               queueWorker base, inbound (webhookWorker), outbound, Conversions API, Zoho sync
   services/
     deterministicRouter  fixed answers, language detection, buttons
+    optOut               STOP / START (K30): fixed reply, blocks templates to opted-out leads
     aiService            prompt building, OpenRouter call, JSON parsing, cleanup
     aiPolicy             what the AI may change; medical safety check
     botGuard             staff pause + per-lead daily cap

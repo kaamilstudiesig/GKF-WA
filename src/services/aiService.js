@@ -134,10 +134,18 @@ class AIService {
   /**
    * K29: OpenRouter only routes to providers that don't store or train on the text
    * (data_collection 'deny'), and with OPENROUTER_ZDR on, only to zero-retention ones.
-   * If no provider of a model qualifies, OpenRouter answers 404 and the fallback model is tried.
+   * If no provider of a model qualifies, OpenRouter answers 404: the fallback model is tried and
+   * the model is skipped for 10 minutes. Turning ZDR off changes the privacy page wording.
    */
   static providerPrefs() {
     return env.openRouterZdr ? { data_collection: 'deny', zdr: true } : { data_collection: 'deny' };
+  }
+
+  /** OpenRouter's 404 "no endpoints found matching your data policy" (not a wrong model id). */
+  static isPolicyMiss(err) {
+    if (err?.response?.status !== 404) return false;
+    const text = `${err.response?.data?.error?.message || ''} ${err.message || ''}`;
+    return /data policy|privacy|zero data retention|\bzdr\b/i.test(text);
   }
 
   static isTransient(err) {
@@ -241,21 +249,35 @@ class AIService {
     let message = null;
     let usedModel = env.openRouterModel;
     let lastError = null;
-    const models = [env.openRouterModel];
+    let models = [env.openRouterModel];
     if (env.openRouterFallbackModel && env.openRouterFallbackModel !== env.openRouterModel) models.push(env.openRouterFallbackModel);
+    // A model that just had no provider meeting our data policy is skipped for a while (no wasted call).
+    const now = Date.now();
+    if (models.length > 1) {
+      const usable = models.filter(m => !(AIService.policyMisses.get(m) > now));
+      if (usable.length) models = usable;
+    }
 
     for (const [i, model] of models.entries()) {
       try {
         message = await this.callModel(model, messages, { requestId: i ? `${requestId}_fallback` : requestId, timeoutMs: i ? 12000 : 15000, user });
         usedModel = model;
+        AIService.policyMisses.delete(model);
         break;
       } catch (err) {
         lastError = err;
+        if (AIService.isPolicyMiss(err)) {
+          // K29: no provider of this model meets our data policy. Report once per window, then try the fallback.
+          if (!(AIService.policyMisses.get(model) > now)) {
+            captureException(err, { component: 'openrouter_ai', model, status: 404, reason: 'data_policy_no_provider' });
+          }
+          AIService.policyMisses.set(model, now + AIService.POLICY_MISS_MS);
+          logger.warn('AI model has no provider meeting the data policy (K29)', { model, error: err.message });
+          continue;
+        }
         captureException(err, { component: 'openrouter_ai', model, status: err.response?.status || 'network_error' });
         logger.warn('AI model call failed', { model, status: err.response?.status, error: err.message });
-        // Bad request/auth: the fallback would fail the same way. A 404 means no provider of this
-        // model meets our data policy (K29), so the fallback model is still worth a try.
-        if (!AIService.isTransient(err) && err.response?.status !== 404) break;
+        if (!AIService.isTransient(err)) break; // bad request/auth: the fallback would fail the same way
       }
     }
 
@@ -315,5 +337,7 @@ class AIService {
 }
 
 module.exports = new AIService();
+AIService.policyMisses = new Map(); // model -> skip until (ms)
+AIService.POLICY_MISS_MS = 10 * 60 * 1000;
 module.exports.AIService = AIService;
 module.exports.AI_TOOLS = AI_TOOLS;

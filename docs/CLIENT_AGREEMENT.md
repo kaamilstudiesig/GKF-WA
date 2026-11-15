@@ -32,7 +32,7 @@ Checked against the code on 14 Nov 2026. "Before signing" means it must be done 
 | The Analyser | 3.2 | Not built | K21 |
 | Weekly reports | 3.2 | Not built | R7 |
 | Agency dashboard across Workspaces | A2 | White-label per client built (R12); cross-client dashboard not built | R9 |
-| Leads from website forms and portals | 3.3 | Contract agreed | R16 |
+| Leads from website forms and portals | 3.3 | Built (PR `r16-lead-intake`): signed endpoint for portals and a website form snippet. Portal adapters (Property Finder, Bayut, Dubizzle) once the client names them | R16 |
 | Meta lead forms | 3.3 | Not built | K6 |
 | Instagram DM capture (one reply that moves the lead to WhatsApp) | 3.3 | Not built | K32 |
 | Connect the client's WhatsApp through Meta's signup flow | 3.5, 3.13 | Not built (manual setup today) | K9 |

@@ -38,6 +38,73 @@
   <button class="btn btn-primary w-full sm:w-auto" type="submit">Save lead queue</button>
 </form>
 
+<% if (intake) { %>
+<section class="<%= card %> mb-4 scroll-mt-20 space-y-3" id="lead-sources">
+  <div class="flex items-center justify-between gap-2">
+    <h2>Lead sources</h2>
+    <span class="badge <%= intake.formKey || intake.hasSecret ? 'badge-success' : 'badge-ghost' %> badge-soft"><%= intake.formKey || intake.hasSecret ? 'On' : 'Off' %></span>
+  </div>
+  <p class="text-sm text-base-content/60">Leads from your website form and property portals land here like WhatsApp leads: a lead, a hand-off to your team, and (with their consent) a WhatsApp welcome message. Leads need a phone number.</p>
+
+  <fieldset class="fieldset py-0"><legend class="fieldset-legend">Address that receives leads</legend>
+    <input readonly value="<%= intake.endpoint %>" class="input input-sm w-full font-mono" aria-label="Lead intake address" data-select>
+    <% if (!intake.botBaseUrl) { %><p class="label whitespace-normal text-warning">Your setup contact still needs to set the bot's web address (BOT_BASE_URL).</p><% } %></fieldset>
+
+  <form method="post" action="/settings/intake" class="grid gap-3 sm:grid-cols-2">
+    <%- include('partials/csrf') %>
+    <fieldset class="fieldset py-0 sm:col-span-2"><legend class="fieldset-legend">Websites allowed to send the form (one per line)</legend>
+      <textarea name="origins" rows="2" placeholder="https://www.example.com" class="textarea w-full font-mono text-sm"><%= intake.origins.join('\n') %></textarea>
+      <p class="label whitespace-normal">Only these sites can post the form below. Use the address people see in the browser.</p></fieldset>
+    <fieldset class="fieldset py-0"><legend class="fieldset-legend">Country code for local numbers</legend>
+      <input name="phone_country" inputmode="numeric" maxlength="4" value="<%= intake.phoneCountry %>" class="input w-full">
+      <p class="label whitespace-normal">91 for India, 971 for the UAE. "050 123 4567" then becomes +971 50 123 4567.</p></fieldset>
+    <button class="btn btn-primary sm:self-start sm:justify-self-end sm:mt-7" type="submit">Save lead sources</button>
+  </form>
+
+  <div class="rounded-field bg-base-200 p-3 text-sm">
+    <p class="font-medium">WhatsApp welcome message</p>
+    <p class="text-base-content/60"><% if (intake.welcomeTemplate) { %>On: new form leads who agree get the approved message "<%= intake.welcomeTemplate %>" on WhatsApp.<% } else { %>Off until your setup contact adds an approved WhatsApp template. Until then, your team follows these leads up themselves.<% } %></p>
+  </div>
+
+  <div class="space-y-2 border-t border-base-300 pt-3">
+    <p class="text-sm font-medium">Website form</p>
+    <% if (intake.snippet) { %>
+    <p class="text-sm text-base-content/60">Paste this where the form should appear on your website. Edit the wording and style freely; keep the field names.</p>
+    <textarea readonly rows="8" class="textarea w-full font-mono text-xs" aria-label="Website form code" data-select><%= intake.snippet %></textarea>
+    <% } else { %><p class="text-sm text-base-content/60">Make a form key to get the code for your website.</p><% } %>
+    <form method="post" action="/settings/intake/form-key" <% if (intake.formKey) { %>data-confirm="Forms already on your website stop working until you paste the new code. Continue?"<% } %>>
+      <%- include('partials/csrf') %>
+      <button class="btn btn-sm" type="submit"><%= intake.formKey ? 'Make a new form key' : 'Make a form key' %></button>
+    </form>
+  </div>
+
+  <div class="space-y-2 border-t border-base-300 pt-3">
+    <p class="text-sm font-medium">Portals and other systems</p>
+    <p class="text-sm text-base-content/60">They send signed JSON to the address above (header <code>X-Intake-Signature: sha256=…</code>, an HMAC-SHA256 of the body with this secret).</p>
+    <% if (typeof newIntakeSecret !== 'undefined' && newIntakeSecret) { %>
+    <div role="alert" class="alert alert-warning alert-soft text-sm"><div class="min-w-0 space-y-1"><p>Copy this secret now. It is not shown again.</p>
+      <input readonly value="<%= newIntakeSecret %>" class="input input-sm w-full font-mono" aria-label="New signing secret" data-select></div></div>
+    <% } else { %><p class="text-sm"><%= intake.hasSecret ? 'A signing secret is set.' : 'No signing secret yet.' %></p><% } %>
+    <form method="post" action="/settings/intake/secret" <% if (intake.hasSecret) { %>data-confirm="The old secret stops working at once. Continue?"<% } %>>
+      <%- include('partials/csrf') %>
+      <button class="btn btn-sm" type="submit"><%= intake.hasSecret ? 'Make a new secret' : 'Make a signing secret' %></button>
+    </form>
+  </div>
+
+  <div class="space-y-2 border-t border-base-300 pt-3">
+    <p class="text-sm font-medium">Last 20 submissions</p>
+    <% if (!intake.recent.length) { %><p class="text-sm text-base-content/60">Nothing received yet.</p><% } else { %>
+    <ul class="list rounded-field bg-base-200 text-sm">
+      <% for (const s of intake.recent) { %><li class="list-row items-center">
+        <div class="min-w-0"><% if (s.wa_id && s.status === 'accepted') { %><a class="link link-hover font-medium" href="/leads/<%= s.wa_id %>"><%= s.display_name || ('+' + s.wa_id) %></a><% } else { %><span class="font-medium"><%= s.wa_id ? '+' + s.wa_id : 'No valid phone' %></span><% } %>
+          <div class="truncate text-xs text-base-content/60"><%= util.intakeLabel('intake_' + (s.source || 'other')) %> · <%= util.timeAgo(s.received_at) %><%= s.error ? ' · ' + s.error : '' %></div></div>
+        <span class="badge badge-xs badge-soft <%= { accepted: 'badge-success', duplicate: 'badge-ghost', rejected: 'badge-error', limited: 'badge-warning' }[s.status] %>"><%= { accepted: 'Added', duplicate: 'Repeat', rejected: 'Refused', limited: 'Too many' }[s.status] %></span>
+      </li><% } %>
+    </ul><% } %>
+  </div>
+</section>
+<% } %>
+
 <section class="<%= card %> mb-4" id="zoho">
   <div class="flex items-center justify-between gap-2">
     <h2>Zoho CRM</h2>

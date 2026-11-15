@@ -83,4 +83,11 @@ class Params {
   p(value) { this.values.push(value); return `$${this.values.length}`; }
 }
 
-module.exports = { Params, localInputToIso, localDay, fmtDate, fmtTime, dayLabel, timeAgo, cleanWaId, leadPhone, contactLabel, leadTitle, humanize, tzOffsetMs };
+// R16: where an intake lead came from (leads.source "intake_<source>"); null for other sources.
+const INTAKE_LABELS = { website: 'Website form', property_finder: 'Property Finder', bayut: 'Bayut', dubizzle: 'Dubizzle', other: 'Portal' };
+function intakeLabel(source) {
+  const m = /^intake_([a-z_]+)$/.exec(String(source || ''));
+  return m ? (INTAKE_LABELS[m[1]] || 'Form') : null;
+}
+
+module.exports = { intakeLabel, Params, localInputToIso, localDay, fmtDate, fmtTime, dayLabel, timeAgo, cleanWaId, leadPhone, contactLabel, leadTitle, humanize, tzOffsetMs };

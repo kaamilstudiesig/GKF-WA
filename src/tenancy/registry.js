@@ -23,7 +23,9 @@ const HOST_RE = /^(?=.{1,253}$)([a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z0-9-]{
 const SECRET_KEYS = ['metaAccessToken', 'metaAppSecret', 'metaVerifyToken', 'razorpayKeyId', 'razorpayKeySecret', 'razorpayWebhookSecret',
   'zohoClientId', 'zohoClientSecret', 'zohoRefreshToken',
   // K9 Embedded Signup: the number's two-step verification PIN we set when registering it.
-  'metaTwoStepPin'];
+  'metaTwoStepPin',
+  // R16: signs server-to-server lead intake (portals, Zapier). Regenerated on Business settings.
+  'intakeSecret'];
 const SETTING_KEYS = ['crmBaseUrl', 'telegramChatId', 'telegramOpsChatId', 'metaDatasetId', 'metaPageId', 'metaCapiTestEventCode',
   'botPauseHours', 'dailyReplyCap', 'aiMonthlyTokenBudget', 'aiMonthlyRequestBudget', 'staffAlertTemplate',
   // K20 Zoho CRM sync (scripts/zoho-connect.js sets these). No env fallback, tenant 1 included:
@@ -33,7 +35,10 @@ const SETTING_KEYS = ['crmBaseUrl', 'telegramChatId', 'telegramOpsChatId', 'meta
   // R14: a demo client (portfolio). Only demo clients can be filled with sample data in production.
   'demo',
   // K9: how the WhatsApp number was connected and which setup steps are done (src/services/embeddedSignup.js).
-  'whatsappSetup'];
+  'whatsappSetup',
+  // R16 lead intake: the website form's public key and allowed origins, the country code for local
+  // phone numbers ("91", "971"), and the approved welcome template (empty = no welcome message).
+  'intakeFormKey', 'intakeOrigins', 'phoneCountry', 'leadWelcomeTemplate'];
 
 // Our lead status -> Zoho's standard Lead Status values. A client can override any of them (zohoStatusMap).
 const ZOHO_STATUS_MAP = {
@@ -113,6 +118,14 @@ function resolve(entry) {
       aiMonthlyRequestBudget: limit(s.aiMonthlyRequestBudget, env.aiMonthlyRequestBudget)
     },
     staffAlertTemplate: s.staffAlertTemplate || env.staffAlertTemplate,
+    // R16: lead intake from portals and website forms (src/routes/intake.js).
+    intake: {
+      secret: sec.intakeSecret || '',
+      formKey: s.intakeFormKey || '',
+      origins: (Array.isArray(s.intakeOrigins) ? s.intakeOrigins : []).map(o => String(o).trim().toLowerCase().replace(/\/+$/, '')).filter(Boolean),
+      phoneCountry: /^[1-9][0-9]{0,3}$/.test(String(s.phoneCountry || '')) ? String(s.phoneCountry) : '91',
+      welcomeTemplate: s.leadWelcomeTemplate || ''
+    },
     zoho: {
       on: s.zohoSync === 'on' && Boolean(sec.zohoClientId && sec.zohoClientSecret && sec.zohoRefreshToken),
       accountsUrl: String(s.zohoAccountsUrl || 'https://accounts.zoho.com').replace(/\/+$/, ''),

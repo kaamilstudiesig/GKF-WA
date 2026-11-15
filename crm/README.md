@@ -133,6 +133,16 @@ Staff install the CRM on their phone from their own CRM host. It opens full scre
 
 Each person sees only their own leads, as everywhere else. Logging any outcome takes the lead off the list until the bot opens a new hand-off. A hand-off staff resolved without logging an outcome still counts (that is the gap this closes); the 2-hour and 30-day bounds are inclusive. **Limit:** a hot lead with no hand-off is timed from its first message (we don't store when it turned hot), so it is tracked only for 30 days after first contact; one that first wrote 5 weeks ago and turned hot yesterday doesn't show. Leads that need a person almost always get a hand-off from the bot, which restarts the clock.
 
+## Lead sources (R16)
+
+Leads from website forms and property portals (contract in `docs/TEAM.md`, "R16: lead intake"). The endpoint is on the bot host: `POST /intake/<slug>` (`src/routes/intake.js`, `src/services/leadIntake.js`).
+
+- **Portals and other systems** send signed JSON (`X-Intake-Signature: sha256=<HMAC of the body with the client's secret>`): `{ name, phone, email, message, source, sourceRef, utm, consent }`, `source` one of website, property_finder, bayut, dubizzle, other.
+- **Website form**: the snippet on **Business settings → Lead sources** posts urlencoded (no CORS preflight) with the public form key, only from the allowed websites; a hidden honeypot field drops bots silently. 10 per IP per hour and 3 per phone per day, counted in `intake_submissions` so they hold across dynos.
+- **What happens:** a phone is required (local numbers get the client's country code). The lead is matched by phone or created (`source` = `intake_<source>`, `metadata.intake`), with `last_inbound_message_at` NULL, so its reply window stays closed until it writes on WhatsApp. The message becomes a note shown as **Lead form**. A `form_lead` hand-off goes to the lead queue and alerts staff (one per lead while one is open). With consent and the client's approved template (`leadWelcomeTemplate`), one WhatsApp welcome per phone per 24 hours, never during a live chat. The same `sourceRef` within 24 hours does nothing.
+- **Business settings → Lead sources** (owner): the address, allowed websites, country code, welcome status, form key + snippet, signing secret (regenerate only, shown once, stored encrypted), and the last 20 submissions (Added, Repeat, Refused, Too many). Each change is in the activity log.
+- **On leads:** a source badge (Website form, Bayut…) on lead cards, the pipeline and the lead page. Lists sort leads with no WhatsApp message after those that wrote (`NULLS LAST`).
+
 ## Roles
 
 | | Owner | Manager | Sales |

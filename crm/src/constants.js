@@ -5,7 +5,8 @@ const LEAD_STATUSES = ['new', 'contacted', 'qualified', 'hot', 'cold', 'converte
 const HANDOFF_REASONS = [
   'ready_to_book', 'price_negotiation', 'custom_program', 'injury_question',
   'human_requested', 'complaint', 'rate_limit_exceeded', 'ai_service_unavailable',
-  'ai_network_error', 'budget_exceeded', 'other'
+  'ai_network_error', 'budget_exceeded', 'other',
+  'form_lead' // R16: a lead from a website form or portal (never chosen by the AI)
 ];
 
 const ROLES = ['owner', 'manager', 'sales'];

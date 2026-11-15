@@ -102,6 +102,15 @@ If the client uses Zoho (see [TEAM.md](TEAM.md#zoho-crm-sync-k20-built)), with t
 3. Within those 10 minutes, where `DATABASE_URL` and `TENANT_SECRETS_KEY` are set: `ZOHO_CLIENT_ID=… ZOHO_CLIENT_SECRET=… ZOHO_CODE=… npm run zoho -- --tenant <slug> connect --accounts https://accounts.zoho.in --id-field Lead_Engine_ID` (add `--pipeline "<name>"` if their Deals use pipelines, `--won-stage`/`--lost-stage` if their stage names differ from Closed Won / Closed Lost). It prints the Zoho organisation name and currency when it works.
 4. `npm run zoho -- --tenant <slug> backfill --days 30` sends recent leads; `status` shows progress and errors.
 
+## Website form and portals (R16)
+
+If the client gets leads from their website or property portals:
+
+1. On **Business settings → Lead sources** (as the owner): add their website address(es), set the country code for local numbers (91 India, 971 UAE), and **Make a form key**. Send the **Website form** code to whoever runs their website; it needs a phone number, and it asks for WhatsApp consent.
+2. For a portal or Zapier: **Make a signing secret** (shown once) and give the portal the address and secret. They send signed JSON (`docs/TEAM.md`, R16).
+3. WhatsApp welcome message: create `lead_welcome` on the client's WhatsApp account, and once Meta approves it set `leadWelcomeTemplate` for the client (`npm run tenant -- set <slug> <file.json>` with `{ "settings": { "leadWelcomeTemplate": "lead_welcome" } }`). Until then, form leads get a hand-off but no WhatsApp message.
+4. Test with the client: submit the form once, check the lead, the hand-off and **Last 20 submissions**.
+
 ## Test checklist
 
 From a phone that has never chatted with the number, send each and check the reply and the CRM:

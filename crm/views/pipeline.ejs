@@ -43,6 +43,7 @@
           <% if (col.stage === 'visit_booked' && l.visit_at) { %><span class="badge badge-ghost badge-xs"><%= util.fmtDate(l.visit_at) %></span><% } %>
           <% if (col.stage === 'joined' && l.joined_amount) { %><span class="badge badge-success badge-soft badge-xs">₹<%= Number(l.joined_amount).toLocaleString('en-IN') %></span><% } %>
           <% if (l.ad) { %><span class="badge badge-ghost badge-xs"><%= cap(l.ad.platform || 'meta') %> ad</span><% } %>
+          <% if (util.intakeLabel(l.source)) { %><span class="badge badge-info badge-soft badge-xs"><%= util.intakeLabel(l.source) %></span><% } %>
           <span class="ml-auto text-[11px] text-base-content/50"><%= l.assignee_name || 'Unassigned' %></span>
         </div>
         <%# Move menu: the phone way to change stage (desktop drags). Works without JS. %>

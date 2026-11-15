@@ -36,4 +36,26 @@ function sendTarget(lead, key) {
   return null;
 }
 
-module.exports = { isBsuid, isPhone, toPhone, fromWebhook, newLeadKey, isLeadKey, sendTarget };
+/**
+ * A typed phone number as digits with the country code, or null.
+ * "+91 98450-12345" and "0091 98450 12345" -> "919845012345". With `country` (the client's
+ * code, "91" or "971"), local numbers work too: "98450 12345" -> "919845012345",
+ * "050 123 4567" -> "971501234567". Without it, only full international numbers are accepted
+ * (staff phones on the CRM). Moved here from crm/src/users.js for R16 lead intake.
+ */
+function normalizePhone(phone, country = null) {
+  const raw = String(phone || '').trim();
+  if (!raw) return null;
+  const compact = raw.replace(/[\s\-().]/g, '');
+  const international = /^(\+|00)/.test(compact);
+  let digits = compact.replace(/^\+/, '').replace(/^00/, '');
+  if (!/^[0-9]+$/.test(digits)) return null;
+  if (!international && country) {
+    const national = digits.replace(/^0+/, '');
+    // Already starts with the country code and is long enough to include it: keep it.
+    digits = national.startsWith(country) && national.length >= country.length + 8 ? national : country + national;
+  }
+  return /^[1-9][0-9]{9,14}$/.test(digits) ? digits : null;
+}
+
+module.exports = { isBsuid, isPhone, toPhone, fromWebhook, newLeadKey, isLeadKey, sendTarget, normalizePhone };

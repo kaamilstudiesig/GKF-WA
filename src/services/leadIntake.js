@@ -114,7 +114,8 @@ async function accept({ channel, body, ipHash = null, businessName = '' }) {
   // The first WhatsApp message: the approved welcome template, only with consent, never during a live
   // conversation, at most once per phone per 24 hours. K30 (opt-out) refuses it at send time for STOP leads.
   let welcome;
-  if (!input.consent) welcome = 'No WhatsApp consent on the form: not messaged.';
+  if (lead.opted_out_at) welcome = 'Opted out of WhatsApp (wrote STOP): not messaged.'; // K30; a form is not a WhatsApp message, so it stays opted out
+  else if (!input.consent) welcome = 'No WhatsApp consent on the form: not messaged.';
   else if (!cfg.welcomeTemplate) welcome = 'WhatsApp welcome not sent: template not set up.';
   else if (windowOpen(lead)) welcome = null; // they are chatting with us already
   else {

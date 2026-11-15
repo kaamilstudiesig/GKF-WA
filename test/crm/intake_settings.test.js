@@ -87,6 +87,9 @@ test('R16 form leads in the CRM: source badge, "Lead form" notes, window closed,
     assert.match(page, /<dd>Bayut<\/dd>/);
     assert.match(page, />Reply window closed</); // never wrote on WhatsApp: staff can't send free text
     assert.match(page, /id="reply"[^>]* disabled /);
+    assert.doesNotMatch(page, />Opted out</);
+    await ctx.db.query("UPDATE leads SET opted_out_at = now() WHERE wa_id = '971501230000'");
+    assert.match((await owner.agent.get('/leads/971501230000')).text, /badge-error badge-soft badge-sm" title="Wrote STOP[^"]*">Opted out</); // K30
     const list = (await owner.agent.get('/leads?sort=recent')).text;
     assert.match(list, /badge-info badge-soft badge-xs[^"]*">Bayut</);
     const order = [...list.matchAll(/href="\/leads\/([^"#?]+)"/g)].map(m => m[1]);

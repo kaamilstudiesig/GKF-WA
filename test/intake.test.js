@@ -190,3 +190,12 @@ test('one client\'s intake never touches another client', async () => {
   const gkf = registry.config(1);
   assert.strictEqual((await api({ phone: DUBAI, source: 'bayut' }, { slug: gkf.slug })).status, 401);
 });
+
+test('a lead who wrote STOP (K30) gets no welcome from a form, and stays opted out', async () => {
+  await asAcme(() => db.query(`INSERT INTO leads (wa_id, phone, status, last_inbound_message_at, opted_out_at)
+    VALUES ($1, $1, 'contacted', now() - interval '3 days', now() - interval '2 days')`, [DUBAI]));
+  assert.strictEqual((await api({ name: 'Stopper', phone: DUBAI, source: 'website', consent: true })).status, 202);
+  assert.strictEqual((await many("SELECT id FROM outbound_messages WHERE metadata ->> 'source' = 'intake'")).length, 0);
+  assert.match((await one('SELECT summary FROM handoffs WHERE wa_id = $1', [DUBAI])).summary, /Opted out of WhatsApp \(wrote STOP\)/);
+  assert.ok((await one('SELECT opted_out_at FROM leads WHERE wa_id = $1', [DUBAI])).opted_out_at);
+});

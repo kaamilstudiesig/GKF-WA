@@ -14,4 +14,14 @@ const webhookRateLimiter = rateLimit({
   skip: () => env.nodeEnv === 'test'
 });
 
-module.exports = { webhookRateLimiter };
+/** Connect pages (K9): a person clicks a few times at most. */
+const connectRateLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 30,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Too many attempts. Wait 15 minutes and try again.' },
+  skip: () => env.nodeEnv === 'test'
+});
+
+module.exports = { webhookRateLimiter, connectRateLimiter };

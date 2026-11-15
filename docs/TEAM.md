@@ -51,7 +51,7 @@ A possible large client wants the chatbot soon. Until this stage is done, it com
 | K15 | ✅ **New-client script** (`scripts/new-client.js`): create the Heroku app + Postgres, set config vars from a checklist file, run migrations, create the owner login, print the webhook URL and verify token | Kaamil | A second app goes live from one command and one config file |
 | K16 | ✅ **General business-type preset** in `verticals.js` (services / appointments / retail) plus the client's own type, so the AI sells correctly for a non-gym business | Kaamil | Prompt preview in Business settings reads right for the client's business |
 | K17 | ✅ **Per-client safety:** AI budget caps, client name in every ops alert and Sentry event, separate Telegram groups | Kaamil | An alert always says which client it is about |
-| K18 | 📝 (written, not yet tested) **Meta access path:** written steps to get WhatsApp access for a business that is not ours, before App Review approval (partner access to their WABA, or a system-user token from their own Business Manager). Check the 250 / 1K message tier and display-name approval early | Kaamil | Steps tested once on a test business |
+| K18 | Superseded by K9 (Tech Provider approved 15 Nov 2026); the client's-own-app fallback is in ONBOARDING.md. **Meta access path:** written steps to get WhatsApp access for a business that is not ours, before App Review approval (partner access to their WABA, or a system-user token from their own Business Manager). Check the 250 / 1K message tier and display-name approval early | Kaamil | Steps tested once on a test business |
 | R12 | ✅ **White-label CRM:** brand name, logo and colour from the business profile (login, header, page titles, reports text). Remove "GKF" and "Goldkraft" from all views; make the theme name generic | Krishna | No GKF text in `crm/views`; GKF still looks the same |
 | R13 | ✅ **Team setup for a big client:** bulk-add staff (CSV or a multi-row form), managers with teams, first-login password change | Krishna | Owner adds 20 staff in a few minutes |
 | R2 | Hot-lead queue (moved up from stage 2): a big team needs auto-assign and the 5-minute timer from day one | Krishna | Hand-offs reach a salesperson with no manual assigning |
@@ -306,7 +306,9 @@ Build order once agreed (after R15): tables and Projects page, then Send project
 4. **K24 Meta catalog** (with R17): catalog API, product messages from the bot, `catalog_management` on the client's token.
 5. **R15 bot side:** Conversions API events in the business's currency.
 6. **K5 ad spend import** (with R6), then **K21 analyser** on R5/R6 numbers. One AI call per report, not per lead.
-7. **K9 Embedded Signup** (with R8), **K7b** Conversions API on for GKF, then the GKF case study.
+7. ✅ **K9 Embedded Signup** built (App Review approved 15 Nov); set `META_APP_ID`, `META_ES_CONFIG_ID`, `BOT_BASE_URL` and test once on a spare number. Then **K7b** Conversions API on for GKF, then the GKF case study.
+
+**Contract: K9 ↔ R8 (Krishna's wizard).** The CRM gets an owner-only "Connect WhatsApp" button that opens `embeddedSignup.linkUrl(tenantId, { hours: 1 })` (bot host; the popup only works on that allow-listed domain). Show it only when `embeddedSignup.blockedReason(tenant)` is null. Read the result from `tenant.whatsapp.setup` (`mode`, `number`, `steps`, `lastError`); never touch tokens.
 
 **K25 phone sign-in (GKF handover, 12 Nov, PR #55, Kaamil, touches `crm/`):** staff sign in with phone or email. Changes in Krishna's area: login view, Staff page (sign-in phone per person and on Add staff), `Users.findByLogin` / `setLoginPhone` / `throttleKey`, platform migration 5 `login_phone`. Krishna to confirm. Bulk add (R13) does not take a sign-in phone yet.
 
@@ -370,7 +372,7 @@ Build order once agreed (after R15): tables and Projects page, then Send project
 | # | Task | Owner |
 | --- | --- | --- |
 | K8 | Tenants: `tenant_id` everywhere, row-level security, webhook routing by `phone_number_id`, per-tenant budgets and fair queues | Kaamil |
-| K9 | Embedded Signup v4 backend: code → token exchange, number registration, coexistence states | Kaamil |
+| K9 | ✅ built (PR `embedded-signup`): connect link + page on the bot host, code → token exchange, ownership check, webhook subscription, number registration, coexistence sync start, `tenant -- whatsapp-finish` retry. Steps in [ONBOARDING.md](ONBOARDING.md). To do: coexistence echoes/history in the CRM | Kaamil |
 | R8 | Onboarding wizard UI (profile, business-type preset, preview chat, team, dataset check, test checklist) | Krishna |
 | R9 | Agency dashboard + white-label (logo, domain) | Krishna |
 | R10 | Billing UI (Razorpay subscriptions). Not needed for the first clients: we invoice by hand and K26 gives the lead counts | Krishna |

@@ -74,6 +74,8 @@ All settings are environment variables; `.env.example` lists them with comments.
 | `META_ACCESS_TOKEN`, `META_PHONE_NUMBER_ID` | WhatsApp Cloud API credentials. |
 | `META_WEBHOOK_VERIFY_TOKEN` | Any secret string; the same value goes in Meta's webhook settings. |
 | `META_APP_SECRET` | Meta app secret, used to check webhook signatures. |
+| `META_APP_ID`, `META_ES_CONFIG_ID` | Our Meta app id and the Facebook Login for Business configuration id. Both set: clients connect their own WhatsApp number from a connect link (K9, [ONBOARDING.md](ONBOARDING.md)). |
+| `BOT_BASE_URL` | Public https address of the bot host (e.g. `https://wa.goldkraftfitness.com`), used in connect links. Must be an allowed JavaScript SDK domain in the Meta app. |
 | `OPENROUTER_API_KEY` | OpenRouter key. |
 | `OPENROUTER_MODEL`, `OPENROUTER_FALLBACK_MODEL` | Default `deepseek/deepseek-v4.1-flash`, fallback `google/gemini-3.5-flash-lite` (chosen from a 16-model test on GKF lead scenarios, Oct 2026). |
 | `AI_MONTHLY_TOKEN_BUDGET`, `AI_MONTHLY_REQUEST_BUDGET` | Monthly AI limits. |

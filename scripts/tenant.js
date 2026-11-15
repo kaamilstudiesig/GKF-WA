@@ -7,6 +7,9 @@
  *   npm run tenant -- set acme clients/acme.json # change settings or secrets (merged)
  *   npm run tenant -- suspend acme               # stops replies, alerts and CRM access
  *   npm run tenant -- activate acme
+ *   npm run tenant -- connect-link acme [hours] [--app-number]  # K9: link where the client connects its WhatsApp (default 72h);
+ *                                                # --app-number also allows a number on the WhatsApp Business app
+ *   npm run tenant -- whatsapp-finish acme       # K9: retry setup steps that failed after connecting
  *
  * On Heroku: heroku run npm run tenant -- list -a gkf-wa
  * (copy the JSON file in with `heroku run bash` or pass the values as below).
@@ -20,8 +23,9 @@ const { migrateAll } = require('../src/migrate');
 const tenancy = require('../src/tenancy/context');
 const registry = require('../src/tenancy/registry');
 const businessProfile = require('../src/services/businessProfile');
+const embeddedSignup = require('../src/services/embeddedSignup');
 
-const USAGE = 'Usage: npm run tenant -- list | add <file.json> | set <slug> <file.json> | suspend <slug> | activate <slug>';
+const USAGE = 'Usage: npm run tenant -- list | add <file.json> | set <slug> <file.json> | suspend <slug> | activate <slug> | connect-link <slug> [hours] [--app-number] | whatsapp-finish <slug>';
 
 /** A tenant from the JSON file format (clients/tenant.example.json). Empty values are dropped. */
 function fromFile(file) {
@@ -41,6 +45,8 @@ function show(t) {
     waba_id: t.whatsapp.wabaId || '(not set)',
     crm: t.crm.host || (t.isDefault ? 'CRM_HOSTS' : '(not set)'),
     token: t.whatsapp.accessToken ? 'set' : 'missing',
+    connected_via: t.whatsapp.setup ? `connect link (${t.whatsapp.setup.mode}${t.whatsapp.setup.lastError ? ', step failed' : ''})` : (t.whatsapp.phoneNumberId ? 'manual' : '-'),
+    token_expires: t.whatsapp.setup ? (t.whatsapp.setup.tokenExpiresAt ? t.whatsapp.setup.tokenExpiresAt.slice(0, 10) : 'never') : '-',
     app_secret: t.whatsapp.appSecret ? 'set' : 'missing',
     staff_alerts_telegram: t.telegram.chatId ? 'set' : 'off',
     payments: t.razorpay.keyId ? 'set' : 'off'
@@ -50,11 +56,11 @@ function show(t) {
 function nextSteps(t, verifyToken) {
   const host = process.env.HEROKU_APP_NAME ? `${process.env.HEROKU_APP_NAME}.herokuapp.com` : '<this app host>';
   return `
-Next steps for ${t.name} (${t.slug}):
-1. Meta webhook (the client's own Meta app, path A): callback URL
-     https://${host}/webhook/${t.slug}
-   verify token: ${verifyToken ? verifyToken : '(the one you stored)'}
-   Subscribe the fields: messages, account_update, phone_number_quality_update, account_alerts.
+Next steps for ${t.name} (${t.slug}) (docs/ONBOARDING.md):
+1. WhatsApp: send the client a connect link: npm run tenant -- connect-link ${t.slug}
+   (only if they use their own Meta app instead: webhook https://${host}/webhook/${t.slug},
+    verify token: ${verifyToken ? verifyToken : '(the one you stored)'},
+    fields: messages, account_update, phone_number_quality_update, account_alerts)
 2. CRM address: heroku domains:add ${t.crm.host || '<crm host>'} -a <app>, then point DNS at the target it prints.
 3. Owner login: npm run crm:owner -- --tenant ${t.slug} "Owner Name" owner@client.com
 4. Business facts: log in to the CRM -> Business settings. Until then the assistant uses placeholders.
@@ -62,7 +68,9 @@ Next steps for ${t.name} (${t.slug}):
 }
 
 async function main() {
-  const [cmd, a, b] = process.argv.slice(2);
+  const argv = process.argv.slice(2);
+  const appNumbers = argv.includes('--app-number');
+  const [cmd, a, b] = argv.filter(x => x !== '--app-number');
   if (!cmd) throw new Error(USAGE);
   await migrateAll();
   await registry.load();
@@ -95,6 +103,30 @@ async function main() {
     console.log('Tenant updated:'); console.table([show(t)]);
     return;
   }
+  if (cmd === 'connect-link') {
+    const tenant = await registry.bySlug(a);
+    if (!tenant) throw new Error(`No tenant "${a}"`);
+    const blocked = embeddedSignup.blockedReason(tenant);
+    if (blocked) throw new Error(blocked);
+    if (b && !/^[0-9]+$/.test(b)) throw new Error(`Give hours as a whole number, like 48 (got "${b}").`);
+    const hours = b ? Number(b) : embeddedSignup.LINK_HOURS;
+    if (hours < 1 || hours > 24 * 14) throw new Error('Hours must be between 1 and 336 (14 days).');
+    console.log(`Connect link for ${tenant.name} (${tenant.slug}), valid ${hours} hours${appNumbers ? ', new or WhatsApp Business app numbers' : ', new numbers only'}:\n${embeddedSignup.linkUrl(tenant.id, { hours, appNumbers })}`);
+    console.log('Send it to the person who manages their Facebook business. Anyone with the link can connect a number, so share it privately.');
+    return;
+  }
+  if (cmd === 'whatsapp-finish') {
+    const tenant = await registry.bySlug(a);
+    if (!tenant) throw new Error(`No tenant "${a}"`);
+    const { setup, errors } = await embeddedSignup.finishSetup(tenant.id);
+    console.log(`${tenant.slug}: ${setup.number || ''} (${setup.mode})`);
+    console.table(Object.entries(setup.steps).map(([step, v]) => ({ step, done: v.at, request_id: v.requestId || '' })));
+    if (errors.length) {
+      for (const e of errors) console.log(`FAILED ${e.step}: ${e.message}${e.code ? ` (Meta code ${e.code})` : ''}`);
+      process.exitCode = 1;
+    } else console.log('All setup steps done.');
+    return;
+  }
   if (cmd === 'suspend' || cmd === 'activate') {
     const tenant = await registry.bySlug(a);
     if (!tenant) throw new Error(`No tenant "${a}"`);
@@ -109,7 +141,7 @@ async function main() {
 if (require.main === module) {
   main()
     .then(() => db.close())
-    .then(() => process.exit(0))
+    .then(() => process.exit(process.exitCode || 0))
     .catch(async err => { console.error(err.message); await db.close().catch(() => {}); process.exit(1); });
 }
 

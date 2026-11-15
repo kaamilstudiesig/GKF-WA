@@ -425,7 +425,7 @@ function createCrmApp({
     const L = res.locals.OUTCOMES;
     const AD_KIND_LABEL = { missing: 'Ad (id missing)', none: 'Not from an ad' };
     const cols = [['ad_id', 'adId'], ['platform', 'platform'], ['headline', 'headline'], ['campaign', 'campaignName'], ['leads', 'leads'],
-      ['qualified', 'qualified'], [L.visit_booked, 'visitBooked'], [L.visited, 'visited'], [L.joined, 'won'], [`revenue_${res.locals.CURRENCY.toLowerCase()}`, 'revenueInr'],
+      ['qualified', 'qualified'], [L.visit_booked, 'visitBooked'], [L.visited, 'visited'], [L.joined, 'won'], [res.locals.CURRENCY === 'INR' ? 'revenue' : `revenue_${res.locals.CURRENCY.toLowerCase()}`, 'revenueInr'], // INR keeps its old column name
       ['win_rate_pct', 'winRate'], ['median_minutes_to_contact', 'medianMinutes'], ['grade', 'grade'], ['spend', 'spend'],
       ['cost_per_sale', 'costPerSale'], ['roas', 'roas']];
     const lines = [cols.map(([h]) => csvCell(h)).join(','),
@@ -465,14 +465,26 @@ function createCrmApp({
   }));
   app.post('/settings', allow(can.manageBusiness), h(async (req, res) => {
     const submitted = profileFromForm(req.body);
+    const formAgain = message => {
+      res.status(400);
+      return settingsPage(res, { error: message, profile: { ...gymConfig.profile, ...submitted, fallback: submitted.fallback } });
+    };
+    // R15: a new currency re-labels every stored amount (they are not converted), so once sales
+    // exist the owner must tick "I understand" before it changes.
+    const fromCurrency = util.currencyCode(gymConfig.profile.currency);
+    const toCurrency = util.currencyCode(submitted.currency);
+    if (fromCurrency !== toCurrency && req.body.currency_confirm !== '1') {
+      const { c: sales } = await db.one("SELECT COUNT(*)::int AS c FROM crm_lead_outcomes WHERE outcome = 'joined' AND amount_inr IS NOT NULL");
+      if (sales) return formAgain(`Tick the box under Currency to change it from ${fromCurrency} to ${toCurrency}. Your ${sales} recorded sale${sales === 1 ? '' : 's'} keep their numbers in the new currency.`);
+    }
     try {
       await businessProfile.save(submitted, req.user.email);
     } catch (err) {
       if (!(err instanceof businessProfile.ProfileError)) throw err;
-      res.status(400);
-      return settingsPage(res, { error: err.message, profile: { ...gymConfig.profile, ...submitted, fallback: submitted.fallback } });
+      return formAgain(err.message);
     }
     await crm.log(req.user, null, 'business_profile_updated');
+    if (fromCurrency !== toCurrency) await crm.log(req.user, null, 'currency_changed', { from: fromCurrency, to: toCurrency });
     res.redirect(withOk('/settings', 'Saved. The WhatsApp assistant uses the new details from its next reply.'));
   }));
 

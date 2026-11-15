@@ -96,6 +96,10 @@ test('R15 GKF (INR) looks as before', async () => {
     const reports = (await owner.agent.get('/reports?days=7')).text;
     assert.match(reports, /text-base-content\/60">Revenue<\/div>/); // no "(INR)" for GKF
     assert.doesNotMatch(reports, /Revenue \(INR\)/);
+    // The ads CSV keeps its "revenue" column, so sheets that read it by name still work.
+    const header = (await owner.agent.get('/reports/ads.csv?days=7')).text.split('\n')[0];
+    assert.match(header, /,revenue,/);
+    assert.doesNotMatch(header, /revenue_inr/);
   } finally { await ctx.cleanup(); }
 });
 
@@ -139,10 +143,22 @@ test('R15 Business settings: currency select saves, warning once sales exist', a
     assert.doesNotMatch(page, /doesn't convert them/); // no sales yet
 
     await ctx.db.query("INSERT INTO crm_lead_outcomes (wa_id, user_id, outcome, plan, amount_inr) VALUES ($1, $2, 'joined', 'Monthly', 7080)", [LEAD, await ctx.userId('sales')]);
-    assert.match((await owner.agent.get('/settings')).text, /You have 1 recorded sale\. Changing the currency doesn't convert them/);
+    page = (await owner.agent.get('/settings')).text;
+    assert.match(page, /You have 1 recorded sale\. Changing the currency doesn't convert them/);
+    assert.match(page, /name="currency_confirm"/);
 
-    assert.strictEqual((await owner.agent.post('/settings').type('form').send(form(owner.csrf, 'AED'))).status, 302);
+    // With sales, changing the currency needs the box ticked; nothing changes without it.
+    const refused = await owner.agent.post('/settings').type('form').send(form(owner.csrf, 'AED'));
+    assert.strictEqual(refused.status, 400);
+    assert.match(refused.text, /Tick the box under Currency to change it from INR to AED/);
+    assert.strictEqual(gymConfig.profile.currency, 'INR');
+    // Saving other fields with the same currency needs no box.
+    assert.strictEqual((await owner.agent.post('/settings').type('form').send(form(owner.csrf, 'INR'))).status, 302);
+
+    assert.strictEqual((await owner.agent.post('/settings').type('form').send({ ...form(owner.csrf, 'AED'), currency_confirm: '1' })).status, 302);
     assert.strictEqual(gymConfig.profile.currency, 'AED');
+    const logged = await ctx.db.one("SELECT details FROM crm_activity_log WHERE action = 'currency_changed' ORDER BY id DESC LIMIT 1");
+    assert.deepStrictEqual([logged.details.from, logged.details.to], ['INR', 'AED']);
     assert.strictEqual((await ctx.db.one('SELECT profile FROM business_profile')).profile.currency, 'AED');
     page = (await owner.agent.get('/settings')).text;
     assert.match(page, /<option value="AED" selected>/);
@@ -150,7 +166,7 @@ test('R15 Business settings: currency select saves, warning once sales exist', a
     assert.match((await owner.agent.get(`/leads/${LEAD}`)).text, /AED 7,080/); // existing amount, now shown in AED (not converted)
 
     // A made-up code is saved as INR.
-    await owner.agent.post('/settings').type('form').send(form(owner.csrf, 'EUR'));
+    await owner.agent.post('/settings').type('form').send({ ...form(owner.csrf, 'EUR'), currency_confirm: '1' });
     assert.strictEqual(gymConfig.profile.currency, 'INR');
   } finally { await ctx.cleanup(); gymConfig.resetToDefault(); }
 });

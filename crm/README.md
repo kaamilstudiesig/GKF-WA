@@ -56,6 +56,8 @@ Every lead page starts with **Log outcome** (`#outcome`, also where Telegram's "
 
 ## Currency (R15)
 
+**Until Kaamil's bot side (TEAM.md, R15) merges, don't switch a live client off INR:** Purchase events would reach Meta as INR (`src/services/conversionsApi.js`), Telegram/WhatsApp alert amounts would show ₹ (`suggestedOutcome`, payment alerts), and Zoho deals carry the number with no currency. Demo clients (`npm run demo`) are fine: they send nothing to Meta.
+
 Each business has one currency: `profile.currency` (`INR` default, `AED`, `SAR`, `USD`), chosen on **Business settings → Basics**. Unknown or missing codes are INR, so GKF is unchanged.
 
 - **Stored:** every `amount_inr` column (`crm_lead_outcomes`, `crm_payment_links`) holds **whole units of the business's currency**, despite its name (AED 950000 for a Dubai sale). No migration. The largest sale is 100,000,000 units in any currency.
@@ -63,7 +65,7 @@ Each business has one currency: `profile.currency` (`INR` default, `AED`, `SAR`,
 - **Typed:** `parseAmount(text)` reads "₹7,080", "Rs 7080", "AED 950,000", "950000" and refuses decimals. The outcome sheet's field says "Amount paid (AED)".
 - **Payment links:** Razorpay is INR-only, so **Send payment link** is hidden and the route refuses (400) when the currency isn't INR.
 - **AI cost on Reports** stays in USD (our cost); the ₹ estimate shows only for INR businesses.
-- **Changing it:** allowed; Business settings warns when sales exist, because amounts are not converted. Text already sent with ₹ (messages, activity) stays as sent.
+- **Changing it:** allowed. Once sales exist, Business settings warns that amounts are not converted, the owner must tick **I understand** to change it, and the change is logged (`currency_changed`, from and to). Text already sent with ₹ (messages, activity) stays as sent.
 - The plan-price example on Business settings follows the currency (`labelsFor(type, currency)`, `planPriceByCurrency` in `src/config/verticals.js`).
 
 ## Analytics (R5)

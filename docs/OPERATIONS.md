@@ -85,7 +85,9 @@ All settings are environment variables; `.env.example` lists them with comments.
 | `GYM_LATITUDE`, `GYM_LONGITUDE` | Map pin sent after the location answer. Leave empty to send the address only. |
 | `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID` | Staff alerts. |
 | `TELEGRAM_OPS_CHAT_ID` | Optional separate Telegram group for technical alerts (failed sends, account warnings). Defaults to `TELEGRAM_CHAT_ID`. |
-| `TELEGRAM_BACKUP_CHAT_ID` | Optional Telegram group for the daily backup file. Defaults to `TELEGRAM_OPS_CHAT_ID`; the backup refuses to run without one of them, so it never goes to the staff group. |
+| `BACKUP_ENCRYPTION_KEY` | 32 random bytes, base64. Encrypts the daily backup (K28). Keep a copy outside Heroku; without it no backup can be opened. |
+| `BACKUP_S3_ENDPOINT`, `BACKUP_S3_BUCKET`, `BACKUP_S3_ACCESS_KEY_ID`, `BACKUP_S3_SECRET_ACCESS_KEY` | Private backup storage (Cloudflare R2, EU). `BACKUP_S3_REGION` defaults to `auto` (R2). |
+| `BACKUP_HOUR_UTC` | When the daily backup runs, UTC `HH:MM` (default `21:30`, 03:00 India). |
 | `LEGAL_CONTACT_EMAIL`, `LEGAL_CONTACT_PHONE` | Contact shown on the public `/privacy`, `/terms` and `/data-deletion` pages (optional; without them the pages point to the WhatsApp number). |
 | `META_WABA_ID`, `META_DATASET_ID` | Conversions API: sends *Visit booked* (QualifiedLead) and *Joined* (Purchase, ₹) to Meta. Off until both are set. `node scripts/capi-setup.js --create` finds or creates the dataset. |
 | `META_PAGE_ID` | Optional. Lets leads without an ad click ID be matched by hashed phone (Meta attributes those only within 7 days of the ad). |
@@ -173,18 +175,29 @@ One Basic dyno ($7/month) and Heroku Postgres Essential-0 ($5/month), about $12/
 
 8. First login: open https://crm.goldkraftfitness.com, log in as the owner with the password from the seed file, and set a new password when asked (every seeded account must change its password at first login; at least 10 characters with letters and numbers). Then have the manager and sales accounts do the same, or reset their passwords from **Staff**. Add the rest of the team from **Staff**.
 
-9. Daily backup: Heroku Postgres backups (`pg:backups`) don't work for this app. Every client table uses `FORCE ROW LEVEL SECURITY` (tenant isolation, `src/db/platformMigrations.js`); `pg_dump` runs with row security off, so it stops with *query would be affected by row-level security policy*. Essential plans can't add a database role that bypasses it, and turning `FORCE` off would let the app's own role see every tenant. So the backup is `npm run backup`, run daily by the free Heroku Scheduler add-on:
+9. Daily backup (K28): Heroku Postgres backups (`pg:backups`) don't work for this app. Every client table uses `FORCE ROW LEVEL SECURITY` (tenant isolation, `src/db/platformMigrations.js`); `pg_dump` runs with row security off, so it stops with *query would be affected by row-level security policy*. Essential plans can't add a database role that bypasses it, and turning `FORCE` off would let the app's own role see every tenant. So the app makes its own backup:
 
-   ```bash
-   heroku addons:create scheduler:standard -a gkf-wa
-   heroku addons:open scheduler -a gkf-wa
-   ```
+   - **What:** a gzipped JSON of every table with client data (tenants, leads, chats, staff accounts, notes, assignments, follow-ups, CRM settings, Zoho sync state; not login sessions), **encrypted** with AES-256-GCM using `BACKUP_ENCRYPTION_KEY`. Tokens inside stay encrypted with `TENANT_SECRETS_KEY` as well.
+   - **Where:** a private Cloudflare R2 bucket in the EU (S3 API). Nothing goes to Telegram. Key: `gkf/<UTC date>/gkf-wa-<time>.json.gz.enc`.
+   - **When:** the web dyno makes one a day by itself after `BACKUP_HOUR_UTC` (default `21:30`, 03:00 India), so no Scheduler add-on and no extra dyno time. It uploads, reads the file back and checks it before counting the day as done; a deploy or restart finds today's file and doesn't make another.
+   - **Alerts (ops group):** "✅ Backup OK" each day; "🚨 Backup failed" (retries every 30 minutes, alert at most every 6 hours); "⚠️ No backup today: not set up" once a day while settings are missing. No backup data is ever in an alert.
+   - **Keeping:** a lifecycle rule on the bucket deletes files after 30 days, so the app's token needs no delete permission.
 
-   Add a job: command `npm run backup`, dyno size Basic, every day at 21:30 UTC (03:00 India). The job runs a one-off Basic dyno for about a minute; Basic dynos are billed per second, so that's a few cents a month at most. The add-on itself is free.
+   **Set-up (once):**
+   1. Cloudflare dashboard → **R2** → create bucket `gkf-backups`, location/jurisdiction **EU**.
+   2. Bucket → **Settings → Object lifecycle rules** → delete objects 30 days after upload.
+   3. R2 → **Manage API tokens** → create a token with **Object Read & Write**, limited to that bucket. Note the access key id, secret and the S3 endpoint (EU: `https://<account id>.eu.r2.cloudflarestorage.com`).
+   4. Make the key: `node -e "console.log(require('crypto').randomBytes(32).toString('base64'))"`.
+   5. In your own terminal (never a chat box), set them:
+      ```bash
+      heroku config:set BACKUP_ENCRYPTION_KEY=<key> BACKUP_S3_ENDPOINT=https://<account id>.eu.r2.cloudflarestorage.com BACKUP_S3_BUCKET=gkf-backups BACKUP_S3_ACCESS_KEY_ID=<id> BACKUP_S3_SECRET_ACCESS_KEY=<secret> -a gkf-wa
+      ```
+   6. **Store `BACKUP_ENCRYPTION_KEY` and `TENANT_SECRETS_KEY` outside Heroku too** (a password manager). If the Heroku app is lost, a backup can't be opened without the first, and client WhatsApp tokens inside can't be read without the second.
+   7. Test storage: `heroku run -a gkf-wa "npm run backup -- --check"`. Make one now: `heroku run -a gkf-wa "npm run backup"`.
 
-   The job sends a gzipped JSON of every table with client data (tenants, leads, chats, staff accounts, notes, assignments, follow-ups, CRM settings, Zoho sync state; not login sessions) to `TELEGRAM_BACKUP_CHAT_ID`, or `TELEGRAM_OPS_CHAT_ID` when that isn't set: the operator's private group, never a staff group. Check the group the next morning: a failed run sends nothing, so a missing file is the alert. To take one by hand: `heroku run "npm run backup" -a gkf-wa`.
+   **Restore** into an empty database (it runs the migrations, then refuses if there are leads or staff accounts): `heroku run -a <app> "node scripts/restore.js --latest"`, or with a file: `npm run restore -- <file>` (encrypted `.enc` needs `BACKUP_ENCRYPTION_KEY`; old plain `.json.gz` files still work).
 
-   To restore into an empty database, download the file from Telegram and run `heroku run --no-tty "node scripts/restore.js /dev/stdin" -a <name> < gkf-wa-....json.gz` (locally: `npm run restore -- <file>`). It runs the migrations first, then refuses if the database already has leads or staff accounts.
+   **Restore drill** (no real database touched): `DATABASE_URL=pglite://$(mktemp -d) BACKUP_...=… node scripts/restore.js --latest` on a machine with the backup settings, check the counts, then delete that temp folder (it holds real client data). Last drill: _not done yet_ (do one after the first real backup).
 
    The old `heroku pg:backups:schedule` for `gkf-wa` still runs and fails every night; remove it with `heroku pg:backups:unschedule DATABASE_URL -a gkf-wa`.
 
@@ -239,7 +252,7 @@ Per-message failures (for example the 24h window closed for one lead) are logged
 3. Monthly budget reached (`AI_MONTHLY_TOKEN_BUDGET`, `AI_MONTHLY_REQUEST_BUDGET`).
 
 **Database**
-- `heroku pg:info -a gkf-wa`. Backups are the daily Telegram file from `npm run backup` (setup step 9); `heroku pg:backups` fails on this database.
+- `heroku pg:info -a gkf-wa`. Backups are the daily encrypted file in Cloudflare R2 (setup step 9; the ops group gets "Backup OK" each day); `heroku pg:backups` fails on this database.
 - `heroku pg:psql` can fail on networks that block port 5432; use `heroku run` with a small node script instead.
 
 Errors also go to Sentry (`SENTRY_DSN`).

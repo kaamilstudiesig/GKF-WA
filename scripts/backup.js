@@ -1,14 +1,16 @@
 /**
  * Exports every table of every tenant (except CRM login sessions) to one gzipped JSON file.
+ * K28: the copy that leaves Heroku is always encrypted (BACKUP_ENCRYPTION_KEY) and goes to
+ * private object storage (Cloudflare R2), never Telegram. The web dyno makes one a day by
+ * itself (src/services/dailyBackup.js); this script is for doing it by hand.
  *
- *   node scripts/backup.js                 -> sends it to the operator's Telegram group
- *   node scripts/backup.js --out file.gz   -> writes it to a local file instead
+ *   node scripts/backup.js                    -> encrypt and upload one now
+ *   node scripts/backup.js --check            -> test storage: upload, read back, compare a tiny file
+ *   node scripts/backup.js --out file.enc     -> write an encrypted file locally
+ *   node scripts/backup.js --out file.gz --plain  -> unencrypted, for local dev only
  *
- * On Heroku, run it daily with the Heroku Scheduler add-on: `npm run backup`. Heroku's own
- * pg:backups can't dump this database: pg_dump refuses tables with FORCE ROW LEVEL SECURITY.
- * The file holds every client's leads and chats, so it goes to TELEGRAM_BACKUP_CHAT_ID
- * (or TELEGRAM_OPS_CHAT_ID): the operator's private group, never a client's staff group.
- * Tenant secrets stay encrypted in it.
+ * Heroku's own pg:backups can't dump this database: pg_dump refuses tables with FORCE ROW
+ * LEVEL SECURITY. Tenant secrets stay encrypted inside the backup (TENANT_SECRETS_KEY).
  */
 const fs = require('fs');
 const zlib = require('zlib');
@@ -42,33 +44,32 @@ async function backupAll() {
   return zlib.gzipSync(Buffer.from(JSON.stringify(doc)));
 }
 
-async function sendToTelegram(buffer, filename) {
-  const token = process.env.TELEGRAM_BOT_TOKEN;
-  const chatId = process.env.TELEGRAM_BACKUP_CHAT_ID || process.env.TELEGRAM_OPS_CHAT_ID;
-  if (!token || !chatId) {
-    throw new Error('Set TELEGRAM_BOT_TOKEN and TELEGRAM_BACKUP_CHAT_ID (or TELEGRAM_OPS_CHAT_ID), or use --out <file>. '
-      + 'Backups hold every client\'s data, so they never go to a staff group.');
-  }
-  const form = new FormData();
-  form.append('chat_id', chatId);
-  form.append('caption', `${process.env.CLIENT_ID || 'gkf'} WhatsApp bot backup ${filename}`);
-  form.append('document', new Blob([buffer], { type: 'application/gzip' }), filename);
-  const res = await fetch(`https://api.telegram.org/bot${token}/sendDocument`, { method: 'POST', body: form });
-  if (!res.ok) throw new Error(`Telegram upload failed: HTTP ${res.status}`);
-}
-
 async function main() {
-  const outIdx = process.argv.indexOf('--out');
-  const buffer = await createBackup();
-  const filename = `${process.env.CLIENT_ID || 'gkf'}-wa-${new Date().toISOString().replace(/[:.]/g, '-')}.json.gz`;
-  if (outIdx !== -1) {
-    const file = process.argv[outIdx + 1] || filename;
-    fs.writeFileSync(file, buffer);
-    console.log(`Backup written to ${file} (${(buffer.length / 1024).toFixed(1)} KB)`);
-  } else {
-    await sendToTelegram(buffer, filename);
-    console.log(`Backup sent to Telegram (${(buffer.length / 1024).toFixed(1)} KB)`);
+  const backupStore = require('../src/services/backupStore');
+  const args = process.argv.slice(2);
+  if (args.includes('--check')) {
+    const key = `${backupStore.config().prefix}check/${Date.now()}.txt`;
+    const body = Buffer.from(`backup storage check ${new Date().toISOString()}`);
+    await backupStore.store.put(key, body);
+    const back = await backupStore.store.get(key);
+    if (!back.equals(body)) throw new Error('Read back a different file.');
+    const days = (await backupStore.store.list(backupStore.config().prefix)).filter(k => k.endsWith('.enc'));
+    console.log(`Storage OK: wrote and read back ${key}. Encrypted backups stored: ${days.length}${days.length ? `, latest ${days[days.length - 1]}` : ''}.`);
+    return;
   }
+  const outIdx = args.indexOf('--out');
+  if (outIdx !== -1) {
+    const plain = await createBackup();
+    const file = args[outIdx + 1];
+    if (!file) throw new Error('Give a file name after --out.');
+    const buffer = args.includes('--plain') ? plain : backupStore.encrypt(plain);
+    fs.writeFileSync(file, buffer, { mode: 0o600 });
+    console.log(`Backup written to ${file} (${(buffer.length / 1024).toFixed(1)} KB, ${args.includes('--plain') ? 'NOT encrypted' : 'encrypted'})`);
+    return;
+  }
+  const { runBackup } = require('../src/services/dailyBackup');
+  const out = await runBackup();
+  console.log(`Backup uploaded and verified: ${out.key} (${(out.bytes / 1024).toFixed(1)} KB, encrypted)`);
 }
 
 if (require.main === module) {

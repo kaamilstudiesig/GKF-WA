@@ -6,6 +6,7 @@ const logger = require('../utils/logger');
 const env = require('../config/env');
 const signals = require('./signals');
 const registry = require('../tenancy/registry');
+const leadRepository = require('../db/leadRepository');
 const { captureException } = require('../utils/sentry');
 
 /** Network errors, rate limits and Meta 5xx are worth retrying; 4xx are not. */
@@ -21,9 +22,18 @@ async function sendOne(job) {
     await outboundRepository.markFailed(job.id, `Tenant ${tenant.slug} is suspended`, false);
     return;
   }
+  // K30: a reply queued before the lead wrote STOP (e.g. "hi" then "stop" quickly) is dropped.
+  if (!job.metadata?.template && !job.metadata?.opt_out) {
+    const at = await leadRepository.optedOutAt(job.wa_id);
+    if (at && new Date(at) >= new Date(job.created_at)) {
+      logger.info('Reply not sent: lead opted out after it was queued', { id: job.id });
+      await outboundRepository.markFailed(job.id, 'Lead opted out after this reply was queued', false);
+      return;
+    }
+  }
   try {
     const providerId = job.metadata?.template
-      ? await whatsappService.sendTemplate(job.wa_id, job.metadata.template) // staff alerts
+      ? await whatsappService.sendTemplate(job.wa_id, job.metadata.template, { staffAlert: Boolean(job.metadata.staff_alert) }) // staff alerts
       : await whatsappService.sendText(job.wa_id, job.text, {
         buttons: job.metadata?.buttons, location: job.metadata?.location
       });

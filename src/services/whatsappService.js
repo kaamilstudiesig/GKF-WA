@@ -76,11 +76,12 @@ class WhatsAppService {
    * Sends an approved template to a phone number (staff alerts). Not saved in any
    * lead's conversation. tpl: { name, language, body: [texts], button: URL suffix }.
    */
-  async sendTemplate(phone, tpl) {
+  async sendTemplate(phone, tpl, { staffAlert = false } = {}) {
     if (!/^[0-9]{8,15}$/.test(String(phone || ''))) throw new Error('sendTemplate needs a phone number');
     if (!tpl?.name) throw new Error('sendTemplate needs a template name');
     // K30: a lead who wrote STOP gets no templates (every template send goes through here).
-    if (await leadRepository.isOptedOut(phone)) throw new OptedOutError();
+    // Staff alerts go to staff, not leads: a staff number that once wrote STOP still gets them.
+    if (!staffAlert && await leadRepository.isOptedOut(phone)) throw new OptedOutError();
     const components = [];
     if (tpl.body?.length) components.push({ type: 'body', parameters: tpl.body.map(text => ({ type: 'text', text: String(text) })) });
     if (tpl.button) components.push({ type: 'button', sub_type: 'url', index: '0', parameters: [{ type: 'text', text: String(tpl.button) }] });

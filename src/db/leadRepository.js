@@ -26,6 +26,12 @@ const leadRepository = {
       [waId, Boolean(on)]));
   },
 
+  /** K30: when the lead opted out, or null. */
+  async optedOutAt(waId) {
+    const row = await db.one('SELECT opted_out_at FROM leads WHERE wa_id = $1', [String(waId || '')]);
+    return row ? row.opted_out_at : null;
+  },
+
   /** K30: whether the lead with this key or phone number opted out. */
   async isOptedOut(waIdOrPhone) {
     const row = await db.one('SELECT 1 AS yes FROM leads WHERE (wa_id = $1 OR phone = $1) AND opted_out_at IS NOT NULL LIMIT 1', [String(waIdOrPhone || '')]);

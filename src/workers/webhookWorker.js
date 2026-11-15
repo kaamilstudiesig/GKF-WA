@@ -87,7 +87,8 @@ async function processEvent(event) {
     }
     // K30: STOP is handled before anything else (even a burst or staff pause), with a fixed
     // reply and no AI. START, or any other message from an opted-out lead, opts them back in.
-    const optKind = text !== null ? optOut.classify(text) : null;
+    // Typed text only: a button or list title is the business's wording, never an opt-out.
+    const optKind = msg.type === 'text' && text !== null ? optOut.classify(text) : null;
     if (optKind === 'stop' || (optKind === 'start' && lead.opted_out_at)) {
       await leadRepository.setOptedOut(waId, optKind === 'stop');
       logger.info(optKind === 'stop' ? 'Lead opted out' : 'Lead opted back in', { wa_id: waId });
@@ -98,6 +99,12 @@ async function processEvent(event) {
       return;
     }
     if (lead.opted_out_at) {
+      if (optOut.isAcknowledgement(text)) { // "ok", "thanks", 👍 after STOP: stay opted out, no reply
+        whatsappService.markReadWithTyping(msg.id, { typing: false });
+        logger.info('Opted-out lead acknowledged; no reply', { wa_id: waId });
+        await eventRepository.complete(event.id);
+        return;
+      }
       await leadRepository.setOptedOut(waId, false); // they wrote to us again
       logger.info('Lead opted back in by messaging', { wa_id: waId });
     }

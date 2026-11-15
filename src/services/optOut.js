@@ -4,7 +4,8 @@
  * - they get one fixed confirmation (no AI call);
  * - template messages to them are refused (whatsappService.sendTemplate), since a
  *   template is how a business messages someone who hasn't written in 24 hours;
- * - START, or any new message from them, turns it off again (they started the chat).
+ * - START, or a new message from them, turns it off again (they started the chat). A short
+ *   acknowledgement ("ok", "thanks", 👍) right after STOP doesn't: it keeps the opt-out and gets no reply.
  *
  * Matching is strict on purpose: only a short message that is the keyword, or a clear
  * "stop messaging me" phrase. "Can you stop by tomorrow?" is not an opt-out.
@@ -49,6 +50,23 @@ const STOP_PHRASES = [
 
 const MAX_PHRASE_WORDS = 12;
 
+// Short closes that don't mean "talk to me again" (often a reply to our STOP confirmation).
+const ACK_WORDS = new Set([
+  'ok', 'okay', 'k', 'kk', 'ok thanks', 'ok thank you', 'okay thanks', 'thanks', 'thank you', 'thanku', 'thank u',
+  'thx', 'ty', 'tq', 'fine', 'done', 'sure', 'alright', 'got it', 'noted', 'cool', 'great', 'good', 'np',
+  'theek hai', 'thik hai', 'theek', 'achha', 'acha', 'shukriya', 'dhanyavad', 'dhanyawad',
+  'ಸರಿ', 'ಧನ್ಯವಾದ', 'ಧನ್ಯವಾದಗಳು', 'sari', 'thanks sir', 'شكرا', 'شكراً', 'تمام', 'حسنا', 'ok sir', 'ok mam', 'ok madam'
+]);
+
+/** True for a bare acknowledgement: "ok", "thanks", an emoji or punctuation only. */
+function isAcknowledgement(text) {
+  const raw = String(text || '').trim();
+  if (!raw) return false;
+  const t = clean(raw);
+  if (!t) return true; // only emoji or punctuation (👍, 🙏, "."), no words
+  return ACK_WORDS.has(t);
+}
+
 /** 'stop', 'start' or null for one inbound message. */
 function classify(text) {
   const t = clean(text);
@@ -92,4 +110,4 @@ class OptedOutError extends Error {
   }
 }
 
-module.exports = { classify, replyFor, languageOf, OptedOutError, REPLIES };
+module.exports = { classify, isAcknowledgement, replyFor, languageOf, OptedOutError, REPLIES };

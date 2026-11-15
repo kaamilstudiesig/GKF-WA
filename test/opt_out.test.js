@@ -97,3 +97,55 @@ test('isOptedOut finds a lead by phone when their key is a business-scoped user 
   assert.strictEqual(await leadRepository.isOptedOut('919877700009'), true);
   assert.strictEqual(await leadRepository.isOptedOut('919877700010'), false);
 });
+
+test('"ok" or 👍 after STOP keeps the opt-out and gets no reply; a real question opts back in', async () => {
+  await converse(LEAD, 'STOP');
+  const count = async () => (await db.one('SELECT COUNT(*)::int AS n FROM outbound_messages WHERE wa_id = $1', [LEAD])).n;
+  const n = await count();
+  await converse(LEAD, 'ok thanks');
+  await converse(LEAD, '👍');
+  assert.ok(await optedOut());
+  assert.strictEqual(await count(), n);
+  await converse(LEAD, 'what are your prices?');
+  assert.strictEqual(await optedOut(), null);
+  assert.strictEqual(await count(), n + 1);
+});
+
+test('staff alerts still reach a staff number that once wrote STOP as a lead', async () => {
+  await converse(LEAD, 'STOP');
+  await whatsappService.sendTemplate(LEAD, { name: 'staff_lead_alert', body: [] }, { staffAlert: true });
+  await outboundRepository.enqueue({ dedupKey: 'staff:1', waId: LEAD, text: '[staff alert]', metadata: { template: { name: 'staff_lead_alert', body: [] }, staff_alert: { event: 'handoff' } } });
+  await outboundWorker.drain();
+  assert.strictEqual((await db.one("SELECT status FROM outbound_messages WHERE dedup_key = 'staff:1'")).status, 'sent');
+});
+
+test('a reply queued before the lead wrote STOP is dropped, not sent after the confirmation', async () => {
+  await converse(LEAD, 'hi');
+  await db.query(`INSERT INTO outbound_messages (dedup_key, wa_id, text, status, metadata, created_at)
+    VALUES ('late:1', $1, 'Hi! How can we help?', 'pending', '{}', now() - interval '1 minute')`, [LEAD]);
+  await leadRepository.setOptedOut(LEAD, true);
+  const before = sent.length;
+  await outboundWorker.drain();
+  const job = await db.one("SELECT status, last_error FROM outbound_messages WHERE dedup_key = 'late:1'");
+  assert.strictEqual(job.status, 'failed');
+  assert.match(job.last_error, /opted out after this reply was queued/);
+  assert.ok(!sent.slice(before).some(p => p.text?.body === 'Hi! How can we help?'));
+});
+
+test('a button tap titled "Stop" is not an opt-out (only typed text counts)', async () => {
+  await converse(LEAD, 'hi');
+  const { postWebhook, inbound, drainAll } = require('./helpers');
+  await postWebhook(inbound({ from: LEAD, type: 'button', extra: { button: { text: 'Stop', payload: 'stop' } } }));
+  await drainAll();
+  assert.strictEqual(await optedOut(), null);
+});
+
+test('Kannada and Arabic STOP get a confirmation in that language', async () => {
+  await converse(LEAD, 'ಮೆಸೇಜ್ ಮಾಡಬೇಡಿ');
+  assert.ok(await optedOut());
+  assert.strictEqual((await lastOut()).text, optOut.REPLIES.stop.kn);
+  const AR = '971500000071';
+  await converse(AR, 'توقف');
+  assert.ok(await optedOut(AR));
+  assert.strictEqual((await lastOut(AR)).text, optOut.REPLIES.stop.ar);
+});

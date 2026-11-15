@@ -15,7 +15,9 @@ const tenancy = require('../src/tenancy/context');
 
 const IDENTITY_TABLES = new Set(['messages', 'handoffs', 'outbound_messages', 'ai_usage', 'webhook_events',
   'crm_users', 'crm_lead_notes', 'crm_follow_ups', 'crm_lead_outcomes', 'crm_payment_links', 'crm_activity_log']);
-const JSON_COLUMNS = new Set(['metadata', 'payload', 'details', 'profile']);
+const JSON_COLUMNS = new Set(['metadata', 'payload', 'details', 'profile', 'zoho_state']);
+// Rows the Zoho trigger already made while leads were restored: the backup's copy wins.
+const UPSERT_KEYS = { zoho_links: ['tenant_id', 'wa_id'] };
 
 /** Restores a backup of all tenants into an empty database (system context). */
 async function restore(buffer) {
@@ -60,7 +62,9 @@ async function restoreAll(doc) {
         const asValue = v => (v && typeof v.$base64 === 'string' ? Buffer.from(v.$base64, 'base64') : v);
         const values = cols.map(c => (JSON_COLUMNS.has(c) ? JSON.stringify(row[c] ?? {}) : asValue(row[c])));
         const overriding = IDENTITY_TABLES.has(table) ? 'OVERRIDING SYSTEM VALUE' : '';
-        await db.query(`INSERT INTO ${table} (${cols.join(', ')}) ${overriding} VALUES (${cols.map((_, i) => `$${i + 1}`).join(', ')})`, values);
+        const keys = UPSERT_KEYS[table];
+        const upsert = keys ? ` ON CONFLICT (${keys.join(', ')}) DO UPDATE SET ${cols.filter(c => !keys.includes(c)).map(c => `${c} = EXCLUDED.${c}`).join(', ')}` : '';
+        await db.query(`INSERT INTO ${table} (${cols.join(', ')}) ${overriding} VALUES (${cols.map((_, i) => `$${i + 1}`).join(', ')})${upsert}`, values);
       }
       if (table === 'crm_users') {
         for (const u of rows.filter(r => r.manager_id)) {

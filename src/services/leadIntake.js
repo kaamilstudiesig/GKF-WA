@@ -196,7 +196,7 @@ async function handle({ input, cfg, businessName, channel }) {
   // A hand-off, so the lead queue assigns it and staff are alerted. One open hand-off per lead: if
   // there is one, staff get one alert about the new submission instead.
   const who = [input.name, input.email].filter(Boolean).join(', ');
-  const back = !isNew && ['lost', 'converted'].includes(lead.status) ? ` Came back through the ${label} form (was ${lead.status}).` : '';
+  const back = !isNew && ['lost', 'converted'].includes(lead.status) ? ` Came back through the ${label} form (was ${lead.status === 'converted' ? 'won' : lead.status}).` : '';
   const summary = `${isNew ? 'New lead' : 'Lead'} from the ${label} form${who ? `: ${who}` : ''}.${back}${welcome ? ` ${welcome}` : ''}`.slice(0, 500);
   const open = await db.one("SELECT id FROM handoffs WHERE wa_id = $1 AND status IN ('pending', 'assigned')", [waId]);
   if (open) {

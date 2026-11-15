@@ -43,27 +43,41 @@ async function alertOps(text) {
   }
 }
 
+const sha = b => crypto.createHash('sha256').update(b).digest('hex');
+
+/** True when the stored object opens with our key and holds a backup (a failed upload can leave a bad one). */
+async function isGoodBackup(key) {
+  try {
+    const plain = backupStore.decrypt(await backupStore.store.get(key));
+    return JSON.parse(require('zlib').gunzipSync(plain).toString('utf8')).format === 'gkf-wa-backup';
+  } catch (err) {
+    logger.warn('Stored backup failed its check', { key, error: err.message });
+    return false;
+  }
+}
+
 /**
  * Makes, encrypts, uploads and verifies one backup. Returns { key, bytes }.
- * Runs under a Postgres advisory lock so two processes never upload at once.
+ * The export reads one snapshot (REPEATABLE READ) under an advisory lock, so two processes
+ * never export at once and restore never meets a row whose parent was missed. Upload and
+ * read-back happen after the transaction, so no database connection waits on storage.
  */
 async function runBackup(now = new Date()) {
   const miss = backupStore.missing();
   if (miss.length) throw new Error(`Backups are not set up (missing ${miss.join(', ')}).`);
   const { createBackup } = require('../../scripts/backup'); // lazy: scripts load the db module
-  return tenancy.runAsSystem(() => db.tx(async () => {
+  const plain = await tenancy.runAsSystem(() => db.tx(async () => {
     const got = await db.one('SELECT pg_try_advisory_xact_lock($1) AS ok', [LOCK]);
     if (!got.ok) throw new Error('Another backup is running.');
-    const plain = await createBackup();
-    const sealed = backupStore.encrypt(plain);
-    const key = `${dayPrefix(dayOf(now))}${backupStore.config().prefix.replace(/\/$/, '')}-wa-${now.toISOString().replace(/[:.]/g, '-')}.json.gz.enc`;
-    await backupStore.store.put(key, sealed);
-    const back = await backupStore.store.get(key);
-    const sha = b => crypto.createHash('sha256').update(b).digest('hex');
-    if (sha(back) !== sha(sealed)) throw new Error('The uploaded backup did not read back intact.');
-    backupStore.decrypt(back); // and it opens with our key
-    return { key, bytes: sealed.length };
-  }));
+    return createBackup();
+  }, { repeatableRead: true }));
+  const sealed = backupStore.encrypt(plain);
+  const key = `${dayPrefix(dayOf(now))}${backupStore.config().prefix.replace(/\/$/, '')}-wa-${now.toISOString().replace(/[:.]/g, '-')}.json.gz.enc`;
+  await backupStore.store.put(key, sealed);
+  const back = await backupStore.store.get(key);
+  if (sha(back) !== sha(sealed)) throw new Error('The uploaded backup did not read back intact.');
+  backupStore.decrypt(back); // and it opens with our key
+  return { key, bytes: sealed.length };
 }
 
 /** Called every minute. Cheap: no storage or database calls unless a backup is due. */
@@ -85,9 +99,13 @@ async function tick(now = new Date()) {
 
   state.running = (async () => {
     try {
-      // After a restart: maybe today's backup was already made. One list call, then cached.
-      const existing = await backupStore.store.list(dayPrefix(day));
-      if (existing.length) { state.doneDay = day; return { skipped: true, key: existing[existing.length - 1] }; }
+      // After a restart or a failed try: maybe today's backup was already made. Count it only
+      // if it passes the check: a failed read-back can leave a bad object behind.
+      const existing = (await backupStore.store.list(dayPrefix(day))).filter(k => k.endsWith('.json.gz.enc'));
+      if (existing.length && await isGoodBackup(existing[existing.length - 1])) {
+        state.doneDay = day;
+        return { skipped: true, key: existing[existing.length - 1] };
+      }
       const out = await runBackup(now);
       state.doneDay = day;
       state.lastAlertAt = 0;

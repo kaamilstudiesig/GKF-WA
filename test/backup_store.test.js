@@ -19,11 +19,13 @@ let bucket;
 let requests;
 let alerts;
 let failPut;
+let corruptGets;
 
 function fakeBucket() {
   bucket = new Map();
   requests = [];
   failPut = false;
+  corruptGets = 0;
   backupStore.store.transport = async ({ method, url, headers, body }) => {
     requests.push({ method, url, headers });
     const u = new URL(url);
@@ -35,7 +37,11 @@ function fakeBucket() {
       bucket.set(key, Buffer.from(body));
       return { status: 200, data: Buffer.alloc(0) };
     }
-    if (method === 'GET' && key) return bucket.has(key) ? { status: 200, data: bucket.get(key) } : { status: 404, data: Buffer.from('<Code>NoSuchKey</Code>') };
+    if (method === 'GET' && key) {
+      if (!bucket.has(key)) return { status: 404, data: Buffer.from('<Code>NoSuchKey</Code>') };
+      if (corruptGets > 0) { corruptGets--; const bad = Buffer.from(bucket.get(key)); bad[bad.length - 1] ^= 1; bucket.set(key, bad); return { status: 200, data: bad }; }
+      return { status: 200, data: bucket.get(key) };
+    }
     if (method === 'GET') {
       const prefix = u.searchParams.get('prefix') || '';
       const keys = [...bucket.keys()].filter(k => k.startsWith(prefix));
@@ -155,4 +161,28 @@ test('createBackup output is what gets encrypted (gzipped JSON of every table)',
   const plain = await createBackup();
   const doc = JSON.parse(zlib.gunzipSync(plain).toString('utf8'));
   assert.strictEqual(doc.format, 'gkf-wa-backup');
+});
+
+test('a backup that failed its read-back is never counted as today\'s backup, after a retry or a restart', async () => {
+  corruptGets = 1; // the stored object gets damaged and reads back wrong
+  const r = await dailyBackup.tick(new Date('2026-11-15T21:40:00Z'));
+  assert.match(r.error, /did not read back intact/);
+  assert.match(alerts[0], /Backup failed/);
+  assert.strictEqual(bucket.size, 1); // the bad object is still there
+
+  // Retry (and the same after a restart): the bad object fails its check, so a new backup is made.
+  dailyBackup.resetForTests();
+  const ok = await dailyBackup.tick(new Date('2026-11-15T22:15:00Z'));
+  assert.ok(ok.key && !ok.skipped);
+  assert.strictEqual(bucket.size, 2);
+  assert.strictEqual(dailyBackup.state.doneDay, '2026-11-15');
+  assert.ok(backupStore.decrypt(bucket.get(ok.key)));
+});
+
+test('the backup export runs in its own repeatable-read transaction (never nested)', async () => {
+  const db2 = require('../src/db');
+  await assert.rejects(db2.tx(() => db2.tx(async () => 1, { repeatableRead: true })), /cannot run inside another transaction/);
+  assert.strictEqual(await db2.tx(async () => (await db2.one('SHOW transaction_isolation')).transaction_isolation, { repeatableRead: true }), 'repeatable read');
+  const out = await dailyBackup.runBackup(new Date('2026-11-16T22:00:00Z'));
+  assert.ok(out.key);
 });

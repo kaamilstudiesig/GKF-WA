@@ -255,8 +255,14 @@ const PLATFORM_MIGRATIONS = [
     ]
   },
   {
+    // K30: a lead who wrote STOP (src/services/optOut.js). Templates to them are refused;
+    // START or any new message from them clears it.
+    id: 6,
+    name: 'opt_out',
+    up: ['ALTER TABLE leads ADD COLUMN opted_out_at TIMESTAMPTZ']
+  },
+  {
     // R16: leads from portals and website forms (src/routes/intake.js; contract in docs/TEAM.md).
-    // Id 7: K30's opt_out took 6 (either may be applied first; the runner applies each missing id).
     id: 7,
     name: 'lead_intake',
     up: [

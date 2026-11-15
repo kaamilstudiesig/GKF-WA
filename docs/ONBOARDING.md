@@ -127,6 +127,7 @@ From a phone that has never chatted with the number, send each and check the rep
 | 8 | A sensitive or off-topic question | Stays on the business |
 | 9 | "ok thanks" | Short close, no new question |
 | 10 | An image | Handled without error |
+| 11 | "STOP", then "hi" | A fixed "we won't message you" reply; then a normal reply (writing again opts them back in) |
 
 ## What comes next
 

@@ -173,3 +173,36 @@ describe('one-call JSON replies', () => {
     assert.strictEqual(aiService.sanitizeReply('Line one\n\nLine two'), 'Line one\n\nLine two');
   });
 });
+
+describe('K29: AI providers may not store or train on the conversation', () => {
+  const savedZdr = env.openRouterZdr;
+  afterEach(() => { env.openRouterZdr = savedZdr; });
+
+  test('every call, including the follow-up, asks for no data collection and zero retention', async () => {
+    env.openRouterZdr = true;
+    const calls = script(
+      { message: { content: '', tool_calls: [toolCall('notify_staff', { handoff_reason: 'ready_to_book', summary: 'Sat 7am' })] } },
+      { message: { content: 'A coach will call you.' } }
+    );
+    await aiService.reply(await newLead(), 'book me in');
+    assert.strictEqual(calls.length, 2);
+    for (const c of calls) assert.deepStrictEqual(c.provider, { data_collection: 'deny', zdr: true });
+  });
+
+  test('OPENROUTER_ZDR=false still denies data collection', async () => {
+    env.openRouterZdr = false;
+    const calls = script({ message: { content: 'Hi!' } });
+    await aiService.reply(await newLead(), 'hi');
+    assert.deepStrictEqual(calls[0].provider, { data_collection: 'deny' });
+  });
+
+  test('no provider meeting the policy (404) on the main model tries the fallback model', async () => {
+    env.openRouterModel = 'primary/model';
+    env.openRouterFallbackModel = 'backup/model';
+    const calls = script({ error: 'No endpoints found matching your data policy', status: 404 }, { message: { content: 'Hi there!' } });
+    const out = await aiService.reply(await newLead(), 'hi');
+    assert.strictEqual(calls.length, 2);
+    assert.strictEqual(calls[1].model, 'backup/model');
+    assert.strictEqual(out.replyText, 'Hi there!');
+  });
+});

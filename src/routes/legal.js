@@ -7,7 +7,7 @@ const gymConfig = require('../config/gymConfig');
  * Plain HTML with inline styles only; no scripts, no external resources.
  */
 
-const UPDATED = '30 October 2026';
+const UPDATED = '15 November 2026';
 const esc = s => String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 
 function contact() {
@@ -72,8 +72,9 @@ function privacyHtml() {
 <h2>Who processes your information for us</h2>
 <ul>
   <li>Meta Platforms (WhatsApp Business Platform), to send and receive messages.</li>
-  <li>AI model providers reached through OpenRouter, to write automated replies. They receive the conversation text needed to reply, not your phone number.</li>
+  <li>AI model providers reached through OpenRouter, to write automated replies. They receive the conversation text needed to reply, not your phone number. We only use providers that do not store your messages or use them to train AI models.</li>
   <li>Our hosting and database provider (Heroku, a Salesforce company), and our error-monitoring provider (Sentry).</li>
+  <li>Cloudflare, to store our encrypted daily backups.</li>
   <li>Telegram, to alert our staff about enquiries that need a person.</li>
 </ul>
 <p>We do not sell your information.</p>

@@ -93,6 +93,7 @@ class AIService {
     // 1000 leaves room for models that think before answering; replies themselves stay short.
     const body = { model, messages, temperature: 0.3, max_tokens: 1000, usage: { include: true } };
     if (user) body.user = user; // per-lead usage in the OpenRouter dashboard
+    body.provider = AIService.providerPrefs();
     if (tools) { body.tools = AI_TOOLS; body.tool_choice = 'auto'; }
     const started = Date.now();
     try {
@@ -128,6 +129,15 @@ class AIService {
       }
       throw err;
     }
+  }
+
+  /**
+   * K29: OpenRouter only routes to providers that don't store or train on the text
+   * (data_collection 'deny'), and with OPENROUTER_ZDR on, only to zero-retention ones.
+   * If no provider of a model qualifies, OpenRouter answers 404 and the fallback model is tried.
+   */
+  static providerPrefs() {
+    return env.openRouterZdr ? { data_collection: 'deny', zdr: true } : { data_collection: 'deny' };
   }
 
   static isTransient(err) {
@@ -243,7 +253,9 @@ class AIService {
         lastError = err;
         captureException(err, { component: 'openrouter_ai', model, status: err.response?.status || 'network_error' });
         logger.warn('AI model call failed', { model, status: err.response?.status, error: err.message });
-        if (!AIService.isTransient(err)) break; // bad request/auth: the fallback would fail the same way
+        // Bad request/auth: the fallback would fail the same way. A 404 means no provider of this
+        // model meets our data policy (K29), so the fallback model is still worth a try.
+        if (!AIService.isTransient(err) && err.response?.status !== 404) break;
       }
     }
 

@@ -61,7 +61,8 @@ const util = require('./util');
 const { currencyOptions } = require('../../src/config/currency');
 const razorpay = require('../../src/services/razorpay');
 const botGuard = require('../../src/services/botGuard');
-const { labelsFor, lostReasonsFor } = require('../../src/config/verticals');
+const { labelsFor, lostReasonsFor, verticalFor } = require('../../src/config/verticals');
+const { Projects, catalogNeeds, SEND_LIMITS } = require('./projects');
 
 /** Outcome, stage and settings names for the business type (real estate says "Booked", not "Joined"). */
 function namesFor(type, currency = 'INR') {
@@ -101,6 +102,8 @@ function createCrmApp({
   let registry = null;
   try { registry = require('../../src/tenancy/registry'); } catch (e) { if (e.code !== 'MODULE_NOT_FOUND') throw e; /* standalone */ }
   const zoho = new ZohoStatus(db, registry || { config: () => ({}) });
+  const projects = new Projects(db);
+  const businessCurrency = () => util.currencyCode(gymConfig ? gymConfig.profile.currency : 'INR');
   const analytics = new Analytics(db);
   const throttle = new auth.LoginThrottle();
   const branding = new Branding(db, () => (gymConfig ? gymConfig.gymName : ''));
@@ -140,6 +143,8 @@ function createCrmApp({
       user: req.user, csrfToken: req.csrfToken, can, util, LEAD_STATUSES, ROLE_LABELS, ROLES, LOST_REASONS, PLAN_OPTIONS: planOptions(),
       PAYMENTS_ON: razorpay.enabled() && CURRENCY === 'INR',
       CURRENCY, CURRENCY_SHORT: util.CURRENCIES[CURRENCY].prefix.trim(), money: v => util.money(v, CURRENCY),
+      // R17: the Projects page is in the menu for business types that sell projects (real estate).
+      SHOW_PROJECTS: verticalFor(gymConfig ? gymConfig.profile.type : 'gym').projectsPage === true,
       ...namesFor(gymConfig ? gymConfig.profile.type : 'gym', CURRENCY),
       path: req.path, query: req.query, flash: req.query.ok || null, error: req.query.err || null,
       brand: await branding.get()
@@ -353,7 +358,8 @@ function createCrmApp({
       outcomes: await crm.leadOutcomes(waId),
       staff: await crm.assignableUsers(req.user),
       botPausedUntil: await botGuard.pausedUntil(waId),
-      zoho: await zoho.forLead(waId)
+      zoho: await zoho.forLead(waId),
+      projectUnits: await projects.sendable(), SEND_LIMITS // R17: Send projects
     });
   }));
 
@@ -363,6 +369,14 @@ function createCrmApp({
     res.redirect(withOk(back(req, `/leads/${waId}`), okMsg));
   });
 
+  // R17: send chosen units to the lead as one WhatsApp message (plain text until K24's catalog).
+  // A CRM reply like any other (counts as picked up and for speed to lead), with the unit ids kept.
+  app.post('/leads/:waId/projects', leadAction(async (req, waId) => {
+    const { text, units } = await projects.message(req.body.units, {
+      businessName: gymConfig ? gymConfig.profile.name : '', currency: businessCurrency()
+    });
+    await crm.queueMessage(req.user, waId, text, { units });
+  }, 'Projects sent on WhatsApp.'));
   app.post('/leads/:waId/status', leadAction((req, waId) => crm.setStatus(req.user, waId, req.body.status), 'Status updated.'));
   app.post('/leads/:waId/assign', allow(can.assignLeads), leadAction((req, waId) => crm.assign(req.user, waId, req.body.user_id || null), 'Assignment updated.'));
   app.post('/leads/:waId/notes', leadAction((req, waId) => crm.addNote(req.user, waId, req.body.body), 'Note added.'));
@@ -441,6 +455,47 @@ function createCrmApp({
     res.setHeader('Content-Type', 'text/csv; charset=utf-8');
     res.setHeader('Content-Disposition', `attachment; filename="${res.locals.brand.fileSlug}-leads-${util.localDay(new Date().toISOString())}.csv"`);
     res.send(lines.join('\n'));
+  }));
+
+  // ---- projects and units (R17; owners and managers) ----
+  const toProjects = (msg, hash = '') => withOk('/projects', msg) + hash;
+  app.get('/projects', allow(can.manageProjects), h(async (req, res) => {
+    const list = await projects.list({ archived: req.query.archived === '1' });
+    for (const p of list) for (const u of p.units) u.needs = catalogNeeds(u, p);
+    res.render('projects', { list, showArchived: req.query.archived === '1', SEND_LIMITS });
+  }));
+  app.post('/projects', allow(can.manageProjects), h(async (req, res) => {
+    const p = await projects.addProject(req.body);
+    await crm.log(req.user, null, 'project_added', { project_id: p.id, name: p.name });
+    res.redirect(toProjects(`Project "${p.name}" added. Add its units below.`, `#project-${p.id}`));
+  }));
+  app.post('/projects/:id', allow(can.manageProjects), h(async (req, res) => {
+    const p = await projects.updateProject(req.params.id, req.body);
+    await crm.log(req.user, null, 'project_updated', { project_id: p.id });
+    res.redirect(toProjects('Project saved.', `#project-${p.id}`));
+  }));
+  app.post('/projects/:id/units', allow(can.manageProjects), h(async (req, res) => {
+    const u = await projects.addUnit(req.params.id, req.body);
+    await crm.log(req.user, null, 'unit_added', { unit_id: u.id, project_id: u.project_id, name: u.name });
+    res.redirect(toProjects(`"${u.name}" added.`, `#project-${u.project_id}`));
+  }));
+  app.post('/units/:id', allow(can.manageProjects), h(async (req, res) => {
+    const u = await projects.updateUnit(req.params.id, req.body);
+    await crm.log(req.user, null, 'unit_updated', { unit_id: u.id });
+    res.redirect(toProjects('Unit saved.', `#project-${u.project_id}`));
+  }));
+  const STATUS_WORDS = { active: 'back on sale', sold_out: 'marked sold out', archived: 'archived' };
+  app.post('/:kind(projects|units)/:id/status', allow(can.manageProjects), h(async (req, res) => {
+    const kind = req.params.kind === 'projects' ? 'project' : 'unit';
+    const row = await projects.setStatus(kind, req.params.id, req.body.status);
+    await crm.log(req.user, null, `${kind}_status`, { id: row.id, status: req.body.status });
+    res.redirect(toProjects(`"${row.name}" ${STATUS_WORDS[req.body.status]}.`, `#project-${kind === 'project' ? row.id : row.project_id}`));
+  }));
+  app.post('/:kind(projects|units)/:id/move', allow(can.manageProjects), h(async (req, res) => {
+    const kind = req.params.kind === 'projects' ? 'project' : 'unit';
+    await projects.move(kind, req.params.id, req.body.direction === 'up' ? 'up' : 'down');
+    const row = kind === 'project' ? await projects.project(req.params.id) : await projects.unit(req.params.id);
+    res.redirect(`/projects#project-${kind === 'project' ? row.id : row.project_id}`);
   }));
 
   // ---- users (owner only) ----

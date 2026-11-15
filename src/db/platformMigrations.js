@@ -257,10 +257,57 @@ const PLATFORM_MIGRATIONS = [
     id: 6,
     name: 'opt_out',
     up: ['ALTER TABLE leads ADD COLUMN opted_out_at TIMESTAMPTZ']
+  },
+  {
+    // R17: projects and units (crm/src/projects.js; contract in docs/TEAM.md). The source of truth for
+    // what a real estate client sells; K24 later pushes units to the client's Meta catalog.
+    // Id 8: R16's lead_intake is 7 (either may be applied first; the runner applies each missing id).
+    id: 8,
+    name: 'projects',
+    up: [
+      `CREATE TABLE crm_projects (
+        id INTEGER GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+        tenant_id INTEGER NOT NULL DEFAULT ${TENANT_DEFAULT} REFERENCES tenants (id),
+        name TEXT NOT NULL,
+        area TEXT,
+        kind TEXT,
+        handover TEXT,
+        brochure_url TEXT,
+        photo_url TEXT,
+        status TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active', 'sold_out', 'archived')),
+        sort INTEGER NOT NULL DEFAULT 0,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+        updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+      )`,
+      // price_from: whole units of the business's currency (R15). retailer_id: "u<id>", set once, never
+      // reused, so a renamed unit stays the same product in Meta. meta_product_id / sync_* / dirty: K24.
+      `CREATE TABLE crm_units (
+        id INTEGER GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+        tenant_id INTEGER NOT NULL DEFAULT ${TENANT_DEFAULT} REFERENCES tenants (id),
+        project_id INTEGER NOT NULL REFERENCES crm_projects (id),
+        name TEXT NOT NULL,
+        size_sqft INTEGER CHECK (size_sqft IS NULL OR size_sqft > 0),
+        price_from INTEGER CHECK (price_from IS NULL OR price_from > 0),
+        photo_url TEXT,
+        status TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active', 'sold_out', 'archived')),
+        sort INTEGER NOT NULL DEFAULT 0,
+        retailer_id TEXT,
+        meta_product_id TEXT,
+        sync_status TEXT,
+        sync_error TEXT,
+        dirty BOOLEAN NOT NULL DEFAULT true,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+        updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+      )`,
+      'CREATE UNIQUE INDEX crm_units_retailer_idx ON crm_units (tenant_id, retailer_id) WHERE retailer_id IS NOT NULL',
+      'CREATE INDEX crm_units_project_idx ON crm_units (project_id, sort)',
+      ...tenancyPolicy('crm_projects'),
+      ...tenancyPolicy('crm_units')
+    ]
   }
 ];
 
 // Every table with client data, including ones added after migration 1 (tests and tools use this).
-const ALL_TENANT_TABLES = [...TENANT_TABLES, 'zoho_links', 'zoho_cursors', 'crm_settings'];
+const ALL_TENANT_TABLES = [...TENANT_TABLES, 'zoho_links', 'zoho_cursors', 'crm_settings', 'crm_projects', 'crm_units'];
 
 module.exports = { PLATFORM_MIGRATIONS, TENANT_TABLES, ALL_TENANT_TABLES, tenancyPolicy, TENANT_DEFAULT };

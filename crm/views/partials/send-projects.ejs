@@ -1,0 +1,30 @@
+<%# R17: send chosen units to the lead as one WhatsApp message. Only inside the 24-hour window;
+   outside it, the section says why. Units come grouped by project, in the Projects page order. %>
+<% if (projectUnits && projectUnits.length) { const groups = []; for (const u of projectUnits) { let g = groups.find(x => x.id === u.project_id); if (!g) groups.push(g = { id: u.project_id, name: u.project_name, units: [] }); g.units.push(u); } %>
+<details class="collapse collapse-arrow mx-2 mt-2 w-auto bg-base-200" id="send-projects">
+  <summary class="collapse-title flex items-center gap-2 text-sm font-medium"><%- include('icon', { name: 'building' }) %>Send projects…</summary>
+  <div class="collapse-content space-y-2">
+    <% if (!lead.window_open) { %>
+    <p class="text-sm text-base-content/60">The 24-hour reply window is closed, so WhatsApp won't deliver this. It opens again when the lead writes.</p>
+    <% } %>
+    <form method="post" action="/leads/<%= lead.wa_id %>/projects" class="space-y-2">
+      <%- include('csrf') %>
+      <fieldset <%= lead.window_open ? '' : 'disabled' %> class="space-y-2">
+        <% for (const g of groups) { %>
+        <div>
+          <p class="text-xs font-semibold text-base-content/70"><%= g.name %></p>
+          <% for (const u of g.units) { %>
+          <label class="label tap w-full cursor-pointer justify-start gap-2 whitespace-normal py-1 text-sm text-base-content">
+            <input type="checkbox" name="units" value="<%= u.id %>" class="checkbox checkbox-sm">
+            <span><%= u.name %><span class="text-base-content/60"><%= [u.size_sqft ? ' · ' + u.size_sqft.toLocaleString('en-US') + ' sq ft' : '', u.price_from ? ' · from ' + money(u.price_from) : ''].join('') %></span></span>
+          </label>
+          <% } %>
+        </div>
+        <% } %>
+        <p class="text-xs text-base-content/50">Up to <%= SEND_LIMITS.units %> units. They get the names, prices, handover and brochure links in one message.</p>
+        <button class="btn btn-primary w-full" type="submit"><%- include('icon', { name: 'send', cls: 'size-4' }) %>Send on WhatsApp</button>
+      </fieldset>
+    </form>
+  </div>
+</details>
+<% } %>

@@ -148,6 +148,14 @@ Staff install the CRM on their phone from their own CRM host. It opens full scre
 
 Each person sees only their own leads, as everywhere else. Logging any outcome takes the lead off the list until the bot opens a new hand-off. A hand-off staff resolved without logging an outcome still counts (that is the gap this closes); the 2-hour and 30-day bounds are inclusive. **Limit:** a hot lead with no hand-off is timed from its first message (we don't store when it turned hot), so it is tracked only for 30 days after first contact; one that first wrote 5 weeks ago and turned hot yesterday doesn't show. Leads that need a person almost always get a hand-off from the bot, which restarts the clock.
 
+## Projects (R17)
+
+What a real estate client sells (contract in `docs/TEAM.md`, "R17: projects and units"). `crm/src/projects.js`, tables `crm_projects` and `crm_units` (platform migration 8).
+
+- **Projects page** (`/projects`, owners and managers; in the menu when the business type's pack has `projectsPage`, real estate today): add and edit projects (name, area, kind, handover, brochure and photo https links) and their units (name, size in sq ft, price from in the business's currency, optional photo). Mark sold out, archive (hidden, never deleted, so leads' history still reads), reorder. Each unit gets a fixed `retailer_id` (`u<id>`) for the Meta catalog, and shows **Needs a photo / link / price** until it could go there.
+- **Send projects** on the lead page: tick units, and they go as one WhatsApp message (names, sizes, "from" prices, handover, brochure links), grouped by project. Up to 30 units from 10 projects (a WhatsApp product list's limits, so the same choice works once K24 adds the catalog). Only inside the 24-hour window; outside it the section says why and the server refuses. It is a normal CRM reply (`metadata.source = 'crm'`, plus `metadata.units`), so it counts as picking the lead up (R2) and for speed to lead (R5).
+- The WhatsApp assistant still answers from Business settings; the page says so. K24 (Kaamil) adds the Meta catalog sync and product lists.
+
 ## Roles
 
 | | Owner | Manager | Sales |

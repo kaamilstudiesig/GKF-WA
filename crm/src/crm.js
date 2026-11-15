@@ -213,7 +213,8 @@ class Crm {
    * Queues a staff reply in the bot's outbound_messages table. The bot's
    * outbound worker sends it and records it in the conversation history.
    */
-  async queueMessage(user, waId, text) {
+  /** extra: more metadata for the message (R17: { units: [ids] } for a projects send). */
+  async queueMessage(user, waId, text, extra = {}) {
     const body = String(text || '').trim();
     if (!body) throw new HttpError(400, 'Message is empty.');
     if (body.length > MAX_MESSAGE_LENGTH) throw new HttpError(400, `Message is longer than ${MAX_MESSAGE_LENGTH} characters.`);
@@ -225,7 +226,7 @@ class Crm {
       await this.db.query(`
         INSERT INTO outbound_messages (dedup_key, wa_id, text, status, metadata)
         VALUES ($1, $2, $3, 'pending', $4::jsonb)
-      `, [`crm:${crypto.randomUUID()}`, waId, body, JSON.stringify({ source: 'crm', user_id: user.id, user_name: user.name })]);
+      `, [`crm:${crypto.randomUUID()}`, waId, body, JSON.stringify({ ...extra, source: 'crm', user_id: user.id, user_name: user.name })]);
       if (lead.status === 'new') {
         await this.db.query("UPDATE leads SET status = 'contacted', updated_at = now() WHERE wa_id = $1 AND status = 'new'", [waId]);
         await this.log(user, waId, 'status_change', { from: 'new', to: 'contacted', auto: true });

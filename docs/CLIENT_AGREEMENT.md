@@ -39,7 +39,7 @@ Checked against the code on 14 Nov 2026. "Before signing" means it must be done 
 | Amounts in the client's currency (international) | Schedule A | Contract agreed | R15 |
 | Monthly lead count and 80% alert | 1 "Lead", 4.3 | Not built. **Before signing** | K26 |
 | Uptime monitor and reply-time measurement | Annexure B | Not built. **Before signing** | K27 |
-| Encrypted backups | C1 | Backups go to Telegram unencrypted today. **Before signing** | K28 |
+| Encrypted backups | C1 | Built (K28): daily, AES-256-GCM, private EU storage (Cloudflare R2), 30 days. Counts once the R2 settings are on Heroku and the first restore drill is done (OPERATIONS.md step 9). **Before signing** | K28 |
 | AI providers don't store or train on data | 7.7, C | Not configured. **Before signing** | K29 |
 | STOP opt-out recorded, templates stop | 5.2 | Not built. **Before signing**, and before R16 sends templates | K30 |
 | Owners export leads, conversations, outcomes and notes | 7.6, 12.5 | Lead CSV only. **Before signing** | R19 |

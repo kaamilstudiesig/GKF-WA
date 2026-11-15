@@ -63,10 +63,13 @@ const windowOpen = lead => {
 async function recordRefused({ channel, ipHash, error }) {
   await record({ channel, ipHash, status: 'rejected', error });
 }
+// Only refused logins count towards the limit: a portal's own validation errors (no phone, bad email)
+// or a save that failed on our side must never lock it out.
+const AUTH_REFUSALS = ['bad signature', 'bad form key', 'website not allowed', 'honeypot'];
 async function tooManyFailures(ipHash) {
   if (!ipHash) return false;
   const r = await db.one(`SELECT COUNT(*)::int AS c FROM intake_submissions WHERE ip_hash = $1 AND status = 'rejected'
-    AND received_at > now() - interval '1 hour'`, [ipHash]);
+    AND error = ANY($2::text[]) AND received_at > now() - interval '1 hour'`, [ipHash, AUTH_REFUSALS]);
   return r.c >= LIMITS.failuresPerIpPerHour;
 }
 
@@ -150,7 +153,10 @@ async function handle({ input, cfg, businessName, channel }) {
   const waId = lead.wa_id;
 
   if (input.message) {
-    await db.query('INSERT INTO crm_lead_notes (wa_id, user_id, body) VALUES ($1, NULL, $2)', [waId, `From the ${label} form: ${input.message}`]);
+    // Skipped when the same note is already there (a portal retrying after a save that failed half-way).
+    await db.query(`INSERT INTO crm_lead_notes (wa_id, user_id, body) SELECT $1, NULL, $2
+      WHERE NOT EXISTS (SELECT 1 FROM crm_lead_notes WHERE wa_id = $1 AND user_id IS NULL AND body = $2 AND created_at > now() - interval '1 day')`,
+    [waId, `From the ${label} form: ${input.message}`]);
   }
 
   // The first WhatsApp message: the approved welcome template, only with consent, never during a live
@@ -195,4 +201,4 @@ async function handle({ input, cfg, businessName, channel }) {
   logger.info('Lead intake accepted', { channel, source: input.source, new_lead: isNew, wa_suffix: waId.slice(-4) });
 }
 
-module.exports = { accept, clean, recordRefused, tooManyFailures, withIntake, SOURCES, SOURCE_LABELS, LIMITS };
+module.exports = { accept, clean, recordRefused, tooManyFailures, AUTH_REFUSALS, withIntake, SOURCES, SOURCE_LABELS, LIMITS };

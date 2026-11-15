@@ -56,11 +56,12 @@ function intakeRouter() {
     }
     const hash = ipHash(req.ip, tenant.slug, key);
     const asTenant = fn => tenancy.run(tenant.id, fn);
-    // Refused requests are recorded per IP (hashed); after too many in an hour, stop answering
-    // them one by one, so a form key or signature can't be guessed at full speed.
-    if (await asTenant(() => leadIntake.tooManyFailures(hash))) {
-      return res.status(429).json({ ok: false, error: 'Too many refused requests. Try again later.' });
-    }
+    // Refused requests are recorded per IP (hashed); after too many in an hour, that address gets 429,
+    // so a form key or signature can't be guessed at full speed. A valid signature always gets through
+    // (a shared office or mobile IP must not block a portal); the public form key is no proof, so
+    // website forms are checked first.
+    const blocked = () => asTenant(() => leadIntake.tooManyFailures(hash));
+    const tooMany = () => res.status(429).json({ ok: false, error: 'Too many refused requests. Try again later.' });
     const refuse = async (channelName, error, status, message) => {
       await asTenant(() => leadIntake.recordRefused({ channel: channelName, ipHash: hash, error }));
       return res.status(status).json(status === 202 ? { ok: true } : { ok: false, error: message });
@@ -70,10 +71,12 @@ function intakeRouter() {
     if (req.get('x-intake-signature') !== undefined) {
       channel = 'api';
       if (!req.is('application/json') || !signatureOk(req.rawBody, req.get('x-intake-signature'), cfg.secret)) {
+        if (await blocked()) return tooMany();
         return refuse('api', 'bad signature', 401, 'Bad signature');
       }
     } else {
       channel = 'form';
+      if (await blocked()) return tooMany();
       const origin = String(req.get('origin') || '').toLowerCase().replace(/\/+$/, '');
       const allowed = origin && cfg.origins.includes(origin);
       if (allowed) { res.setHeader('Access-Control-Allow-Origin', origin); res.setHeader('Vary', 'Origin'); }

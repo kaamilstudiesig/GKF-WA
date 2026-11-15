@@ -251,3 +251,22 @@ test('review fixes: no fixed IP-hash key in production', () => {
   assert.strictEqual(ipKey({ NODE_ENV: 'production', INTAKE_IP_KEY: 'i', TENANT_SECRETS_KEY: 'k' }), 'i');
   assert.strictEqual(ipKey({ NODE_ENV: 'test' }), 'local-dev-intake');
 });
+
+test('review fixes (2): a portal\'s own 400s never lock it out; a valid signature passes a blocked IP; a retry adds no second note', async () => {
+  // 31 signed calls with no phone (the portal's mistake), then a valid lead: accepted.
+  for (let i = 0; i < 31; i++) assert.strictEqual((await api({ name: 'No phone', source: 'bayut' })).status, 400);
+  assert.strictEqual((await api({ name: 'Good', phone: DUBAI, source: 'bayut' })).status, 202);
+
+  // 30 bad form keys from this address block more guessing, but a correctly signed call still gets in.
+  for (let i = 0; i < 30; i++) await form({ name: 'G', phone: '0501234567', form_key: `guess${i}` });
+  assert.strictEqual((await form({ name: 'G', phone: '0501234567' })).status, 429);
+  assert.strictEqual((await api({ name: 'G', phone: '971507777777', source: 'bayut' }, { secret: 'wrong' })).status, 429);
+  assert.strictEqual((await api({ name: 'Signed', phone: '971508888888', source: 'bayut' })).status, 202);
+
+  // A retry after a save that failed half-way (the claim was marked rejected) adds no second note.
+  const body = { name: 'Retry', phone: '971509990000', message: 'same text', source: 'property_finder', sourceRef: 'PF-R' };
+  assert.strictEqual((await api(body)).status, 202);
+  await asAcme(() => db.query("UPDATE intake_submissions SET status = 'rejected', error = 'could not be saved' WHERE source_ref = 'PF-R'"));
+  assert.strictEqual((await api(body)).status, 202); // not a duplicate any more, so it runs again
+  assert.strictEqual((await many("SELECT id FROM crm_lead_notes WHERE wa_id = '971509990000'")).length, 1);
+});

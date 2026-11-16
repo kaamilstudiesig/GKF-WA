@@ -9,31 +9,8 @@
  */
 const db = require('../src/db');
 
-const COUNTS = [
-  ['messages', 'SELECT COUNT(*)::int AS n FROM messages WHERE wa_id = $1'],
-  ['handoffs', 'SELECT COUNT(*)::int AS n FROM handoffs WHERE wa_id = $1'],
-  ['outbound_messages', 'SELECT COUNT(*)::int AS n FROM outbound_messages WHERE wa_id = $1'],
-  ['webhook_events', 'SELECT COUNT(*)::int AS n FROM webhook_events WHERE wa_id = $1']
-];
-
-async function deleteLead(key, { confirm = false } = {}) {
-  await db.init();
-  const lead = await db.one('SELECT wa_id, display_name FROM leads WHERE wa_id = $1', [key]);
-  if (!lead) return { found: false };
-  const counts = {};
-  for (const [table, sql] of COUNTS) counts[table] = (await db.one(sql, [key])).n;
-  const hasCrmLog = Boolean((await db.one("SELECT to_regclass('crm_activity_log') AS t")).t);
-  if (hasCrmLog) counts.crm_activity_log = (await db.one('SELECT COUNT(*)::int AS n FROM crm_activity_log WHERE wa_id = $1', [key])).n;
-  if (!confirm) return { found: true, deleted: false, counts };
-  await db.tx(async () => {
-    // Queue tables have no foreign key to leads; everything else cascades from leads.
-    await db.query('DELETE FROM outbound_messages WHERE wa_id = $1', [key]);
-    await db.query('DELETE FROM webhook_events WHERE wa_id = $1', [key]);
-    if (hasCrmLog) await db.query('DELETE FROM crm_activity_log WHERE wa_id = $1', [key]); // no FK either
-    await db.query('DELETE FROM leads WHERE wa_id = $1', [key]);
-  });
-  return { found: true, deleted: true, counts };
-}
+// The deletion itself is shared with K31 automatic deletion.
+const { deleteLead } = require('../src/services/leadDeletion');
 
 if (require.main === module) {
   const tenancy = require('../src/tenancy/context');

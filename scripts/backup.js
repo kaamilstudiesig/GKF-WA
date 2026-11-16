@@ -26,7 +26,7 @@ const CRM_TABLES = ['crm_users', 'crm_lead_assignments', 'crm_lead_notes', 'crm_
 // After leads and outcomes: restoring those makes the Zoho trigger add zoho_links rows.
 const ZOHO_TABLES = ['zoho_links', 'zoho_cursors'];
 // K26 billing count (platform migration 9; skipped while a database doesn't have it yet).
-const USAGE_TABLES = ['lead_usage', 'lead_usage_alerts'];
+const USAGE_TABLES = ['lead_usage', 'lead_usage_alerts', 'opt_out_list']; // opt_out_list: K31 keeps STOPs of deleted leads (hashed)
 // K27 reply times (platform migration 10; skipped while a database doesn't have it yet).
 const METRIC_TABLES = ['reply_times'];
 const TABLES = [...PLATFORM_TABLES, ...BOT_TABLES, ...CRM_TABLES, ...ZOHO_TABLES, ...USAGE_TABLES, ...METRIC_TABLES];

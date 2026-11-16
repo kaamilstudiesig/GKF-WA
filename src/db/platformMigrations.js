@@ -346,6 +346,21 @@ const PLATFORM_MIGRATIONS = [
     ]
   },
   {
+    // K30 + K31: a STOP outlives the lead's deletion (src/services/optOutList.js). A keyed hash of the
+    // number, never the number. Id 11: 7 and 8 belong to open PRs (R16, R17).
+    id: 11,
+    name: 'opt_out_list',
+    up: [
+      `CREATE TABLE opt_out_list (
+        tenant_id INTEGER NOT NULL DEFAULT ${TENANT_DEFAULT} REFERENCES tenants (id),
+        person_key TEXT NOT NULL,
+        opted_out_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+        PRIMARY KEY (tenant_id, person_key)
+      )`,
+      ...tenancyPolicy('opt_out_list')
+    ]
+  },
+  {
     // R17: projects and units (crm/src/projects.js; contract in docs/TEAM.md). The source of truth for
     // what a real estate client sells; K24 later pushes units to the client's Meta catalog.
     // Id 8: R16's lead_intake is 7 (either may be applied first; the runner applies each missing id).
@@ -395,6 +410,6 @@ const PLATFORM_MIGRATIONS = [
 ];
 
 // Every table with client data, including ones added after migration 1 (tests and tools use this).
-const ALL_TENANT_TABLES = [...TENANT_TABLES, 'zoho_links', 'zoho_cursors', 'crm_settings', 'intake_submissions', 'crm_projects', 'crm_units', 'lead_usage', 'lead_usage_alerts', 'reply_times'];
+const ALL_TENANT_TABLES = [...TENANT_TABLES, 'zoho_links', 'zoho_cursors', 'crm_settings', 'intake_submissions', 'crm_projects', 'crm_units', 'lead_usage', 'lead_usage_alerts', 'reply_times', 'opt_out_list'];
 
 module.exports = { PLATFORM_MIGRATIONS, TENANT_TABLES, ALL_TENANT_TABLES, tenancyPolicy, TENANT_DEFAULT };

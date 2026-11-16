@@ -41,6 +41,9 @@ try {
   gymConfig = require('../../src/config/gymConfig');
   businessProfile = require('../../src/services/businessProfile');
 } catch (e) { /* standalone CRM without the bot */ }
+// K27: this month's reply time for the owner's line in Reports (optional: needs the bot).
+let replyTimes = null;
+try { replyTimes = require('../../src/services/replyTimes'); } catch (e) { /* standalone CRM */ }
 const planOptions = () => (gymConfig ? gymConfig.pricingTiers.map(t => `${t.name} (${t.price})`) : []);
 const toArray = v => (Array.isArray(v) ? v : v === undefined ? [] : [v]);
 
@@ -409,7 +412,8 @@ function createCrmApp({
       : a.ads;
     res.render('reports', {
       r: await crm.reports(req.user, { days, includeAiCost: can.viewAiCost(req.user), usdToInr }),
-      a, adRows, adSort, GRADE_MIN_LEADS
+      a, adRows, adSort, GRADE_MIN_LEADS,
+      replyStats: replyTimes && req.user.role === 'owner' ? await replyTimes.monthStats().catch(() => null) : null
     });
   }));
   // R6: the "By ad" table as a spreadsheet (same scope and period as the page).

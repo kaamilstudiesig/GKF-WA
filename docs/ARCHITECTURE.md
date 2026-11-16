@@ -233,6 +233,8 @@ src/
   services/
     deterministicRouter  fixed answers, language detection, buttons
     optOut               STOP / START (K30): fixed reply, blocks templates to opted-out leads
+    replyTimes           Reply time per automatic reply (K27): received → dispatched, monthly p95
+    clientMonth          A client's calendar month in its own time zone (K26, K27)
     aiService            prompt building, OpenRouter call, JSON parsing, cleanup
     aiPolicy             what the AI may change; medical safety check
     botGuard             staff pause + per-lead daily cap

@@ -108,6 +108,10 @@
     <fieldset class="<%= field %>"><legend class="fieldset-legend">Type of business</legend>
       <select name="type" class="select w-full"><% for (const [k, v] of Object.entries(verticals)) { %><option value="<%= k %>" <%= profile.type === k ? 'selected' : '' %>><%= v.label %></option><% } %></select>
       <p class="label whitespace-normal">Sets how the assistant sells (what it asks, what it offers). More types coming.</p></fieldset>
+    <label class="flex cursor-pointer items-start gap-3 py-1">
+      <input type="checkbox" name="health_related" value="1" class="checkbox checkbox-sm mt-0.5" <%= profile.healthRelated ? 'checked' : '' %>>
+      <span><span class="text-sm font-medium">Health-related business</span><span class="block text-xs text-base-content/60">Clinics, pharmacies, physiotherapy, wellness. Questions about symptoms, medicines or treatment always go to your team; the assistant only answers services, prices, timings, location and appointments.</span></span>
+    </label>
     <fieldset class="<%= field %>"><legend class="fieldset-legend">One-line description</legend><input name="facility" maxlength="160" value="<%= profile.facility %>" placeholder="10,000 sq ft functional training gym" class="input w-full"></fieldset>
   </section>
 

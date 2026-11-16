@@ -22,6 +22,9 @@ const optOut = require('../services/optOut');
 const leadUsage = require('../services/leadUsage');
 
 /** Text the lead actually sent, including taps on buttons and list items. */
+/** A photo, video or document caption, or ''. */
+const captionOf = msg => String(msg?.image?.caption || msg?.video?.caption || msg?.document?.caption || '').trim();
+
 function textOf(msg) {
   switch (msg.type) {
     case 'text': return msg.text?.body || '';
@@ -36,6 +39,20 @@ function textOf(msg) {
  * Returns { text, buttons?, location? }.
  */
 async function decideReply(lead, text, { burst = false } = {}) {
+  // K33: in a health-related business, health questions go to staff with a fixed reply (no AI).
+  const healthMode = Boolean(gymConfig.profile.healthRelated);
+  if (healthMode) {
+    // An open health hand-off: the assistant stays out until staff have dealt with it.
+    if (lead.needs_human && lead.handoff_reason === 'injury_question') return { text: aiPolicy.healthHoldReply(text) };
+    // Every message the lead sent since our last reply (a burst, a photo caption), not only this one.
+    const texts = [text, ...(await leadRepository.unansweredInboundTexts(lead.wa_id))];
+    const hit = texts.map(t => aiPolicy.checkHealthQuestion(t)).find(r => r.isHealthQuestion);
+    if (hit) {
+      // The summary stays generic: the details are in the conversation, not copied into alerts.
+      await applyLeadUpdates(lead, { needs_human: true, handoff_reason: hit.handoffReason, summary: 'Asked a health question.' });
+      return { text: aiPolicy.checkHealthQuestion(text).replyText || hit.replyText };
+    }
+  }
   const medical = aiPolicy.checkMedicalInjurySafety(text);
   if (medical.isMedicalQuery) {
     await applyLeadUpdates(lead, { needs_human: true, handoff_reason: medical.handoffReason, summary: 'Asked an injury/medical question.' });
@@ -47,7 +64,14 @@ async function decideReply(lead, text, { burst = false } = {}) {
     if (routed.updates) await applyLeadUpdates(lead, routed.updates);
     return { text: routed.replyText, buttons: routed.buttons, location: routed.location };
   }
-  return { text: (await aiService.reply(lead, text)).replyText };
+  const replyText = (await aiService.reply(lead, text)).replyText;
+  // K33 safety net: in health mode, an assistant reply that reads like advice is never sent.
+  if (healthMode && aiPolicy.looksLikeAdvice(replyText)) {
+    logger.warn('Health mode: an AI reply looked like advice and was replaced', { wa_suffix: String(lead.wa_id).slice(-4) });
+    await applyLeadUpdates(lead, { needs_human: true, handoff_reason: 'injury_question', summary: 'Asked a health question.' });
+    return { text: aiPolicy.healthReply(text) };
+  }
+  return { text: replyText };
 }
 
 async function processEvent(event) {
@@ -83,7 +107,7 @@ async function processEvent(event) {
     if (!alreadySaved) {
       await leadRepository.saveMessage({
         messageId: msg.id, waId, direction: 'in', timestamp,
-        text: text !== null ? text : `[${String(msg.type || 'unknown').toUpperCase()} message]`
+        text: text !== null ? text : `[${String(msg.type || 'unknown').toUpperCase()} message]${captionOf(msg) ? ` ${captionOf(msg)}` : ''}`
       });
       // K26: every contact counts towards this month's leads (once per person), STOP included.
       await leadUsage.record(lead, { channel: 'whatsapp', at: new Date(timestamp) });
@@ -138,9 +162,11 @@ async function processEvent(event) {
       await applyLeadUpdates(lead, { needs_human: true, handoff_reason: 'other', summary: 'Daily bot reply limit reached for this lead.' });
       reply = { text: gymConfig.fallbackMessages.systemError };
     } else {
+      // K33: a photo or document caption with a health question goes to staff like typed text.
+      const captionHealth = text === null && gymConfig.profile.healthRelated && aiPolicy.checkHealthQuestion(captionOf(msg)).isHealthQuestion;
       reply = text !== null && text.trim()
         ? await decideReply(lead, text, { burst: await leadRepository.unansweredInboundCount(waId) > 1 })
-        : { text: gymConfig.fallbackMessages.nonTextMessage };
+        : captionHealth ? await decideReply(lead, captionOf(msg)) : { text: gymConfig.fallbackMessages.nonTextMessage };
     }
 
     const metadata = { in_reply_to: msg.id };

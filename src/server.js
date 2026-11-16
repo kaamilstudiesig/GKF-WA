@@ -59,11 +59,12 @@ async function main() {
   // Housekeeping: keep the small Postgres plan small.
   const housekeeping = setInterval(async () => {
     try {
-      const { events, sent } = await tenancy.runAsSystem(async () => ({
+      const { events, sent, replyTimes } = await tenancy.runAsSystem(async () => ({
         events: await eventRepository.cleanup(14),
-        sent: await outboundRepository.cleanup(30)
+        sent: await outboundRepository.cleanup(30),
+        replyTimes: await require('./services/replyTimes').cleanup() // K27: 13 months
       }));
-      if (events || sent) logger.info('Housekeeping removed old queue rows', { events, sent });
+      if (events || sent || replyTimes) logger.info('Housekeeping removed old rows', { events, sent, replyTimes });
     } catch (err) {
       logger.error('Housekeeping failed', { error: err.message });
     }

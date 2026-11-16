@@ -1,0 +1,12 @@
+<%# K26: "Leads this month: 412 of 500". usage = leadUsage.usage(); amber from 80%, red from 100%. %>
+<% if (usage) { %>
+  <% const tone = usage.percent === null ? '' : usage.percent >= 100 ? 'text-error' : usage.percent >= 80 ? 'text-warning' : ''; %>
+  <div class="rounded-box bg-base-100 p-4">
+    <div class="text-xs text-base-content/60">Leads this month</div>
+    <div class="mt-1 text-3xl font-bold tabular-nums <%= tone %>"><%= usage.count %><% if (usage.limit) { %><span class="text-base font-normal text-base-content/60"> of <%= usage.limit %></span><% } %></div>
+    <% if (usage.limit) { %>
+      <progress class="progress mt-2 w-full <%= usage.percent >= 100 ? 'progress-error' : usage.percent >= 80 ? 'progress-warning' : 'progress-primary' %>" value="<%= Math.min(usage.count, usage.limit) %>" max="<%= usage.limit %>" aria-label="Leads used this month"></progress>
+    <% } %>
+    <% if (typeof detail !== 'undefined' && detail) { %><p class="mt-2 text-xs text-base-content/60">Each person counts once per calendar month, across channels.<% if (usage.limit) { %> Leads above <%= usage.limit %> are billed as overage under your plan.<% } %></p><% } %>
+  </div>
+<% } %>

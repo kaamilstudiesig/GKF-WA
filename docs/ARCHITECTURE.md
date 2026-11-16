@@ -63,6 +63,7 @@ flowchart TB
     Router{Host header router<br/>src/app.js}
     Router -->|wa.* host| Bot[Bot routes<br/>/webhook, /health]
     Router -->|CRM_HOSTS| CRM[Staff CRM<br/>crm/ Express + EJS]
+    Router -->|SHARED_CRM_HOSTS| Shared[Shared Dartit CRM<br/>src/routes/sharedCrm.js<br/>client from the session] --> CRM
     Bot --> InQ[Inbound worker<br/>x3]
     OutQ[Outbound worker<br/>x2]
   end
@@ -233,6 +234,9 @@ src/
   services/
     deterministicRouter  fixed answers, language detection, buttons
     optOut               STOP / START (K30): fixed reply, blocks templates to opted-out leads
+    leadUsage            Monthly lead count per client (K26): hashed, once per person, 80%/100% alerts
+    replyTimes           Reply time per automatic reply (K27): received → dispatched, monthly p95
+    clientMonth          A client's calendar month in its own time zone (K26, K27)
     aiService            prompt building, OpenRouter call, JSON parsing, cleanup
     aiPolicy             what the AI may change; medical safety check
     botGuard             staff pause + per-lead daily cap

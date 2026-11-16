@@ -16,6 +16,20 @@
   </div>
 </div>
 
+<% if (typeof replyStats !== 'undefined' && replyStats) { %>
+<%# K27: owner-only service line (Annexure B: 95% of automatic replies within 30 seconds). %>
+<p class="mb-4 rounded-box bg-base-100 px-4 py-3 text-sm" id="service">
+  <span class="font-semibold">Reply time this month:</span>
+  <% if (replyStats.replies) { %>
+    <span class="<%= replyStats.withinTargetPct >= 95 ? 'text-success' : 'text-warning' %>"><%= replyStats.withinTargetPct %>% within <%= replyStats.targetMs / 1000 %> s</span>
+    <% if (replyStats.p95Ms !== null) { %>· 95% of replies in <%= (replyStats.p95Ms / 1000).toFixed(1) %> s or less <% } %>· <%= replyStats.replies %> automatic replies<% if (replyStats.failed) { %> (<%= replyStats.failed %> not sent)<% } %>
+  <% } else { %>
+    <span class="text-base-content/60">no automatic replies yet</span>
+  <% } %>
+  <span class="block text-xs text-base-content/50">From the lead's last message to sending. Target: 95% within 30 s. Uptime comes from the external monitor.</span>
+</p>
+<% } %>
+
 <div class="mb-4 grid grid-cols-2 gap-3 lg:grid-cols-4">
   <% for (const [label, value, hint, cls] of [['Total leads', r.counts.total, '', ''], ['Hot', r.counts.hot, '', 'text-warning'], ['Converted', r.counts.converted, '', 'text-success'], ['Win rate', r.conversionRate === null ? '—' : r.conversionRate + '%', 'converted ÷ (converted + lost)', 'text-primary']]) { %>
   <div class="<%= card %>"><div class="text-xs text-base-content/60"><%= label %></div><div class="mt-1 text-3xl font-bold tabular-nums <%= cls %>"><%= value %></div><% if (hint) { %><div class="text-[11px] text-base-content/50"><%= hint %></div><% } %></div>

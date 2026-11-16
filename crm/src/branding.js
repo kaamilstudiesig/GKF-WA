@@ -163,4 +163,18 @@ class Branding {
   }
 }
 
-module.exports = { Branding, shortName, isSquarePng, initials, normalizeColor, contentColor, nameParts, slug, parseLogo, DEFAULT_COLOR, DEFAULT_CONTENT, LOGO_MAX_BYTES };
+/**
+ * The shared CRM (src/routes/sharedCrm.js) always looks like Dartit (docs: Dartit DESIGN.md):
+ * Dartit theme and logo; the business's own colour and logo stay on its own CRM host (R12).
+ * `business` is the signed-in client's name, shown next to the Dartit logo.
+ */
+const PLATFORM = Object.freeze({
+  platform: true, name: 'Dartit', shortName: 'Dartit', first: 'Dartit', last: '', mark: 'D',
+  color: '#1B4532', contentColor: '#F6EFE1', style: '', logoUrl: null, logoSquarePng: false, key: 'dartit-1', business: ''
+});
+// The business keeps its name (page titles, "All of …", file names); only the look is Dartit.
+const forPlatform = b => (b ? {
+  ...PLATFORM, name: b.name, shortName: b.shortName, first: b.first, last: b.last, fileSlug: b.fileSlug, business: b.name
+} : { ...PLATFORM });
+
+module.exports = { Branding, shortName, isSquarePng, initials, normalizeColor, contentColor, nameParts, slug, parseLogo, DEFAULT_COLOR, DEFAULT_CONTENT, LOGO_MAX_BYTES, PLATFORM, forPlatform };

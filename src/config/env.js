@@ -36,6 +36,8 @@ const env = {
   openRouterModel: process.env.OPENROUTER_MODEL || 'deepseek/deepseek-v4.1-flash',
   openRouterFallbackModel: process.env.OPENROUTER_FALLBACK_MODEL || 'google/gemini-3.5-flash-lite',
   openRouterBaseUrl: process.env.OPENROUTER_BASE_URL || 'https://openrouter.ai/api/v1',
+  // K29: only route to providers with zero data retention (on unless set to 'false').
+  openRouterZdr: process.env.OPENROUTER_ZDR !== 'false',
 
   // AI cost guardrails (per calendar month, UTC). When hit, leads go to staff instead.
   aiMonthlyTokenBudget: num(process.env.AI_MONTHLY_TOKEN_BUDGET, 5000000),
@@ -65,6 +67,11 @@ const env = {
   herokuApp: process.env.HEROKU_APP_NAME || 'gkf-wa',
   crmHosts: (process.env.CRM_HOSTS || 'crm.goldkraftfitness.com,crm.localhost')
     .split(',').map(h => h.trim().toLowerCase()).filter(Boolean),
+  // The shared CRM where staff of every client sign in (src/routes/sharedCrm.js). Off when empty.
+  // The first host is also the CRM link in alerts for clients without their own CRM host.
+  sharedCrmHosts() {
+    return (process.env.SHARED_CRM_HOSTS || '').split(',').map(h => h.trim().toLowerCase()).filter(Boolean);
+  },
 
   validateForProduction() {
     const required = {

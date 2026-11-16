@@ -157,7 +157,7 @@ async function usage({ month = null, now = new Date() } = {}) {
 
 /** Every client's count for one month (invoicing; system context). */
 async function allClients(month) {
-  if (!/^[0-9]{4}-[0-9]{2}$/.test(String(month))) throw new Error('Give the month as YYYY-MM, for example 2026-11.');
+  if (!/^[0-9]{4}-(0[1-9]|1[0-2])$/.test(String(month))) throw new Error('Give the month as YYYY-MM, for example 2026-11.');
   await registry.ensureLoaded();
   return tenancy.runAsSystem(async () => {
     const rows = await db.many(`SELECT t.id, t.slug, t.name, t.status, COUNT(u.person_key)::int AS leads

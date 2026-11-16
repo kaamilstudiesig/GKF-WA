@@ -115,6 +115,7 @@ test('each client has its own count; the invoicing list shows every client and t
   const gkf = list.find(r => r.slug !== 'acme');
   assert.deepStrictEqual([gkf.leads, gkf.limit, gkf.over], [2, 1, 1]);
   await assert.rejects(leadUsage.allClients('Nov'), /YYYY-MM/);
+  await assert.rejects(leadUsage.allClients('2026-13'), /YYYY-MM/);
 });
 
 test('no staff Telegram group yet: the alert is not marked sent, and goes out once a group exists', async () => {

@@ -6,7 +6,8 @@ const db = require('../db');
  *
  * Tables with a foreign key to leads (messages, hand-offs, notes, follow-ups, assignments, outcomes,
  * Zoho links) go with the lead. The rest are keyed by the same wa_id without a foreign key and are
- * deleted here. Kept on purpose: lead_usage (a keyed hash for billing, no personal data) and
+ * deleted here. Kept on purpose: lead_usage (a keyed hash for billing, no personal data), the
+ * opt-out of an opted-out lead (opt_out_list, a keyed hash, so templates stay refused) and
  * reply_times (no lead key). Backups roll over within 30 days.
  */
 // Tables without a foreign key to leads. Optional ones are skipped where a database doesn't have them yet.
@@ -24,7 +25,7 @@ const exists = async table => Boolean((await db.one('SELECT to_regclass($1) AS t
 /** { found: false } | { found: true, deleted: boolean, counts }. Dry run unless confirm. */
 async function deleteLead(key, { confirm = false } = {}) {
   await db.init();
-  const lead = await db.one('SELECT wa_id, display_name FROM leads WHERE wa_id = $1', [key]);
+  const lead = await db.one('SELECT wa_id, phone, display_name, opted_out_at FROM leads WHERE wa_id = $1', [key]);
   if (!lead) return { found: false };
   const tables = [];
   for (const t of NO_FK_TABLES) if (!t.optional || await exists(t.table)) tables.push(t.table);
@@ -34,6 +35,8 @@ async function deleteLead(key, { confirm = false } = {}) {
   }
   if (!confirm) return { found: true, deleted: false, counts };
   const run = async () => {
+    // A STOP outlives the deletion, as a keyed hash (src/services/optOutList.js).
+    await require('./optOutList').remember(lead);
     for (const table of tables) await db.query(`DELETE FROM ${table} WHERE wa_id = $1`, [key]);
     await db.query('DELETE FROM leads WHERE wa_id = $1', [key]); // the rest cascades
   };

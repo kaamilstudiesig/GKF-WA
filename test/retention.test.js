@@ -258,3 +258,66 @@ test('tick processes active tenants and skips suspended tenants without claiming
   assert.deepStrictEqual(await leadKeys(suspended.id), [phone(1)]);
   assert.deepStrictEqual(await claims(suspended.id), []);
 });
+
+test('a deleted lead who wrote STOP stays opted out: templates refused, and the opt-out returns if they come back', async () => {
+  const whatsappService = require('../src/services/whatsappService');
+  const leadRepository = require('../src/db/leadRepository');
+  const optOutList = require('../src/services/optOutList');
+  await tenancy.runAsSystem(() => db.query('DELETE FROM opt_out_list'));
+  await insertLead(1, phone(1));
+  await tenancy.run(1, () => db.query('UPDATE leads SET opted_out_at = $2, updated_at = $2 WHERE wa_id = $1', [phone(1), OLD]));
+  assert.deepStrictEqual(await run(), { deleted: 1, due: 1, months: 24 });
+  await tenancy.run(1, async () => {
+    assert.strictEqual(await db.one('SELECT wa_id FROM leads WHERE wa_id = $1', [phone(1)]), null);
+    const listed = await db.one('SELECT person_key FROM opt_out_list');
+    assert.ok(listed && !listed.person_key.includes('983100'), 'kept as a hash');
+    assert.strictEqual(await leadRepository.isOptedOut(phone(1)), true);
+    await assert.rejects(whatsappService.sendTemplate(phone(1), { name: 'welcome', body: [] }), err => err.optedOut === true);
+    // They come back (a new lead row): the opt-out moves back onto it.
+    await db.query("INSERT INTO leads (wa_id, phone, status) VALUES ($1, $1, 'new')", [phone(1)]);
+    const restored = await optOutList.restore(await db.one('SELECT * FROM leads WHERE wa_id = $1', [phone(1)]));
+    assert.ok(restored);
+    assert.ok((await db.one('SELECT opted_out_at FROM leads WHERE wa_id = $1', [phone(1)])).opted_out_at);
+    assert.strictEqual(await db.one('SELECT person_key FROM opt_out_list'), null);
+  });
+});
+
+test('one lead that fails to delete is counted and reported; the rest are deleted', async () => {
+  const leadDeletion = require('../src/services/leadDeletion');
+  await insertLead(1, phone(1));
+  await insertLead(1, phone(2));
+  const saved = leadDeletion.deleteLead;
+  leadDeletion.deleteLead = async (key, opts) => {
+    if (key === phone(1)) throw new Error('constraint violation');
+    return saved(key, opts);
+  };
+  try {
+    const r = await run();
+    assert.deepStrictEqual(r, { deleted: 1, due: 2, months: 24, failed: 1 });
+  } finally {
+    leadDeletion.deleteLead = saved;
+  }
+  assert.deepStrictEqual(await leadKeys(), [phone(1)]);
+  assert.ok(alerts.some(a => a.ops && /1 could not be deleted/.test(a.text)));
+});
+
+test('an approved surge (retentionAllowSurgeUntil) deletes up to the per-run cap', async () => {
+  const count = retention.SURGE_MIN + 1;
+  await insertBatch(1, '918313', count, OLD);
+  await registry.update(1, { settings: { retentionAllowSurgeUntil: '2030-12-31' } });
+  try {
+    const result = await run();
+    assert.deepStrictEqual(result, { deleted: count, due: count, months: 24 });
+    assert.ok(!alerts.some(a => /Automatic deletion stopped/.test(a.text)));
+  } finally {
+    await registry.update(1, { settings: { retentionAllowSurgeUntil: '' } });
+  }
+  // An approval in the past no longer counts.
+  await insertBatch(1, '918314', count, OLD);
+  await registry.update(1, { settings: { retentionAllowSurgeUntil: '2029-01-01' } });
+  try {
+    assert.strictEqual((await run()).skipped, 'surge');
+  } finally {
+    await registry.update(1, { settings: { retentionAllowSurgeUntil: '' } });
+  }
+});

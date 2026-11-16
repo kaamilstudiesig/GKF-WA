@@ -35,7 +35,8 @@ const leadRepository = {
   /** K30: whether the lead with this key or phone number opted out. */
   async isOptedOut(waIdOrPhone) {
     const row = await db.one('SELECT 1 AS yes FROM leads WHERE (wa_id = $1 OR phone = $1) AND opted_out_at IS NOT NULL LIMIT 1', [String(waIdOrPhone || '')]);
-    return Boolean(row);
+    // Also a deleted lead's STOP (K31), kept as a keyed hash.
+    return Boolean(row) || require('../services/optOutList').isListed(waIdOrPhone);
   },
 
   async findByWaId(waId) {

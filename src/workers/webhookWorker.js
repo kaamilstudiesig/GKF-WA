@@ -20,6 +20,7 @@ const logger = require('../utils/logger');
 const { captureException } = require('../utils/sentry');
 const optOut = require('../services/optOut');
 const leadUsage = require('../services/leadUsage');
+const optOutList = require('../services/optOutList');
 
 /** Text the lead actually sent, including taps on buttons and list items. */
 function textOf(msg) {
@@ -71,6 +72,9 @@ async function processEvent(event) {
     let lead = await leadRepository.upsertInbound(waId, contact?.profile?.name || null, timestamp,
       ids || identity.fromWebhook(msg, contact));
     lead = await applyReferral(lead, msg);
+    // K31: a deleted lead who had written STOP is back: their opt-out returns to the new row first.
+    const restored = await optOutList.restore(lead);
+    if (restored) lead = { ...lead, opted_out_at: restored };
 
     const replyKey = `reply:${msg.id}`;
     const alreadySaved = await leadRepository.hasMessage(msg.id);

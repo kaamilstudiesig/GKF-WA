@@ -3,7 +3,7 @@ const logger = require('../utils/logger');
 const tenancy = require('../tenancy/context');
 const registry = require('../tenancy/registry');
 const notifyService = require('./notifyService');
-const { deleteLead } = require('./leadDeletion');
+const leadDeletion = require('./leadDeletion'); // called through the module, so a test can make one lead fail
 const { captureException } = require('../utils/sentry');
 
 /**
@@ -22,7 +22,11 @@ const { captureException } = require('../utils/sentry');
  * - LEAD_RETENTION=off turns it off everywhere;
  * - at most MAX_PER_RUN leads per client per day; the rest wait for the next day;
  * - if more than SURGE_SHARE of a client's leads (and more than SURGE_MIN) are due at once, nothing
- *   is deleted for that client and our ops group is alerted (a clock or data problem looks like this);
+ *   is deleted for that client and our ops group is alerted (a clock or data problem looks like this).
+ *   After checking, approve it for that client with the tenant setting retentionAllowSurgeUntil
+ *   (a date, YYYY-MM-DD): until then the surge check is skipped (the per-run cap still applies);
+ * - one lead that fails to delete is counted and reported, and the rest go ahead;
+ * - a client whose run fails gets an ops alert and is retried on the next tick that day;
  * - once a day per client, after RETENTION_HOUR_UTC (default 22:00 UTC, 03:30 IST): the day is claimed
  *   in crm_activity_log (action retention_run) under a transaction lock, so two processes never both run.
  */
@@ -75,19 +79,30 @@ async function runTenant(now = new Date()) {
   const due = await dueLeads(months, now);
   if (!due.length) return { deleted: 0, due: 0, months };
   const total = (await db.one('SELECT COUNT(*)::int AS n FROM leads')).n;
-  if (due.length > SURGE_MIN && due.length > total * SURGE_SHARE) {
+  const allowUntil = /^\d{4}-\d{2}-\d{2}$/.test(String(tenant && tenant.retentionAllowSurgeUntil || '')) ? tenant.retentionAllowSurgeUntil : null;
+  const surgeApproved = allowUntil && now.toISOString().slice(0, 10) <= allowUntil;
+  if (!surgeApproved && due.length > SURGE_MIN && due.length > total * SURGE_SHARE) {
     logger.error('Automatic deletion stopped: too many leads due at once', { due: due.length, total, months });
-    await alertOps(`🛑 Automatic deletion stopped: ${due.length > MAX_PER_RUN ? `${MAX_PER_RUN}+` : due.length} of ${total} leads are older than ${months} months at once. Nothing was deleted. Check the server clock and the data, then set LEAD_RETENTION or retentionMonths.`);
+    await alertOps(`🛑 Automatic deletion stopped: ${due.length > MAX_PER_RUN ? `${MAX_PER_RUN}+` : due.length} of ${total} leads are older than ${months} months at once. Nothing was deleted. Check the server clock and the data. If it is right, approve it for this client with the tenant setting retentionAllowSurgeUntil (YYYY-MM-DD).`);
     return { deleted: 0, due: due.length, months, skipped: 'surge' };
   }
   let deleted = 0;
+  let failed = 0;
   for (const { wa_id: key } of due.slice(0, MAX_PER_RUN)) {
-    const r = await deleteLead(key, { confirm: true });
-    if (r.deleted) deleted++;
+    try {
+      const r = await leadDeletion.deleteLead(key, { confirm: true });
+      if (r.deleted) deleted++;
+    } catch (err) { // one bad row must not stop the rest
+      failed++;
+      captureException(err, { component: 'retention' });
+      logger.error('Automatic deletion: a lead could not be deleted', { error: err.message });
+    }
   }
-  logger.info('Automatic deletion: leads past the retention period deleted', { deleted, months, more: due.length > MAX_PER_RUN });
-  if (deleted) await alertOps(`🧹 Automatic deletion: ${deleted} lead${deleted === 1 ? '' : 's'} with no activity for ${months} months deleted${due.length > MAX_PER_RUN ? ' (more tomorrow)' : ''}.`);
-  return { deleted, due: due.length, months };
+  logger.info('Automatic deletion: leads past the retention period deleted', { deleted, failed, months, more: due.length > MAX_PER_RUN });
+  if (deleted || failed) {
+    await alertOps(`🧹 Automatic deletion: ${deleted} lead${deleted === 1 ? '' : 's'} with no activity for ${months} months deleted${due.length > MAX_PER_RUN ? ' (more tomorrow)' : ''}${failed ? `. ${failed} could not be deleted (see Sentry); they are tried again tomorrow.` : '.'}`);
+  }
+  return failed ? { deleted, due: due.length, months, failed } : { deleted, due: due.length, months };
 }
 
 function slotMinutes() {
@@ -102,18 +117,29 @@ async function tick(now = new Date()) {
   const day = now.toISOString().slice(0, 10);
   if (state.doneDay === day) return { ran: false, reason: 'done' };
   if (now.getUTCHours() * 60 + now.getUTCMinutes() < slotMinutes()) return { ran: false, reason: 'not_yet' };
-  state.doneDay = day;
   const results = {};
-  await registry.ensureLoaded();
+  let failures = 0;
+  await registry.ensureLoaded(); // throws on a database blip: the next minute tries again
   for (const t of registry.list()) {
     if (t.status !== 'active') continue;
+    let claimed = false;
     try {
-      results[t.slug] = await tenancy.run(t.id, async () => ((await claimDay(day)) ? runTenant(now) : { skipped: 'claimed' }));
+      results[t.slug] = await tenancy.run(t.id, async () => {
+        if (!(await claimDay(day))) return { skipped: 'claimed' };
+        claimed = true;
+        return runTenant(now);
+      });
     } catch (err) {
+      failures++;
       captureException(err, { component: 'retention', tenant: t.slug });
       logger.error('Automatic deletion failed for a client', { tenant: t.slug, error: err.message });
+      // Give the day back so a later tick retries, and tell us (a log line alone is easy to miss).
+      if (claimed) await tenancy.run(t.id, () => db.query("DELETE FROM crm_activity_log WHERE action = 'retention_run' AND details ->> 'day' = $1", [day])).catch(() => {});
+      await tenancy.run(t.id, () => alertOps(`⚠️ Automatic deletion failed for this client: ${String(err.message).slice(0, 200)}. It tries again later today.`));
     }
   }
+  // Done for today only when every client ran (a failed one is retried on a later tick).
+  if (!failures) state.doneDay = day;
   return { ran: true, results };
 }
 

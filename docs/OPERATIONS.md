@@ -212,6 +212,18 @@ One Basic dyno ($7/month) and Heroku Postgres Essential-0 ($5/month), about $12/
 - Set a client's monthly limit from its plan (Schedule A): a JSON file `{ "settings": { "leadMonthlyLimit": 500 } }`, then `npm run tenant -- set <slug> file.json`. With a limit, the staff Telegram group (and our ops group, if different) gets one alert at 80% and one at 100% each month. Without one, the meter only counts.
 - Month end: `heroku run -a gkf-wa "npm run usage -- --month 2026-11"` prints every client's leads, limit and overage (`--month` is required). If no staff Telegram group is set when a level is reached, the alert waits and goes out with the next new lead after the group is added. A late message from last month counts in that month but never sends an alert. A person whose phone is hidden at first and shared later in the same month may count twice; check by hand if a client disputes.
 
+## Service levels: uptime and reply time (K27, Annexure B)
+
+**Reply time** is measured in the app: each automatic reply, from when we received the lead's last message to when WhatsApp accepted our reply. Staff replies, templates and staff alerts don't count. A reply that fails for good is recorded as a miss. If the dyno stops in the instant between sending and recording, that one reply is not counted. The owner sees this month's figure at the top of Reports. For every client: `heroku run -a gkf-wa "npm run service-levels -- --month 2026-11"` (target: 95% within 30 s). Rows are kept 13 months.
+
+**Uptime** comes from an external monitor (one-time setup, about 10 minutes):
+
+1. Create a free HetrixTools account (its free plan checks every minute, allows commercial use and alerts to Telegram; check the limits on its pricing page when you sign up).
+2. Add an HTTPS uptime monitor on `https://wa.goldkraftfitness.com/health/ready` (and later the product domain), every 1 minute, expecting status 200, from several locations.
+3. Add a second monitor on the CRM login page, expecting 200.
+4. Alerts: connect Telegram and send them to our ops group. Turn on the monthly report email.
+5. Each month, take availability from the monitor's report. Downtime counts only when the Platform is down for all clients through a fault in our control (Annexure B1).
+
 ## Data deletion requests
 
 Leads can send "DELETE MY DATA" (or see `/data-deletion`). The bot confirms and opens a hand-off marked *DATA DELETION REQUEST*. Delete within 30 days:

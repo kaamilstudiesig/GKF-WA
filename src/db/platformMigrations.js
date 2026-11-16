@@ -286,10 +286,31 @@ const PLATFORM_MIGRATIONS = [
       ...tenancyPolicy('lead_usage'),
       ...tenancyPolicy('lead_usage_alerts')
     ]
+  },
+  {
+    // K27 reply time per automatic reply (src/services/replyTimes.js): from when we received the
+    // lead's message to dispatch. Kept 13 months for the Annexure B figures. Id 10: 7 and 8 are
+    // taken by open PRs (R16, R17) and 9 by K26; the runner applies every missing id.
+    id: 10,
+    name: 'reply_times',
+    up: [
+      `CREATE TABLE reply_times (
+        tenant_id INTEGER NOT NULL DEFAULT ${TENANT_DEFAULT} REFERENCES tenants (id),
+        outbound_id INTEGER NOT NULL,
+        received_at TIMESTAMPTZ NOT NULL,
+        sent_at TIMESTAMPTZ NOT NULL,
+        reply_ms INTEGER NOT NULL CHECK (reply_ms >= 0),
+        -- 'failed': the reply never went out (retries used up or a permanent error); always a miss.
+        outcome TEXT NOT NULL DEFAULT 'sent' CHECK (outcome IN ('sent', 'failed')),
+        PRIMARY KEY (tenant_id, outbound_id)
+      )`,
+      'CREATE INDEX reply_times_sent_idx ON reply_times (tenant_id, sent_at)',
+      ...tenancyPolicy('reply_times')
+    ]
   }
 ];
 
 // Every table with client data, including ones added after migration 1 (tests and tools use this).
-const ALL_TENANT_TABLES = [...TENANT_TABLES, 'zoho_links', 'zoho_cursors', 'crm_settings', 'lead_usage', 'lead_usage_alerts'];
+const ALL_TENANT_TABLES = [...TENANT_TABLES, 'zoho_links', 'zoho_cursors', 'crm_settings', 'lead_usage', 'lead_usage_alerts', 'reply_times'];
 
 module.exports = { PLATFORM_MIGRATIONS, TENANT_TABLES, ALL_TENANT_TABLES, tenancyPolicy, TENANT_DEFAULT };

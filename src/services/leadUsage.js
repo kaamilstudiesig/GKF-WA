@@ -4,6 +4,7 @@ const logger = require('../utils/logger');
 const tenancy = require('../tenancy/context');
 const registry = require('../tenancy/registry');
 const notifyService = require('./notifyService');
+const clientMonth = require('./clientMonth');
 const { captureException } = require('../utils/sentry');
 
 /**
@@ -25,9 +26,6 @@ const { captureException } = require('../utils/sentry');
  */
 
 const LEVELS = [80, 100];
-const DEFAULT_TZ = 'Asia/Kolkata';
-const TZ_CACHE_MS = 60 * 1000;
-const tzCache = new Map(); // tenant id -> { tz, until }
 
 // A hash key of our own, derived from TENANT_SECRETS_KEY (which production always has).
 // Changing that key mid-month would count people again; it is never rotated casually.
@@ -43,31 +41,8 @@ function personKey(tenantId, identity) {
   return crypto.createHmac('sha256', hashKey()).update(`${tenantId}:${identity}`).digest('hex').slice(0, 40);
 }
 
-/** "2026-11" for `date` in time zone `tz`. */
-function monthOf(date, tz) {
-  const parts = new Intl.DateTimeFormat('en-CA', { timeZone: tz, year: 'numeric', month: '2-digit' }).formatToParts(date);
-  const get = type => parts.find(p => p.type === type).value;
-  return `${get('year')}-${get('month')}`;
-}
-
-async function timezone() {
-  const id = tenancy.tenantId();
-  const hit = tzCache.get(id);
-  if (hit && hit.until > Date.now()) return hit.tz;
-  let tz = DEFAULT_TZ;
-  try {
-    const row = await db.one('SELECT timezone FROM crm_settings LIMIT 1');
-    if (row && row.timezone) tz = row.timezone;
-  } catch (err) {
-    logger.warn('Lead usage: time zone not readable, using the default', { error: err.message });
-  }
-  tzCache.set(id, { tz, until: Date.now() + TZ_CACHE_MS });
-  return tz;
-}
-
-async function currentMonth(now = new Date()) {
-  return monthOf(now, await timezone());
-}
+// The client's month (time zone from Lead queue settings): shared with K27 reply times.
+const { monthOf, current: currentMonth, MONTH_RE } = clientMonth;
 
 const limitOf = () => registry.config().leadMonthlyLimit || null;
 
@@ -157,7 +132,7 @@ async function usage({ month = null, now = new Date() } = {}) {
 
 /** Every client's count for one month (invoicing; system context). */
 async function allClients(month) {
-  if (!/^[0-9]{4}-(0[1-9]|1[0-2])$/.test(String(month))) throw new Error('Give the month as YYYY-MM, for example 2026-11.');
+  if (!MONTH_RE.test(String(month))) throw new Error('Give the month as YYYY-MM, for example 2026-11.');
   await registry.ensureLoaded();
   return tenancy.runAsSystem(async () => {
     const rows = await db.many(`SELECT t.id, t.slug, t.name, t.status, COUNT(u.person_key)::int AS leads
@@ -170,4 +145,4 @@ async function allClients(month) {
   });
 }
 
-module.exports = { record, usage, allClients, monthOf, personKey, alertText, LEVELS, _tzCache: tzCache };
+module.exports = { record, usage, allClients, monthOf, personKey, alertText, LEVELS, _tzCache: clientMonth._cache };

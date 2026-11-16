@@ -208,7 +208,7 @@ One Basic dyno ($7/month) and Heroku Postgres Essential-0 ($5/month), about $12/
 
 ## Service levels: uptime and reply time (K27, Annexure B)
 
-**Reply time** is measured in the app: each automatic reply, from when we received the lead's last message to when WhatsApp accepted our reply. Staff replies, templates and staff alerts don't count. The owner sees this month's figure at the top of Reports. For every client: `heroku run -a gkf-wa "npm run service-levels -- --month 2026-11"` (target: 95% within 30 s). Rows are kept 13 months.
+**Reply time** is measured in the app: each automatic reply, from when we received the lead's last message to when WhatsApp accepted our reply. Staff replies, templates and staff alerts don't count. A reply that fails for good is recorded as a miss. If the dyno stops in the instant between sending and recording, that one reply is not counted. The owner sees this month's figure at the top of Reports. For every client: `heroku run -a gkf-wa "npm run service-levels -- --month 2026-11"` (target: 95% within 30 s). Rows are kept 13 months.
 
 **Uptime** comes from an external monitor (one-time setup, about 10 minutes):
 

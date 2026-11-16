@@ -63,6 +63,22 @@ test('months follow the client\'s time zone', () => {
   assert.strictEqual(clientMonth.monthRange('2026-12', 'Asia/Dubai').end.toISOString(), '2026-12-31T20:00:00.000Z');
   assert.strictEqual(clientMonth.monthOf(new Date('2026-11-30T19:00:00Z'), 'Asia/Kolkata'), '2026-12');
   assert.throws(() => clientMonth.monthRange('2026/11', 'Asia/Kolkata'), /YYYY-MM/);
+  assert.throws(() => clientMonth.monthRange('2026-13', 'Asia/Kolkata'), /YYYY-MM/);
+  assert.throws(() => clientMonth.monthRange('2026-00', 'Asia/Kolkata'), /YYYY-MM/);
+});
+
+test('a reply that fails for good counts as a miss, so an outage cannot flatter the figure', async () => {
+  // markRead and the reply both go through the transport; the reply send gets a permanent 400.
+  whatsappService.transport = async p => {
+    if (p.status !== 'read') throw Object.assign(new Error('bad request'), { response: { status: 400, data: { error: { message: 'bad' } } } });
+    return { messages: [{ id: 'wamid.r' }] };
+  };
+  await converse(LEAD, 'hi');
+  const r = await rows();
+  assert.strictEqual(r.length, 1);
+  assert.strictEqual(r[0].outcome, 'failed');
+  const s = await tenancy.run(1, () => replyTimes.monthStats());
+  assert.deepStrictEqual([s.replies, s.failed, s.withinTargetPct, s.p95Ms], [1, 1, 0, null]);
 });
 
 test('a missing message never breaks sending', async () => {

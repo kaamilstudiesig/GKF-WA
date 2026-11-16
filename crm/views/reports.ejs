@@ -22,7 +22,7 @@
   <span class="font-semibold">Reply time this month:</span>
   <% if (replyStats.replies) { %>
     <span class="<%= replyStats.withinTargetPct >= 95 ? 'text-success' : 'text-warning' %>"><%= replyStats.withinTargetPct %>% within <%= replyStats.targetMs / 1000 %> s</span>
-    · 95% of replies in <%= (replyStats.p95Ms / 1000).toFixed(1) %> s or less · <%= replyStats.replies %> automatic replies
+    <% if (replyStats.p95Ms !== null) { %>· 95% of replies in <%= (replyStats.p95Ms / 1000).toFixed(1) %> s or less <% } %>· <%= replyStats.replies %> automatic replies<% if (replyStats.failed) { %> (<%= replyStats.failed %> not sent)<% } %>
   <% } else { %>
     <span class="text-base-content/60">no automatic replies yet</span>
   <% } %>

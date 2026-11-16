@@ -45,19 +45,21 @@ const outboundRepository = {
       locked_at = NULL, updated_at = now() WHERE id = $1`, [id, providerMessageId]);
   },
 
+  /** Returns true when the message failed for good (no more retries). */
   async markFailed(id, errorMessage, retryable = true, baseDelaySec = 5) {
     const row = await db.one('SELECT attempts, max_attempts FROM outbound_messages WHERE id = $1', [id]);
-    if (!row) return;
+    if (!row) return false;
     const error = String(errorMessage).slice(0, 2000);
     if (!retryable || row.attempts >= row.max_attempts) {
       logger.warn('Outbound message permanently failed', { id, retryable, attempts: row.attempts });
       await db.query(`UPDATE outbound_messages SET status = 'failed', last_error = $2, failed_at = now(),
         locked_at = NULL, updated_at = now() WHERE id = $1`, [id, error]);
-      return;
+      return true;
     }
     const delaySec = baseDelaySec * 2 ** Math.max(0, row.attempts - 1) + (baseDelaySec ? Math.random() : 0);
     await db.query(`UPDATE outbound_messages SET status = 'pending', available_at = now() + make_interval(secs => $3),
       last_error = $2, locked_at = NULL, updated_at = now() WHERE id = $1`, [id, error, delaySec]);
+    return false;
   },
 
   /** Sent replies are already in the conversation history; drop the queue rows after `days`. */

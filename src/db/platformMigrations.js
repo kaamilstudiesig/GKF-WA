@@ -271,6 +271,8 @@ const PLATFORM_MIGRATIONS = [
         received_at TIMESTAMPTZ NOT NULL,
         sent_at TIMESTAMPTZ NOT NULL,
         reply_ms INTEGER NOT NULL CHECK (reply_ms >= 0),
+        -- 'failed': the reply never went out (retries used up or a permanent error); always a miss.
+        outcome TEXT NOT NULL DEFAULT 'sent' CHECK (outcome IN ('sent', 'failed')),
         PRIMARY KEY (tenant_id, outbound_id)
       )`,
       'CREATE INDEX reply_times_sent_idx ON reply_times (tenant_id, sent_at)',

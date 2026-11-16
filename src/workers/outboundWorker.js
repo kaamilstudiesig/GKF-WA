@@ -50,7 +50,9 @@ async function sendOne(job) {
     const detail = err.response?.data ? JSON.stringify(err.response.data) : err.message;
     captureException(err, { component: 'outbound_worker', jobId: job.id, retryable });
     logger.error('WhatsApp send failed', { id: job.id, retryable, error: detail });
-    await outboundRepository.markFailed(job.id, detail, retryable);
+    const final = await outboundRepository.markFailed(job.id, detail, retryable);
+    // K27: a reply that never went out counts as a miss, so failures can't flatter the figure.
+    if (final) await replyTimes.record(job, new Date(), { outcome: 'failed' });
     opsAlerts.sendFailed(err); // pages us when it's an account problem (token, payment, ban)
   }
 }

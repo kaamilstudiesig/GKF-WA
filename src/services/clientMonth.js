@@ -11,7 +11,7 @@ const tenancy = require('../tenancy/context');
 const DEFAULT_TZ = 'Asia/Kolkata';
 const CACHE_MS = 60 * 1000;
 const cache = new Map(); // tenant id -> { tz, until }
-const MONTH_RE = /^[0-9]{4}-[0-9]{2}$/;
+const MONTH_RE = /^[0-9]{4}-(0[1-9]|1[0-2])$/; // "2026-13" would silently mean January 2027
 
 /** "2026-11" for `date` in time zone `tz`. */
 function monthOf(date, tz) {

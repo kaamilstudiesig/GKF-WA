@@ -58,17 +58,62 @@ A possible large client wants the chatbot soon. Until this stage is done, it com
 
 Status: K14–K17 are built and K18 is written (PR `k14-k18-new-client`). R12 is built (PR `r12-white-label`): name from the business profile, logo letters, colour and logo image on Business settings → Brand. GKF names stay only in the default profile (seed data) and the GKF CRM host default. Order: K14 + R12 first (no GKF name in front of the new client), then K15, K16, R13, R2, then K17/K18 in parallel. Ask the client early: business type, number of staff, existing WhatsApp number or new one, who owns their Meta Business Manager.
 
-### MVP focus (from 16 Nov, decided with Kaamil)
+### Start here, Krishna (state on 17 Nov, live as Heroku v41)
 
-The Dubai client is lost and the 3 portfolio demos (Empire Estates was one of them) are parked. The order below from 7 Nov stays for reference, but the work now is the **MVP**: what the client agreement promises before the first paying client signs.
+**Everything below is merged into `main` and live.** Pull `main` before you start anything.
 
-- **Kaamil builds the rest of the MVP end to end, `crm/` screens included**, so Krishna gets no new MVP work.
-- **MVP status (17 Nov):** live in v39: K26 lead usage meter with its screens, the K30 "Opted out" badge, K27 reply time. The shared Dartit CRM (one sign-in address for every client) is built and waits for a domain. Left: R2 backup storage settings and the restore drill (K28, needs Kaamil's Cloudflare step).
-- **Krishna:** R19 data export (PR #62) merged 17 Nov. K25 phone sign-in confirmed in person (16 Nov).
-- **Parked, PRs left open:** R15 currency (#59), R16 lead intake (#63), R17 projects (#65). Review notes for R16 and R17 are on the PRs. R18 value page, R8 wizard, K24 catalog, K5, K21, K7b wait too.
-- **Ops (Kaamil, no code):** 2FA on Heroku, GitHub, Meta, OpenRouter and Zoho; a support email and a WhatsApp support number; an uptime monitor account (K27).
+**Your PRs, merged with fixes by Kaamil** (read the PR conversations for details):
+- **R15 currency (#59):** Kaamil added the bot side. The Meta Purchase event and alert texts now use the business's currency. The settings page has both the currency select and K33's health switch.
+- **R16 lead intake (#63):**
+  - Phone numbers are now normalised by each country's number length (`NATIONAL_LENGTHS` in `src/services/identity.js`), so an Indian mobile starting with 91 keeps its country code.
+  - Intake leads count in the K26 meter.
+  - Security fixes from a Codex review:
+    - a daily budget for paid welcome templates (`leadWelcomeDailyCap`, default 50);
+    - transaction locks around the duplicate and limit checks;
+    - a `processing` status, so a crash mid-save lets the portal retry (409 while saving);
+    - a per-address budget on the public form before validation.
+  - A deleted lead who wrote STOP stays opted out when they come back through a form.
+- **R17 projects (#65):** unit prices go up to 2,000,000,000 (₹200 crore), which still fits the INTEGER column.
+- **R19 data export (#62).**
 
-### Now: order of work (from 7 Nov)
+**Built by Kaamil in your area (`crm/`)** (Kaamil decided on 16 Nov to finish the MVP himself):
+- **K26 lead count:** `crm/views/partials/lead-usage.ejs` on the dashboard (owners and managers) and Business settings.
+- **K30:** the "Opted out" badge on the lead page.
+- **K27:** the owner's "Reply time this month" line at the top of Reports.
+- **K33:** the "Health-related business" checkbox on Business settings (`profile.healthRelated`).
+- **Shared Dartit CRM (#69):** one sign-in address for every client (off until a domain is bought).
+  - **Theme:** `brand.platform` switches `crm/views/partials/head.ejs`, `brand.ejs`, `logo-mark.ejs` and `login.ejs` to the Dartit theme (`dartit` in `crm/styles/app.css`: cream light mode, dark mode by the system setting). Logos are in `crm/public/brand/dartit/`.
+  - **Brand form:** it uses `ownBrand`, so it always edits the client's own brand.
+
+**Rules that changed for new screens:**
+- Every screen must work in **both themes**: your gold `brand` theme, and the Dartit theme in light and dark. Use daisyUI colour names (`bg-base-100`, `text-base-content`, `text-primary`…), never fixed dark colours. Check on `crm.localhost` (client) and `app.localhost` (shared host; set `SHARED_CRM_HOSTS=app.localhost` locally).
+- Show money with `util.money(amount, currency)` (R15), never a fixed ₹.
+- **Platform migrations used:** 1–11, so the next free id is **12**.
+  - 7: `lead_intake`; 8: `projects`; 9: `lead_usage`; 10: `reply_times`; 11: `opt_out_list`.
+  - New client tables need the tenant policy, an `ALL_TENANT_TABLES` entry and a `scripts/backup.js` entry.
+- **Deleting a lead** goes through `src/services/leadDeletion.js` (shared by `npm run delete-lead` and K31 automatic deletion). A new table keyed by `wa_id` without a foreign key to `leads` must be added to its `NO_FK_TABLES`.
+- **Phone numbers:** use `identity.normalizePhone(phone, country)`.
+
+**Your queue now (one PR each, nothing urgent for the MVP):**
+1. **R18 value page per client** (see item 7 below).
+2. **R8 onboarding wizard**, with the K9 ↔ R8 contract (item 8 below).
+3. **R7 weekly owner summary.**
+
+Ask Kaamil before starting anything else in `src/`.
+
+### MVP status (17 Nov)
+
+All MVP code is built and live (v41): K26, K27, K28 code, K29, K30, K31, K33, R15, R16, R17, R19, and the shared CRM. Left, all Kaamil's and not code:
+- R2 backup storage settings and the restore drill (K28);
+- 2FA on Heroku, GitHub, Meta, OpenRouter and Zoho;
+- a support email and a WhatsApp support number;
+- the HetrixTools uptime monitor;
+- each client's monthly lead limit;
+- buying the Dartit domain (then the shared CRM is switched on).
+
+Parked: the Dubai client (lost) and the 3 portfolio demos.
+
+### Earlier plan: order of work (from 7 Nov, kept for history; Dubai and demos are parked)
 
 **Decided with Kaamil on 7 Nov**
 

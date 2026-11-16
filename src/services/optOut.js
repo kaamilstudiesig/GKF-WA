@@ -24,11 +24,8 @@ const STOP_WORDS = new Set([
   // Hindi / Hinglish
   'band karo', 'message band karo', 'msg band karo', 'बंद करो', 'मैसेज बंद करो',
   'mat bhejo', 'na bhejo', 'मत भेजो',
-  'msg mt kro', 'msg mat bhejiye', 'message band kar do', 'मैसेज मत भेजिए', 'मैसेज नहीं चाहिए',
   // Kannada
   'ನಿಲ್ಲಿಸಿ', 'ನಿಲ್ಲಿಸು',
-  'ನನಗೆ ಮೆಸೇಜ್ ಬೇಡ', 'ಸಂದೇಶಗಳನ್ನು ಕಳುಹಿಸಬೇಡಿ', 'ಮೆಸೇಜ್ ಕಳಿಸ್ಬೇಡಿ',
-  'nanage message beda', 'message kalisabedi', 'msg maadabedi',
   // Arabic
   'توقف', 'قف', 'الغاء الاشتراك', 'إلغاء الاشتراك',
   'ما أبي رسايل', 'ما أبغى رسائل', 'وقفوا الرسايل', 'شيلوني من القائمة', 'لا عاد ترسل'
@@ -43,14 +40,22 @@ const STOP_PHRASES = [
   /\b(remove|delete) me from (your |the )?(list|contacts|broadcast|whatsapp list)\b/,
   /\bunsubscribe me\b/, /\bopt me out\b/, /\bnot interested,? (don'?t|do not) (message|contact)\b/,
   // Hinglish
-  /\b(mujhe |muje )?(message|msg|messages|whatsapp) (mat|na) (karo|kro|karna|bhejo|bhejna|kijiye)\b/,
-  /\bmessage (bhejna )?band karo\b/,
+  /\b(mujhe |muje )?(message|msg|messages|whatsapp) (mat|mt|na) (karo|kro|karna|bhejo|bhejna|bhejiye|kijiye)\b/,
+  /\b(message|msg) (bhejna )?band (karo|kar do)\b/,
+  /\baage mat bhejo\b/,
   // Hindi
-  /(मुझे )?(मैसेज|संदेश) (मत|ना) (करो|भेजो|भेजें|कीजिए)/,
+  /(?:^| )(मुझे )?(मैसेज|संदेश) (मत|ना) (करो|भेजो|भेजें|भेजिए|कीजिए)(?= |$)/,
+  /(?:^| )(मैसेज|संदेश) नहीं चाहिए(?= |$)/,
+  /(?:^| )आगे मत भेजो(?= |$)/,
   // Kannada
-  /(ಮೆಸೇಜ್|ಸಂದೇಶ) (ಮಾಡಬೇಡಿ|ಕಳುಹಿಸಬೇಡಿ|ಕಳಿಸಬೇಡಿ)/, /(message|msg) (madbedi|maadbedi|kalisbedi)/,
+  /(?:^| )(ಮೆಸೇಜ್|ಸಂದೇಶ|ಸಂದೇಶಗಳನ್ನು) (ಮಾಡಬೇಡಿ|ಕಳುಹಿಸಬೇಡಿ|ಕಳಿಸಬೇಡಿ|ಕಳಿಸ್ಬೇಡಿ|ಬೇಡ)(?= |$)/,
+  /\b(message|msg) (madbedi|maadbedi|kalisbedi|beda|kalisabedi|maadabedi)\b/,
   // Arabic
-  /(لا|لاتـ?) ?(ترسل|ترسلوا) (لي|رسائل|رسايل|رسالة)(?= |$)/,
+  // "Don't send me" must end here or have only message/again words after it.
+  /(?:^| )(لا|لاتـ?) ?(ترسل|ترسلوا) لي(?: (?:رسائل|رسايل|مرة ثانية|ثاني|بعد الآن))*$/,
+  /(?:^| )(لا|لاتـ?) ?(ترسل|ترسلوا) (رسائل|رسايل)(?= |$)/,
+  // A singular message counts only when it is the final word.
+  /(?:^| )(لا|لاتـ?) ?(ترسل|ترسلوا) (لي )?رسالة$/,
   /(لا|لاتـ?) ?(تراسلني|تراسلوني)/, /توقفوا عن (الارسال|الإرسال|مراسلتي)/
 ];
 
@@ -86,7 +91,7 @@ function classify(text) {
 function languageOf(text) {
   const raw = String(text || '');
   if (ARABIC.test(raw)) return 'ar';
-  if (KANNADA.test(raw) || /\b(madbedi|maadbedi|kalisbedi|beda|kalisabedi|maadabedi)\b/i.test(raw)) return 'kn';
+  if (KANNADA.test(raw) || /\b((message|msg) beda|madbedi|maadbedi|kalisbedi|kalisabedi|maadabedi)\b/i.test(raw)) return 'kn';
   if (DEVANAGARI.test(raw) || /\b(mat|band kar(?:o| do)|bhejo|karo|kro|mujhe|muje)\b/i.test(raw)) return 'hi';
   return 'en';
 }

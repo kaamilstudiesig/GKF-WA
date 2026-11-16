@@ -1,5 +1,7 @@
 # Lead Engine
 
+> **System map with diagrams:** see [docs/SYSTEM_MAP.md](docs/SYSTEM_MAP.md).
+
 **The revenue layer between Meta ads and sales.** For any business that runs Meta ads to get leads, it proves which ad made money and tells Meta who is likely to buy before they pay.
 
 Ads bring leads; an AI front desk answers on WhatsApp in seconds and qualifies them; the sales team is pushed to follow up and the sale is captured; owners and agencies see ₹ revenue and cost per customer per ad; and an early buying signal plus the real outcome flow back to Meta so the ads find buyers, not just leads.

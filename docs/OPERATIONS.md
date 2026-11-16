@@ -210,7 +210,7 @@ One Basic dyno ($7/month) and Heroku Postgres Essential-0 ($5/month), about $12/
 
 - Every inbound WhatsApp message counts its sender once per calendar month, in the client's time zone (Business settings → Lead queue). Rows hold a keyed hash (from `TENANT_SECRETS_KEY`), never the number, and stay when a lead is deleted. Don't change `TENANT_SECRETS_KEY` mid-month: people would be counted again.
 - Set a client's monthly limit from its plan (Schedule A): a JSON file `{ "settings": { "leadMonthlyLimit": 500 } }`, then `npm run tenant -- set <slug> file.json`. With a limit, the staff Telegram group (and our ops group, if different) gets one alert at 80% and one at 100% each month. Without one, the meter only counts.
-- Month end: `heroku run -a gkf-wa "npm run usage -- --month 2026-11"` prints every client's leads, limit and overage. A person whose phone is hidden at first and shared later in the same month may count twice; check by hand if a client disputes.
+- Month end: `heroku run -a gkf-wa "npm run usage -- --month 2026-11"` prints every client's leads, limit and overage (`--month` is required). If no staff Telegram group is set when a level is reached, the alert waits and goes out with the next new lead after the group is added. A late message from last month counts in that month but never sends an alert. A person whose phone is hidden at first and shared later in the same month may count twice; check by hand if a client disputes.
 
 ## Data deletion requests
 

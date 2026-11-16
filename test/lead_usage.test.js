@@ -117,6 +117,33 @@ test('each client has its own count; the invoicing list shows every client and t
   await assert.rejects(leadUsage.allClients('Nov'), /YYYY-MM/);
 });
 
+test('no staff Telegram group yet: the alert is not marked sent, and goes out once a group exists', async () => {
+  await setLimit(1);
+  const savedToken = process.env.TELEGRAM_BOT_TOKEN;
+  delete process.env.TELEGRAM_BOT_TOKEN;
+  notifyService.sendOverride = null; // nothing configured: isEnabled() is false
+  try {
+    await converse(phone(1), 'hi'); // 100% reached, but nowhere to send it
+    const pending = await tenancy.runAsSystem(() => db.many('SELECT level FROM lead_usage_alerts'));
+    assert.deepStrictEqual(pending, []);
+  } finally {
+    if (savedToken !== undefined) process.env.TELEGRAM_BOT_TOKEN = savedToken;
+  }
+  notifyService.sendOverride = async (text, opts) => { alerts.push({ text, ops: Boolean(opts?.ops) }); };
+  await converse(phone(2), 'hi');
+  assert.ok(alerts.some(a => !a.ops && /80%/.test(a.text)));
+  assert.ok(alerts.some(a => !a.ops && /Lead limit reached/.test(a.text)));
+});
+
+test('a late message from last month counts in that month but sends no alert', async () => {
+  await setLimit(1);
+  const old = new Date('2026-01-15T10:00:00Z');
+  const r = await tenancy.run(1, () => leadUsage.record({ wa_id: phone(7), phone: phone(7) }, { at: old }));
+  assert.deepStrictEqual(r, { month: '2026-01', counted: true });
+  assert.strictEqual((await tenancy.run(1, () => leadUsage.usage({ month: '2026-01' }))).count, 1);
+  assert.strictEqual(alerts.length, 0);
+});
+
 test('a lead the meter cannot identify is skipped without throwing', async () => {
   const r = await tenancy.run(1, () => leadUsage.record(null));
   assert.deepStrictEqual(r, { counted: false });

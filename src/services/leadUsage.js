@@ -5,14 +5,14 @@ const tenancy = require('../tenancy/context');
 const registry = require('../tenancy/registry');
 const notifyService = require('./notifyService');
 const { captureException } = require('../utils/sentry');
-const { LeadQueue } = require('../../crm/src/queue');
 
 /**
  * K26 lead usage meter (agreement clause 1 "Lead" and 4.3).
  *
  * A Lead is a person who contacts the client through a connected channel, counted once per
  * calendar month across all channels. The month is the client's (time zone from Business
- * settings → Lead queue, default Asia/Kolkata).
+ * settings → Lead queue, crm_settings.timezone, default Asia/Kolkata; read here directly so the
+ * bot doesn't depend on crm/ code).
  *
  * - record(): called for every inbound message (and, later, every form or portal lead). The
  *   first one from a person in a month adds a row to lead_usage; the rest do nothing.
@@ -25,6 +25,7 @@ const { LeadQueue } = require('../../crm/src/queue');
  */
 
 const LEVELS = [80, 100];
+const DEFAULT_TZ = 'Asia/Kolkata';
 const TZ_CACHE_MS = 60 * 1000;
 const tzCache = new Map(); // tenant id -> { tz, until }
 
@@ -53,7 +54,13 @@ async function timezone() {
   const id = tenancy.tenantId();
   const hit = tzCache.get(id);
   if (hit && hit.until > Date.now()) return hit.tz;
-  const tz = (await new LeadQueue(db).settings()).timezone;
+  let tz = DEFAULT_TZ;
+  try {
+    const row = await db.one('SELECT timezone FROM crm_settings LIMIT 1');
+    if (row && row.timezone) tz = row.timezone;
+  } catch (err) {
+    logger.warn('Lead usage: time zone not readable, using the default', { error: err.message });
+  }
   tzCache.set(id, { tz, until: Date.now() + TZ_CACHE_MS });
   return tz;
 }
@@ -80,7 +87,9 @@ async function record(lead, { channel = 'whatsapp', at = new Date() } = {}) {
     const month = await currentMonth(at);
     const added = await db.one(`INSERT INTO lead_usage (month, person_key, channel, first_at) VALUES ($1, $2, $3, $4)
       ON CONFLICT DO NOTHING RETURNING month`, [month, personKey(tenancy.tenantId(), identity), channel, at]);
-    if (added) await checkLimit(month);
+    // Alerts only for this month: a delayed or replayed message from last month still counts
+    // there, but never sends a late alert.
+    if (added && month === await currentMonth()) await checkLimit(month);
     return { month, counted: Boolean(added) };
   } catch (err) {
     logger.error('Lead usage not recorded', { error: err.message });
@@ -100,7 +109,9 @@ async function checkLimit(month) {
       ON CONFLICT DO NOTHING RETURNING level`, [month, level]);
     if (!claimed) continue;
     try {
-      await alert({ month, n, limit, level });
+      const sent = await alert({ month, n, limit, level });
+      // No staff group yet: give the level back, so the alert goes out once a group is set.
+      if (!sent) await db.query('DELETE FROM lead_usage_alerts WHERE month = $1 AND level = $2', [month, level]);
     } catch (err) {
       // Give the level back, so the next new lead tries again.
       await db.query('DELETE FROM lead_usage_alerts WHERE month = $1 AND level = $2', [month, level]);
@@ -120,9 +131,9 @@ async function alert(info) {
   const text = alertText(info);
   if (!notifyService.sendOverride && !notifyService.isEnabled()) {
     logger.warn('Lead usage alert not sent: no staff Telegram group', { month: info.month, level: info.level });
-  } else {
-    await notifyService.send(text);
+    return false;
   }
+  await notifyService.send(text);
   // Our ops group too (we invoice from it), unless it is the same group; a failure there doesn't
   // undo the client's alert. The ops copy is prefixed with the client's name by notifyService.
   const { chatId, opsChatId } = notifyService.config;
@@ -130,6 +141,7 @@ async function alert(info) {
     Promise.resolve(notifyService.send(text, { ops: true })).catch(err => logger.warn('Lead usage ops alert failed', { error: err.message }));
   }
   logger.info('Lead usage alert sent', { month: info.month, level: info.level, count: info.n, limit: info.limit });
+  return true;
 }
 
 /**

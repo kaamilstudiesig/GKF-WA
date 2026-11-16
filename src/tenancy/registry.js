@@ -94,7 +94,7 @@ function resolve(entry) {
       host: row.crm_host || null,
       // No own CRM host: links go to the shared CRM (staff sign in there), when it is on.
       baseUrl: String(pick(s.crmBaseUrl, process.env.CRM_BASE_URL) || (row.crm_host ? `https://${row.crm_host}` : '')
-        || (env.sharedCrmHosts[0] ? `https://${env.sharedCrmHosts[0]}` : '')).replace(/\/+$/, '')
+        || (env.sharedCrmHosts()[0] ? `https://${env.sharedCrmHosts()[0]}` : '')).replace(/\/+$/, '')
     },
     telegram: {
       chatId: pick(s.telegramChatId, process.env.TELEGRAM_CHAT_ID),
@@ -232,7 +232,7 @@ const registry = {
     if (host && (others.some(t => t.crm.host === host) || (existingId !== DEFAULT_TENANT_ID && env.crmHosts.includes(host)))) {
       throw new Error('Another tenant already uses this CRM host.');
     }
-    if (host && env.sharedCrmHosts.includes(host)) throw new Error('This is the shared CRM host (SHARED_CRM_HOSTS); a tenant cannot own it.');
+    if (host && env.sharedCrmHosts().includes(host)) throw new Error('This is the shared CRM host (SHARED_CRM_HOSTS); a tenant cannot own it.');
     if (others.some(t => t.slug === slug)) throw new Error('Another tenant already uses this slug.');
     for (const k of Object.keys(input.secrets || {})) if (!SECRET_KEYS.includes(k)) throw new Error(`Unknown secret: ${k}`);
     for (const k of Object.keys(input.settings || {})) if (!SETTING_KEYS.includes(k)) throw new Error(`Unknown setting: ${k}`);

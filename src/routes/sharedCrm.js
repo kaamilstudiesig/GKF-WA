@@ -26,32 +26,42 @@ const { PLATFORM: PLATFORM_BRAND } = require('../../crm/src/branding');
  *   (one person in two businesses) show a "choose your business" list; each choice is a signed,
  *   short-lived ticket bound to that client and user. A business where the password was wrong is
  *   never listed. Errors are the same generic ones as the client's own page.
+ * - The choice is bound to this browser: the list sets a random httpOnly cookie and each ticket
+ *   carries its hash, so a ticket from another browser (or a cross-site form) is refused. A ticket
+ *   works once. Sign-in posts from another site (Origin header) are refused.
+ * - Throttles: per typed login (never reset by a success, so a known password in one client can't
+ *   clear failed guesses for another) and per IP.
  * - Suspended clients are refused at sign-in and on every request.
  */
 
 const TICKET_MS = 5 * 60 * 1000;
+const PICK_COOKIE = 'crm_pick';
+const usedTickets = new Map(); // nonce -> expiry (one dyno; tickets live 5 minutes)
 const PUBLIC_DIR = path.join(__dirname, '..', '..', 'crm', 'public');
 const CRM_VIEWS = path.join(__dirname, '..', '..', 'crm', 'views');
 
-const sharedHosts = () => env.sharedCrmHosts;
+const sharedHosts = () => env.sharedCrmHosts();
 const isSharedHost = host => sharedHosts().includes(String(host || '').toLowerCase());
 
 function ticketKey() {
   const raw = Buffer.from(process.env.TENANT_SECRETS_KEY || '', 'base64');
   if (raw.length === 32) return crypto.createHmac('sha256', raw).update('shared-crm-ticket').digest();
-  if (env.nodeEnv === 'production') throw new Error('TENANT_SECRETS_KEY must be set for the shared CRM.');
+  // A public fallback key only on a developer's machine and in tests; anywhere else, no tickets.
+  if (!['development', 'test'].includes(process.env.NODE_ENV || 'development')) throw new Error('TENANT_SECRETS_KEY must be set for the shared CRM.');
   return Buffer.from('local-dev-shared-crm');
 }
 
-/** A signed "this user proved their password for this client" ticket, valid 5 minutes. */
-function makeTicket(tenantId, userId, now = Date.now()) {
-  const body = Buffer.from(JSON.stringify({ t: tenantId, u: userId, e: now + TICKET_MS })).toString('base64url');
+const hashPick = pick => crypto.createHash('sha256').update(String(pick || '')).digest('base64url').slice(0, 22);
+
+/** A signed "this user proved their password for this client, in this browser" ticket: 5 minutes, one use. */
+function makeTicket(tenantId, userId, pick, now = Date.now()) {
+  const body = Buffer.from(JSON.stringify({ t: tenantId, u: userId, e: now + TICKET_MS, b: hashPick(pick), n: crypto.randomBytes(9).toString('base64url') })).toString('base64url');
   const sig = crypto.createHmac('sha256', ticketKey()).update(body).digest('base64url');
   return `${body}.${sig}`;
 }
 
-/** { tenantId, userId } for a valid ticket, else null. */
-function readTicket(ticket, now = Date.now()) {
+/** { tenantId, userId, nonce } for a valid ticket from this browser (its pick cookie), else null. */
+function readTicket(ticket, pick, now = Date.now()) {
   const [body, sig] = String(ticket || '').split('.');
   if (!body || !sig) return null;
   const expected = crypto.createHmac('sha256', ticketKey()).update(body).digest();
@@ -59,8 +69,8 @@ function readTicket(ticket, now = Date.now()) {
   if (given.length !== expected.length || !crypto.timingSafeEqual(given, expected)) return null;
   try {
     const p = JSON.parse(Buffer.from(body, 'base64url').toString('utf8'));
-    if (!Number.isInteger(p.t) || !Number.isInteger(p.u) || !(p.e > now)) return null;
-    return { tenantId: p.t, userId: p.u };
+    if (!Number.isInteger(p.t) || !Number.isInteger(p.u) || !(p.e > now) || !pick || p.b !== hashPick(pick)) return null;
+    return { tenantId: p.t, userId: p.u, nonce: String(p.n || '') };
   } catch (e) { return null; }
 }
 
@@ -88,7 +98,15 @@ async function matchesFor(login, password) {
   return out;
 }
 
-function sharedCrmLayer({ crmApp, secureCookies, throttle = new auth.LoginThrottle(), sessionTtlHours = crmConfig.sessionTtlHours }) {
+/** Marks a ticket used; false when it was used before. */
+function useTicket(nonce, now = Date.now()) {
+  for (const [n, exp] of usedTickets) if (exp < now) usedTickets.delete(n);
+  if (!nonce || usedTickets.has(nonce)) return false;
+  usedTickets.set(nonce, now + TICKET_MS);
+  return true;
+}
+
+function sharedCrmLayer({ crmApp, secureCookies, throttle = new auth.LoginThrottle(), ipThrottle = new auth.LoginThrottle(30), sessionTtlHours = crmConfig.sessionTtlHours }) {
   const router = express.Router();
   const assetV = crmApp.locals.assetV || '';
 
@@ -125,6 +143,16 @@ function sharedCrmLayer({ crmApp, secureCookies, throttle = new auth.LoginThrott
   router.get('/offline', (req, res) => render(res, 'offline', {}));
 
   router.use(express.urlencoded({ extended: false, limit: '20kb' }));
+  // Sign-in only from our own pages: a cross-site form can't sign a browser into someone else's account.
+  const sameOrigin = (req, res, next) => {
+    const origin = req.get('origin');
+    if (origin && origin !== 'null') {
+      let host = '';
+      try { host = new URL(origin).host; } catch (e) { /* bad origin */ }
+      if (host.toLowerCase() !== String(req.get('host') || '').toLowerCase()) return res.status(403).send('Sign in from the Dartit page.');
+    }
+    next();
+  };
 
   const startSession = async (res, tenantId, userId) => {
     const { token, expires } = await tenancy.run(tenantId, async () => {
@@ -143,42 +171,46 @@ function sharedCrmLayer({ crmApp, secureCookies, throttle = new auth.LoginThrott
     } catch (err) { next(err); }
   });
 
-  router.post('/login', async (req, res, next) => {
+  router.post('/login', sameOrigin, async (req, res, next) => {
     try {
       const login = String(req.body.login ?? req.body.email ?? '').trim();
       const key = Users.throttleKey(login);
-      if (throttle.blocked(req.ip, key)) return render(res, 'login', { login, error: 'Too many failed attempts. Try again in 15 minutes.' }, 429);
+      if (throttle.blocked(req.ip, key) || ipThrottle.blocked(req.ip, '*')) return render(res, 'login', { login, error: 'Too many failed attempts. Try again in 15 minutes.' }, 429);
       const p = parseLogin(login);
       if (p.kind === 'empty' || p.kind === 'invalid') {
-        throttle.fail(req.ip, key);
+        throttle.fail(req.ip, key); ipThrottle.fail(req.ip, '*');
         const error = p.kind === 'empty' ? 'Enter your phone number or email.' : 'Enter your phone number (for example +91 98450 12345) or your email.';
         return render(res, 'login', { login, error }, 400);
       }
       const matches = await matchesFor(login, req.body.password);
       if (!matches.length) {
-        throttle.fail(req.ip, key);
+        throttle.fail(req.ip, key); ipThrottle.fail(req.ip, '*');
         const hint = p.local ? ' If you typed a phone number, try it with the country code, for example +91 98450 12345.' : '';
         return render(res, 'login', { login, error: 'Phone number, email or password is incorrect.' + hint }, 401);
       }
-      throttle.reset(req.ip, key);
+      // No throttle reset on success: failures for this login expire on their own (15 minutes).
       if (matches.length === 1) {
         await startSession(res, matches[0].tenant.id, matches[0].user.id);
         return res.redirect(afterLogin(matches[0].user));
       }
-      const choices = matches.map(m => ({ name: m.tenant.name, ticket: makeTicket(m.tenant.id, m.user.id) }))
+      const pick = crypto.randomBytes(18).toString('base64url');
+      res.cookie(PICK_COOKIE, pick, { httpOnly: true, sameSite: 'strict', secure: secureCookies, maxAge: TICKET_MS, path: '/login' });
+      const choices = matches.map(m => ({ name: m.tenant.name, ticket: makeTicket(m.tenant.id, m.user.id, pick) }))
         .sort((a, b) => a.name.localeCompare(b.name));
       return render(res, 'choose-business', { choices });
     } catch (err) { next(err); }
   });
 
-  router.post('/login/choose', async (req, res, next) => {
+  router.post('/login/choose', sameOrigin, async (req, res, next) => {
     try {
-      const t = readTicket(req.body.ticket);
-      const tenant = t ? registry.config(t.tenantId) : null;
+      const pick = auth.parseCookies(req.headers.cookie)[PICK_COOKIE];
+      const t = readTicket(req.body.ticket, pick);
+      const tenant = t && useTicket(t.nonce) ? registry.config(t.tenantId) : null;
       const user = tenant && tenant.status === 'active'
         ? await tenancy.run(tenant.id, () => db.one('SELECT id, must_change_password FROM crm_users WHERE id = $1 AND active', [t.userId]))
         : null;
       if (!user) return render(res, 'login', { login: '', error: 'That choice expired. Sign in again.' }, 401);
+      res.clearCookie(PICK_COOKIE, { path: '/login' });
       await startSession(res, tenant.id, user.id);
       res.redirect(afterLogin(user));
     } catch (err) { next(err); }
@@ -206,4 +238,4 @@ function sharedCrmLayer({ crmApp, secureCookies, throttle = new auth.LoginThrott
   return router;
 }
 
-module.exports = { sharedCrmLayer, isSharedHost, sharedHosts, makeTicket, readTicket, tenantForSession, PLATFORM_BRAND };
+module.exports = { sharedCrmLayer, isSharedHost, sharedHosts, makeTicket, readTicket, tenantForSession, PLATFORM_BRAND, PICK_COOKIE };

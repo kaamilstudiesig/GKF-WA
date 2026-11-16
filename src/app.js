@@ -65,9 +65,11 @@ function createApp({
   const crmHostSet = new Set(crmHosts.map(x => x.toLowerCase()));
   app.locals.crmApp = crmApp;
   // The shared CRM (every client signs in on one address; off unless SHARED_CRM_HOSTS is set).
-  const sharedCrm = sharedCrmLayer({ crmApp, secureCookies });
+  // Built on its first request, so a missing file there can never stop the bot from starting.
+  let sharedCrm = null;
   app.use((req, res, next) => {
     if (!isSharedHost(req.hostname)) return next();
+    sharedCrm ||= sharedCrmLayer({ crmApp, secureCookies });
     sharedCrm(req, res, err => {
       captureException(err || new Error('Shared CRM fell through'), { component: 'shared_crm', path: req.path });
       if (!res.headersSent) res.status(500).send('Internal Server Error');

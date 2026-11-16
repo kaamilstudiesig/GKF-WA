@@ -69,7 +69,7 @@ const env = {
     .split(',').map(h => h.trim().toLowerCase()).filter(Boolean),
   // The shared CRM where staff of every client sign in (src/routes/sharedCrm.js). Off when empty.
   // The first host is also the CRM link in alerts for clients without their own CRM host.
-  get sharedCrmHosts() {
+  sharedCrmHosts() {
     return (process.env.SHARED_CRM_HOSTS || '').split(',').map(h => h.trim().toLowerCase()).filter(Boolean);
   },
 

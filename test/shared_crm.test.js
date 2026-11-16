@@ -6,7 +6,7 @@ const request = require('supertest');
 const tenancy = require('../src/tenancy/context');
 const registry = require('../src/tenancy/registry');
 const { hashPassword } = require('../crm/src/auth');
-const { makeTicket } = require('../src/routes/sharedCrm');
+const { makeTicket, PICK_COOKIE } = require('../src/routes/sharedCrm');
 
 const HOST = 'app.dartit.test';
 const PW_A = 'PasswordA123';
@@ -84,19 +84,82 @@ test('same email and password in two clients: choose a business; a tampered or e
   assert.match(choose.text, /Acme Homes/);
   const tickets = [...choose.text.matchAll(/name="ticket" value="([^"]+)"/g)].map(m => m[1]);
   assert.strictEqual(tickets.length, 2);
+  const pickCookie = choose.headers['set-cookie'].find(c => c.startsWith(`${PICK_COOKIE}=`));
+  assert.match(pickCookie, /HttpOnly/i);
+  assert.match(pickCookie, /Path=\/login(?:;|$)/);
+  const pick = pickCookie.split(';')[0].slice(`${PICK_COOKIE}=`.length);
+  const acmeTicket = tickets.find(ticket => JSON.parse(Buffer.from(ticket.split('.')[0], 'base64url')).t === acme.id);
+  assert.ok(acmeTicket);
 
   // Tampered: swap the client id inside the ticket body but keep the signature.
-  const [body, sig] = makeTicket(acme.id, u2.id).split('.');
+  const [body, sig] = acmeTicket.split('.');
   const forged = Buffer.from(JSON.stringify({ ...JSON.parse(Buffer.from(body, 'base64url')), t: 1, u: u1.id })).toString('base64url');
-  assert.strictEqual((await agent().post('/login/choose').send({ ticket: `${forged}.${sig}` })).status, 401);
+  assert.strictEqual((await a.post('/login/choose').send({ ticket: `${forged}.${sig}` })).status, 401);
   // Expired.
-  const old = makeTicket(acme.id, u2.id, Date.now() - 10 * 60 * 1000);
-  assert.strictEqual((await agent().post('/login/choose').send({ ticket: old })).status, 401);
+  const old = makeTicket(acme.id, u2.id, pick, Date.now() - 10 * 60 * 1000);
+  assert.strictEqual((await a.post('/login/choose').send({ ticket: old })).status, 401);
 
-  const acmeTicket = makeTicket(acme.id, u2.id);
   const ok = await a.post('/login/choose').send({ ticket: acmeTicket });
   assert.strictEqual(ok.status, 302);
   assert.match((await a.get('/leads')).text, /Acme Lead Arjun/);
+});
+
+test('a business choice is bound to the browser that received the list', async () => {
+  await addUser(1, 'browser@example.com', PW_A);
+  await addUser(acme.id, 'browser@example.com', PW_A);
+  const a = agent();
+  const list = await a.post('/login').send({ login: 'browser@example.com', password: PW_A });
+  assert.strictEqual(list.status, 200);
+  const ticket = /name="ticket" value="([^"]+)"/.exec(list.text)[1];
+  const refused = await agent().post('/login/choose').send({ ticket });
+  assert.strictEqual(refused.status, 401);
+  assert.match(refused.text, /That choice expired/);
+  assert.strictEqual((await a.post('/login/choose').send({ ticket })).status, 302);
+});
+
+test('a business choice cannot be reused even with its original browser cookie', async () => {
+  await addUser(1, 'replay@example.com', PW_A);
+  await addUser(acme.id, 'replay@example.com', PW_A);
+  const a = agent();
+  const list = await a.post('/login').send({ login: 'replay@example.com', password: PW_A });
+  assert.strictEqual(list.status, 200);
+  const ticket = /name="ticket" value="([^"]+)"/.exec(list.text)[1];
+  const cookie = list.headers['set-cookie'].find(c => c.startsWith(`${PICK_COOKIE}=`)).split(';')[0];
+  assert.strictEqual((await a.post('/login/choose').send({ ticket })).status, 302);
+  // Restore the cookie cleared by success so this checks one-use enforcement.
+  const replay = await a.post('/login/choose').set('Cookie', cookie).send({ ticket });
+  assert.strictEqual(replay.status, 401);
+  assert.match(replay.text, /That choice expired/);
+});
+
+test('sign-in posts require an Origin matching the shared host', async () => {
+  await addUser(1, 'origin@example.com', PW_A);
+  await addUser(acme.id, 'origin@example.com', PW_A);
+  const a = agent();
+  const credentials = { login: 'origin@example.com', password: PW_A };
+  assert.strictEqual((await a.post('/login').set('Origin', 'https://evil.example').send(credentials)).status, 403);
+  const list = await a.post('/login').set('Origin', `http://${HOST}`).send(credentials);
+  assert.strictEqual(list.status, 200);
+  assert.match(list.text, /Choose your business/);
+  const ticket = /name="ticket" value="([^"]+)"/.exec(list.text)[1];
+  assert.strictEqual((await a.post('/login/choose').set('Origin', 'https://evil.example').send({ ticket })).status, 403);
+  assert.strictEqual((await a.post('/login/choose').set('Origin', `http://${HOST}`).send({ ticket })).status, 302);
+});
+
+test('eight wrong passwords block even the right password for that login', async () => {
+  await addUser(acme.id, 'throttle@example.com', PW_A);
+  const a = agent();
+  for (let i = 0; i < 8; i++) {
+    const bad = await a.post('/login').send({ login: 'throttle@example.com', password: PW_B });
+    assert.strictEqual(bad.status, 401);
+    if (i === 3) {
+      // A successful sign-in must not clear the failures already counted.
+      assert.strictEqual((await a.post('/login').send({ login: 'throttle@example.com', password: PW_A })).status, 302);
+    }
+  }
+  const blocked = await a.post('/login').send({ login: 'throttle@example.com', password: PW_A });
+  assert.strictEqual(blocked.status, 429);
+  assert.match(blocked.text, /Too many failed attempts/);
 });
 
 test('a business where the password is wrong is never listed; wrong everywhere gives the generic error', async () => {

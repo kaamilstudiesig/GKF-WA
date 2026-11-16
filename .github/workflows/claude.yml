@@ -1,0 +1,66 @@
+# Claude on request: a comment with @claude on a PR or issue (people with write access only).
+# For example "@claude fix findings 1 and 2 from the review" pushes fixes to the PR branch.
+# Pushes come from the Claude GitHub App, so CI runs on them. Merging stays with a person.
+# Needs the Claude GitHub App and the CLAUDE_CODE_OAUTH_TOKEN secret (or ANTHROPIC_API_KEY); without either it skips.
+name: Claude
+
+on:
+  issue_comment:
+    types: [created]
+  pull_request_review_comment:
+    types: [created]
+  pull_request_review:
+    types: [submitted]
+
+concurrency:
+  group: claude-${{ github.event.issue.number || github.event.pull_request.number }}
+  cancel-in-progress: false
+
+jobs:
+  claude:
+    if: >-
+      (github.event_name == 'issue_comment' && contains(github.event.comment.body, '@claude')) ||
+      (github.event_name == 'pull_request_review_comment' && contains(github.event.comment.body, '@claude')) ||
+      (github.event_name == 'pull_request_review' && contains(github.event.review.body, '@claude'))
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: write
+      pull-requests: write
+      issues: write
+      id-token: write
+      actions: read
+    env:
+      # Prefer the Claude subscription token; fall back to an API key (billed per use).
+      HAS_OAUTH: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN != '' }}
+      HAS_KEY: ${{ secrets.ANTHROPIC_API_KEY != '' }}
+      HAS_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN != '' || secrets.ANTHROPIC_API_KEY != '' }}
+    steps:
+      - name: Skip without the Claude token
+        if: env.HAS_TOKEN != 'true'
+        run: echo "No Claude token or API key set; skipping."
+      - uses: actions/checkout@v6
+        if: env.HAS_TOKEN == 'true'
+        with:
+          fetch-depth: 1
+      - uses: actions/setup-node@v4
+        if: env.HAS_TOKEN == 'true'
+        with:
+          node-version: 24.x
+          cache: npm
+      - run: npm ci
+        if: env.HAS_TOKEN == 'true'
+      - uses: anthropics/claude-code-action@v1
+        if: env.HAS_OAUTH == 'true'
+        with:
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          claude_args: |
+            --max-turns 40
+            --allowedTools "Bash(npm test),Bash(npm run *),Bash(node --test *),Bash(git *),Bash(gh pr view:*),Bash(gh pr diff:*),Bash(gh pr comment:*),Read,Edit,Write,Grep,Glob"
+      - uses: anthropics/claude-code-action@v1
+        if: env.HAS_OAUTH != 'true' && env.HAS_KEY == 'true'
+        with:
+          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          claude_args: |
+            --max-turns 40
+            --allowedTools "Bash(npm test),Bash(npm run *),Bash(node --test *),Bash(git *),Bash(gh pr view:*),Bash(gh pr diff:*),Bash(gh pr comment:*),Read,Edit,Write,Grep,Glob"

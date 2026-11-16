@@ -2,17 +2,29 @@ const crypto = require('crypto');
 const { Params } = require('./util');
 const { leadScope, staffScope, canAssignTo } = require('./permissions');
 const { LEAD_STATUSES, WINDOW_MS, OUTCOMES, LOST_REASONS, STAGES } = require('./constants');
-const { localDay } = require('./util');
+const { localDay, leadPhone, parseAmount, money, currencyCode, CURRENCIES } = require('./util');
+const { waitingSql, SINCE_SQL } = require('./nudges');
+const razorpay = require('../../src/services/razorpay');
+const signals = require('../../src/workers/signals');
 
 const MAX_MESSAGE_LENGTH = 4096; // WhatsApp text limit
 const PAGE_SIZE = 25;
 const MAX_INT = 2147483647;
+// Largest sale we accept: 100,000,000 whole units of the business's currency (₹10 crore, AED 100M;
+// fits the INTEGER amount_inr columns, R15). Payment links stay at ₹10 lakh (Razorpay limits).
+const MAX_SALE_INR = 100000000;
 
 class HttpError extends Error {
   constructor(status, message) { super(message); this.status = status; }
 }
 
 const now = () => new Date().toISOString();
+// R15: the business's currency (business profile). Amounts in amount_inr are whole units of it.
+const businessCurrency = () => {
+  try { return currencyCode(require('../../src/config/gymConfig').profile.currency); } catch (e) { return 'INR'; } // standalone CRM
+};
+// "rupees", "AED", "SAR", "US dollars": for messages that ask for an amount.
+const CURRENCY_WORDS = { INR: 'rupees', AED: 'AED', SAR: 'SAR', USD: 'US dollars' };
 const isId = id => Number.isInteger(id) && id > 0 && id <= MAX_INT;
 /** jsonb arrives as an object from both drivers; tolerate a string just in case. */
 function asObject(v) {
@@ -76,12 +88,13 @@ class Crm {
     };
   }
 
-  async listLeads(user, { status, assignee, needsHuman, q: search, sort, page = 1, pageSize = PAGE_SIZE } = {}) {
+  async listLeads(user, { status, assignee, needsHuman, waiting, q: search, sort, page = 1, pageSize = PAGE_SIZE } = {}) {
     const q = new Params();
     const where = [leadScope(user, q)];
 
     if (status && LEAD_STATUSES.includes(status)) where.push(`l.status = ${q.p(status)}`);
     if (needsHuman) where.push('l.needs_human');
+    if (waiting) where.push(waitingSql(q)); // R11: no outcome logged yet
     if (assignee === 'me') where.push(`a.user_id = ${q.p(user.id)}`);
     else if (assignee === 'unassigned') where.push('a.user_id IS NULL');
     else if (assignee && /^\d{1,9}$/.test(String(assignee))) where.push(`a.user_id = ${q.p(Number(assignee))}`);
@@ -91,11 +104,13 @@ class Crm {
     }
 
     const orders = {
-      recent: 'l.last_inbound_message_at DESC',
-      oldest: 'l.last_inbound_message_at ASC',
+      // R16: form leads have no WhatsApp message yet (NULL); they sort after leads that wrote.
+      recent: 'l.last_inbound_message_at DESC NULLS LAST',
+      oldest: 'l.last_inbound_message_at ASC NULLS LAST',
       created: 'l.first_contact_at DESC',
-      attention: 'l.needs_human DESC, l.last_inbound_message_at DESC',
-      followup: 'next_followup_at ASC NULLS LAST'
+      attention: 'l.needs_human DESC, l.last_inbound_message_at DESC NULLS LAST',
+      followup: 'next_followup_at ASC NULLS LAST',
+      waiting: `${SINCE_SQL} ASC NULLS LAST` // longest waiting first
     };
     const order = orders[sort] || orders.attention;
     const whereSql = where.join(' AND ');
@@ -174,8 +189,9 @@ class Crm {
     if (!canAssignTo(user, target)) throw new HttpError(403, 'You cannot assign leads to that person.');
     await this.db.tx(async () => {
       await this.db.query(`
-        INSERT INTO crm_lead_assignments (wa_id, user_id, assigned_by, assigned_at) VALUES ($1, $2, $3, now())
-        ON CONFLICT (wa_id) DO UPDATE SET user_id = EXCLUDED.user_id, assigned_by = EXCLUDED.assigned_by, assigned_at = EXCLUDED.assigned_at
+        INSERT INTO crm_lead_assignments (wa_id, user_id, assigned_by, assigned_at, escalation_level) VALUES ($1, $2, $3, now(), 0)
+        ON CONFLICT (tenant_id, wa_id) DO UPDATE SET user_id = EXCLUDED.user_id, assigned_by = EXCLUDED.assigned_by, assigned_at = EXCLUDED.assigned_at,
+          escalation_level = 0 -- R2: a new assignment restarts the escalation clock
       `, [waId, target.id, user.id]);
       // Mirror onto the bot's handoff record so the bot side shows who picked it up.
       await this.db.query(`UPDATE handoffs SET status = 'assigned', assigned_to = $1, updated_at = now()
@@ -198,25 +214,27 @@ class Crm {
    * Queues a staff reply in the bot's outbound_messages table. The bot's
    * outbound worker sends it and records it in the conversation history.
    */
-  async queueMessage(user, waId, text) {
+  /** extra: more metadata for the message (R17: { units: [ids] } for a projects send). */
+  async queueMessage(user, waId, text, extra = {}) {
     const body = String(text || '').trim();
     if (!body) throw new HttpError(400, 'Message is empty.');
     if (body.length > MAX_MESSAGE_LENGTH) throw new HttpError(400, `Message is longer than ${MAX_MESSAGE_LENGTH} characters.`);
     const lead = await this.requireLead(user, waId);
     if (!lead.window_open) {
-      throw new HttpError(409, 'The 24-hour WhatsApp reply window is closed. The lead has to message GKF again before staff can reply.');
+      throw new HttpError(409, 'The 24-hour WhatsApp reply window is closed. The lead has to send a new message before staff can reply.');
     }
     await this.db.tx(async () => {
       await this.db.query(`
         INSERT INTO outbound_messages (dedup_key, wa_id, text, status, metadata)
         VALUES ($1, $2, $3, 'pending', $4::jsonb)
-      `, [`crm:${crypto.randomUUID()}`, waId, body, JSON.stringify({ source: 'crm', user_id: user.id, user_name: user.name })]);
+      `, [`crm:${crypto.randomUUID()}`, waId, body, JSON.stringify({ ...extra, source: 'crm', user_id: user.id, user_name: user.name })]);
       if (lead.status === 'new') {
         await this.db.query("UPDATE leads SET status = 'contacted', updated_at = now() WHERE wa_id = $1 AND status = 'new'", [waId]);
         await this.log(user, waId, 'status_change', { from: 'new', to: 'contacted', auto: true });
       }
       await this.log(user, waId, 'message_queued', { preview: body.slice(0, 80) });
     });
+    signals.emit('outbound'); // send now, not at the next poll
   }
 
   // ---------- notes ----------
@@ -304,6 +322,70 @@ class Crm {
    * - closes the previous automatic follow-up and books the next one,
    * - resolves the bot's hand-off once a person has actually been in touch.
    */
+  // ---------- payment links (K11) ----------
+
+  /**
+   * Creates a Razorpay link for a plan and sends it on WhatsApp when the reply
+   * window is open. Payment arrives at /razorpay/webhook (markLinkPaid).
+   * Returns { url, sent }.
+   */
+  async createPaymentLink(user, waId, input = {}) {
+    if (!razorpay.enabled()) throw new HttpError(503, 'Payment links are not set up yet.');
+    const plan = String(input.plan || '').trim().slice(0, 100);
+    if (!plan) throw new HttpError(400, 'Which plan is the link for?');
+    // Razorpay links are INR-only (R15): refused here too, not just hidden on the page.
+    if (businessCurrency() !== 'INR') throw new HttpError(400, `Payment links work only in rupees. This business uses ${CURRENCIES[businessCurrency()].name}s.`);
+    const { amount } = parseAmount(input.amount);
+    if (!Number.isInteger(amount) || amount <= 0 || amount > 1000000) throw new HttpError(400, 'Enter the amount in rupees (whole number, up to ₹10,00,000).');
+    const lead = await this.requireLead(user, waId);
+
+    const referenceId = `lead-${crypto.randomUUID()}`;
+    const link = await razorpay.createLink({
+      amountInr: amount, description: plan, referenceId, phone: leadPhone(lead),
+      notes: { wa_id: waId, plan, user_id: String(user.id) }
+    });
+    await this.db.query(`INSERT INTO crm_payment_links (wa_id, user_id, reference_id, razorpay_id, plan, amount_inr, short_url)
+      VALUES ($1, $2, $3, $4, $5, $6, $7)`, [waId, user.id, referenceId, link.id, plan, amount, link.short_url]);
+    await this.log(user, waId, 'payment_link_created', { plan, amount_inr: amount });
+
+    if (!lead.window_open) return { url: link.short_url, sent: false };
+    await this.queueMessage(user, waId, `Here is your payment link for ${plan} (${money(amount, 'INR')}):\n${link.short_url}`);
+    return { url: link.short_url, sent: true };
+  }
+
+  /**
+   * Razorpay said a link was paid: log Joined with the real amount, once.
+   * Logged in the name of the staff member who sent the link. Returns the wa_id, or null.
+   */
+  async markLinkPaid({ linkId, amountPaise, paymentId }) {
+    let row;
+    await this.db.tx(async () => {
+      row = await this.db.one(`UPDATE crm_payment_links SET status = 'paid', paid_at = now(), payment_id = $2
+        WHERE razorpay_id = $1 AND status <> 'paid' RETURNING *`, [linkId, paymentId || null]);
+    });
+    if (!row) return null; // unknown link or already handled (Razorpay retries)
+    const amount = Number.isInteger(amountPaise) && amountPaise > 0 ? Math.round(amountPaise / 100) : row.amount_inr;
+    const staff = await this.db.one('SELECT id, name FROM crm_users WHERE id = $1', [row.user_id]);
+    const actor = { id: row.user_id, name: staff ? staff.name : 'Razorpay', role: 'owner' };
+    await this.logOutcome(actor, row.wa_id, { outcome: 'joined', plan: row.plan, amount, note: `Paid via Razorpay link${paymentId ? ` (${paymentId})` : ''}` });
+    return { waId: row.wa_id, plan: row.plan, amount };
+  }
+
+  /** Ends the pause after a staff reply: the AI answers this lead's next message again. */
+  async resumeBot(user, waId) {
+    await this.requireLead(user, waId);
+    await this.db.query(`UPDATE leads SET metadata = COALESCE(metadata, '{}'::jsonb) || jsonb_build_object('bot_resumed_at', now()::text),
+      updated_at = now() WHERE wa_id = $1`, [waId]);
+    await this.log(user, waId, 'bot_resumed', {});
+  }
+
+  /** K13: staff dismiss the outcome the AI suggested from the chat. */
+  async dismissSuggestion(user, waId) {
+    await this.requireLead(user, waId);
+    await this.db.query(`UPDATE leads SET metadata = metadata - 'suggested_outcome' WHERE wa_id = $1`, [waId]);
+    await this.log(user, waId, 'suggestion_dismissed', {});
+  }
+
   async logOutcome(user, waId, input = {}) {
     const outcome = String(input.outcome || '');
     if (!OUTCOMES[outcome]) throw new HttpError(400, 'Pick an outcome.');
@@ -318,8 +400,10 @@ class Crm {
     if (outcome === 'joined') {
       row.plan = String(input.plan || '').trim().slice(0, 100);
       if (!row.plan) throw new HttpError(400, 'Which plan did they join?');
-      const amount = Number(String(input.amount ?? '').replace(/[₹,\s]/g, ''));
-      if (!Number.isInteger(amount) || amount <= 0 || amount > 1000000) throw new HttpError(400, 'Enter the amount paid in rupees (whole number).');
+      const { amount } = parseAmount(input.amount); // "₹7,080", "AED 950,000", "950000"
+      if (!Number.isInteger(amount) || amount <= 0 || amount > MAX_SALE_INR) {
+        throw new HttpError(400, `Enter the amount paid in ${CURRENCY_WORDS[businessCurrency()]} (whole number).`);
+      }
       row.amount_inr = amount;
     }
     if (outcome === 'lost') {
@@ -331,6 +415,8 @@ class Crm {
     const followUpOwner = lead.assignee_id || user.id;
 
     await this.db.tx(async () => {
+      // Any logged outcome replaces the AI's suggestion (K13).
+      await this.db.query(`UPDATE leads SET metadata = metadata - 'suggested_outcome' WHERE wa_id = $1`, [waId]);
       await this.db.query(`INSERT INTO crm_lead_outcomes (wa_id, user_id, outcome, visit_at, plan, amount_inr, lost_reason, note)
         VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
       [waId, user.id, outcome, row.visit_at, row.plan, row.amount_inr, row.lost_reason, note]);
@@ -425,13 +511,14 @@ class Crm {
           (SELECT o.visit_at FROM crm_lead_outcomes o WHERE o.wa_id = l.wa_id
              AND o.outcome = 'visit_booked' ORDER BY o.created_at DESC, o.id DESC LIMIT 1) AS visit_at,
           (SELECT o.amount_inr FROM crm_lead_outcomes o WHERE o.wa_id = l.wa_id
-             AND o.outcome = 'joined' ORDER BY o.created_at DESC, o.id DESC LIMIT 1) AS joined_amount
+             AND o.outcome = 'joined' ORDER BY o.created_at DESC, o.id DESC LIMIT 1) AS joined_amount,
+          (SELECT MIN(f.due_at) FROM crm_follow_ups f WHERE f.wa_id = l.wa_id AND f.status = 'open') AS next_followup_at
         FROM leads l
         ${ASSIGN_JOIN}
         LEFT JOIN crm_users u ON u.id = a.user_id
         WHERE ${leadScope(user, q)}
       ) x
-      ORDER BY x.needs_human DESC, x.last_inbound_message_at DESC
+      ORDER BY x.needs_human DESC, x.last_inbound_message_at DESC NULLS LAST
     `, q.values);
     const columns = Object.entries(STAGES).map(([stage, label]) => ({ stage, label, total: 0, revenue: 0, leads: [] }));
     const byStage = Object.fromEntries(columns.map(c => [c.stage, c]));
@@ -495,13 +582,15 @@ class Crm {
       SELECT
         COUNT(*) FILTER (WHERE l.needs_human)::int AS needs_human,
         COUNT(*) FILTER (WHERE a.user_id IS NULL)::int AS unassigned,
-        COUNT(*) FILTER (WHERE l.first_contact_at >= ${q.p(since)})::int AS new_this_week
+        COUNT(*) FILTER (WHERE l.first_contact_at >= ${q.p(since)})::int AS new_this_week,
+        COUNT(*) FILTER (WHERE ${waitingSql(q)})::int AS waiting
       FROM leads l ${ASSIGN_JOIN} WHERE ${leadScope(user, q)}
     `;
     const counts = await this.statusCounts(user);
     const extra = await this.db.one(extraSql, q.values);
     const attention = (await this.listLeads(user, { needsHuman: true, sort: 'recent', pageSize: 8 })).leads;
     const recent = (await this.listLeads(user, { sort: 'recent', pageSize: 8 })).leads;
+    const waiting = extra.waiting ? (await this.listLeads(user, { waiting: true, sort: 'waiting', pageSize: 8 })).leads : [];
     const myFollowUps = (await this.listFollowUps(user, { mine: true })).slice(0, 10);
     const nowIso = now();
     const overdue = myFollowUps.filter(f => f.due_at < nowIso).length;
@@ -510,6 +599,7 @@ class Crm {
       needsHuman: extra.needs_human,
       unassigned: extra.unassigned,
       newThisWeek: extra.new_this_week,
+      waitingCount: extra.waiting, waiting,
       attention, recent, myFollowUps, overdue
     };
   }
@@ -543,18 +633,7 @@ class Crm {
       FROM leads l ${ASSIGN_JOIN} WHERE ${scope} AND l.first_contact_at >= ${q.p(since)}
       GROUP BY l.source ORDER BY c DESC, l.source`);
 
-    // Click-to-WhatsApp ads, keyed by the ad id the bot saved at metadata.referral.
-    const ads = await scoped((q, scope) => `SELECT
-        l.metadata -> 'referral' ->> 'source_id' AS ad_id,
-        MAX(l.metadata -> 'referral' ->> 'headline') AS headline,
-        MAX(l.metadata -> 'referral' ->> 'platform') AS platform,
-        COUNT(*)::int AS c,
-        COUNT(*) FILTER (WHERE l.status IN ('hot', 'qualified'))::int AS warm,
-        COUNT(*) FILTER (WHERE l.status = 'converted')::int AS converted
-      FROM leads l ${ASSIGN_JOIN}
-      WHERE ${scope} AND l.first_contact_at >= ${q.p(since)}
-        AND jsonb_typeof(l.metadata -> 'referral') = 'object'
-      GROUP BY 1 ORDER BY converted DESC, c DESC, 1 LIMIT 20`);
+    // Per ad: Analytics.byAd (R6), on the Reports page's "By ad" section.
 
     const rq = new Params();
     const nowP = rq.p(now());
@@ -586,7 +665,7 @@ class Crm {
       days, counts, usdToInr,
       conversionRate: closed ? Math.round((counts.converted / closed) * 100) : null,
       perDay: Object.entries(perDay).map(([day, c]) => ({ day, c })),
-      interests, handoffReasons, reps, ai, sources, ads
+      interests, handoffReasons, reps, ai, sources
     };
   }
 

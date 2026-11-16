@@ -1,0 +1,11 @@
+<%- include('partials/head', { title: 'Offline' }) %>
+<%# Shown by the service worker (R4) when a page can't load. Cached, so it holds no lead data. %>
+<body class="grid min-h-dvh place-items-center bg-base-200 p-4">
+  <main class="w-full max-w-sm rounded-box bg-base-100 p-6 text-center shadow-xl">
+    <div class="mb-6 flex justify-center"><%- include('partials/brand') %></div>
+    <h1 class="text-2xl font-bold">You're offline</h1>
+    <p class="mt-2 text-sm text-base-content/60">The CRM needs the internet to show leads. Check your connection and try again.</p>
+    <a href="/" class="btn btn-primary mt-6 w-full">Try again</a>
+  </main>
+</body>
+</html>

@@ -33,7 +33,7 @@ test('saving updates the database and what the assistant says', async () => {
     const r = await owner.agent.post('/settings').type('form').send(form(owner.csrf));
     assert.strictEqual(r.status, 302);
     assert.match(r.headers.location, /^\/settings\?ok=Saved/);
-    const row = await ctx.db.one('SELECT profile, updated_by FROM business_profile WHERE id = 1');
+    const row = await ctx.db.one('SELECT profile, updated_by FROM business_profile');
     assert.deepStrictEqual(row.profile.plans.map(p => p.price), ['₹4,500/month', '₹7,500/3 months']);
     assert.deepStrictEqual(row.profile.policies, [{ name: 'Trial', text: 'Book a free trial' }]);
     assert.strictEqual(row.updated_by, 'owner@goldkraftfitness.com');
@@ -53,5 +53,17 @@ test('a bad form shows the problem and keeps what was typed', async () => {
     assert.match(r.text, /Add at least one plan/);
     assert.match(r.text, /value="New Name"/);
     assert.strictEqual(gymConfig.gymName, 'Goldkraft Fitness');
+  } finally { await ctx.cleanup(); gymConfig.resetToDefault(); }
+});
+
+test('K33: the Health-related business switch is saved, shown and cleared', async () => {
+  const ctx = await setup();
+  try {
+    const owner = await login(ctx.app, 'owner');
+    await owner.agent.post('/settings').type('form').send(form(owner.csrf, { health_related: '1' }));
+    assert.strictEqual(gymConfig.profile.healthRelated, true);
+    assert.match((await owner.agent.get('/settings')).text, /name="health_related"[^>]*checked/);
+    await owner.agent.post('/settings').type('form').send(form(owner.csrf));
+    assert.strictEqual(gymConfig.profile.healthRelated, false);
   } finally { await ctx.cleanup(); gymConfig.resetToDefault(); }
 });

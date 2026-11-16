@@ -1,9 +1,47 @@
 // Small progressive enhancements; every page still works without this file.
 document.documentElement.classList.add('js');
 
+// R4: installable app. The service worker only caches CSS/JS and an offline page (see /sw.js).
+if ('serviceWorker' in navigator && window.isSecureContext) {
+  window.addEventListener('load', () => navigator.serviceWorker.register('/sw.js').catch(() => {}));
+}
+// Android/desktop Chrome: keep the install prompt for our own "Install app" button.
+let installPrompt = null;
+window.addEventListener('beforeinstallprompt', e => {
+  e.preventDefault();
+  installPrompt = e;
+  document.querySelectorAll('[data-install]').forEach(b => { b.hidden = false; });
+});
+window.addEventListener('appinstalled', () => {
+  installPrompt = null;
+  document.querySelectorAll('[data-install]').forEach(b => { b.hidden = true; });
+});
+
 document.addEventListener('DOMContentLoaded', () => {
+  // "Install app" (shown once the browser offers it) and the iPhone hint (Safari has no prompt).
+  const standalone = window.matchMedia('(display-mode: standalone)').matches || navigator.standalone === true;
+  document.querySelectorAll('[data-install]').forEach(b => {
+    b.hidden = standalone || !installPrompt;
+    b.addEventListener('click', async () => {
+      if (!installPrompt) return;
+      installPrompt.prompt();
+      await installPrompt.userChoice.catch(() => null);
+      installPrompt = null;
+      b.hidden = true;
+    });
+  });
+  const isIos = /iphone|ipad|ipod/i.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+  document.querySelectorAll('[data-ios-install]').forEach(el => { el.hidden = standalone || !isIos; });
+
   // Keep the conversation scrolled to the latest message.
   document.querySelectorAll('[data-chat]').forEach(el => { el.scrollTop = el.scrollHeight; });
+
+  // Auto-submit checkboxes marked with data-autosubmit ("Taking leads" switch); hide their Save button.
+  document.querySelectorAll('input[type=checkbox][data-autosubmit]').forEach(box => {
+    box.addEventListener('change', () => box.form.submit());
+    const btn = box.form.querySelector('.js-hide');
+    if (btn) btn.hidden = true;
+  });
 
   // Auto-submit selects marked with data-autosubmit (pipeline status changes).
   document.querySelectorAll('select[data-autosubmit]').forEach(sel => {
@@ -11,6 +49,58 @@ document.addEventListener('DOMContentLoaded', () => {
     const btn = sel.form.querySelector('.js-hide');
     if (btn) btn.hidden = true;
   });
+
+  // Business settings, Brand (R12): keep the colour picker and hex box in sync,
+  // and turn the chosen logo file into a data URL for the hidden "logo" field.
+  const brandForm = document.querySelector('[data-brand-form]');
+  if (brandForm) {
+    const pick = brandForm.querySelector('[data-color-pick]');
+    const text = brandForm.querySelector('[data-color-text]');
+    pick.addEventListener('input', () => { text.value = pick.value; });
+    text.addEventListener('input', () => { if (/^#[0-9a-f]{6}$/i.test(text.value)) pick.value = text.value; });
+    const file = brandForm.querySelector('[data-logo-file]');
+    const data = brandForm.querySelector('[data-logo-data]');
+    const hint = brandForm.querySelector('[data-logo-hint]');
+    const hintText = hint.textContent;
+    file.addEventListener('change', () => {
+      data.value = '';
+      hint.textContent = hintText;
+      hint.classList.remove('text-error');
+      const f = file.files[0];
+      if (!f) return;
+      if (f.size > 40 * 1024) {
+        hint.textContent = 'That image is ' + Math.round(f.size / 1024) + ' KB. Use one under 40 KB.';
+        hint.classList.add('text-error');
+        file.value = '';
+        return;
+      }
+      const reader = new FileReader();
+      reader.onload = () => { data.value = reader.result; };
+      reader.readAsDataURL(f);
+    });
+  }
+
+  // Add many staff (R13): "+ 5 more rows" copies the last row, emptied.
+  const bulkRows = document.querySelector('[data-bulk-rows]');
+  const bulkMore = document.querySelector('[data-bulk-more]');
+  if (bulkRows && bulkMore) {
+    bulkMore.hidden = false;
+    bulkMore.addEventListener('click', () => {
+      for (let i = 0; i < 5; i++) {
+        const row = bulkRows.lastElementChild.cloneNode(true);
+        row.classList.remove('ring-1', 'ring-error');
+        row.querySelectorAll('ul').forEach(el => el.remove());
+        row.querySelectorAll('input').forEach(el => { el.value = ''; });
+        row.querySelectorAll('select').forEach(el => {
+          el.querySelectorAll('option').forEach(o => { if (o.textContent === 'Choose a role') o.remove(); });
+          el.value = 'sales';
+        });
+        const n = bulkRows.children.length + 1;
+        row.querySelectorAll('[aria-label]').forEach(el => { el.setAttribute('aria-label', el.getAttribute('aria-label').replace(/^Row \d+/,'Row ' + n)); });
+        bulkRows.appendChild(row);
+      }
+    });
+  }
 
   // Character counter for the WhatsApp reply box.
   const box = document.querySelector('textarea[data-count]');
@@ -49,6 +139,13 @@ document.addEventListener('DOMContentLoaded', () => {
     const grow = () => { t.style.height = 'auto'; t.style.height = `${t.scrollHeight}px`; };
     t.addEventListener('input', grow);
   });
+
+  // Forms that undo something ask first (data-confirm="question"). Inline handlers are blocked by the CSP.
+  document.querySelectorAll('form[data-confirm]').forEach(f => {
+    f.addEventListener('submit', e => { if (!window.confirm(f.dataset.confirm)) e.preventDefault(); });
+  });
+  // Read-only fields meant for copying (addresses, codes, secrets) select all on click.
+  document.querySelectorAll('[data-select]').forEach(el => el.addEventListener('click', () => el.select()));
 
   // Bottom sheets open via #hash (works without JS); Escape closes them.
   document.addEventListener('keydown', e => {

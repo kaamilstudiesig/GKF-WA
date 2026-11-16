@@ -1,7 +1,7 @@
 const crypto = require('crypto');
 
 const SCRYPT = { N: 16384, r: 8, p: 1, keylen: 64 };
-const SESSION_COOKIE = 'gkf_crm_session';
+const SESSION_COOKIE = 'crm_session';
 const MIN_PASSWORD_LENGTH = 10;
 
 /** Hashes a password with scrypt. Format: scrypt$N$r$p$salt$hash (base64). */
@@ -9,6 +9,18 @@ function hashPassword(password) {
   const salt = crypto.randomBytes(16);
   const hash = crypto.scryptSync(password, salt, SCRYPT.keylen, { N: SCRYPT.N, r: SCRYPT.r, p: SCRYPT.p });
   return ['scrypt', SCRYPT.N, SCRYPT.r, SCRYPT.p, salt.toString('base64'), hash.toString('base64')].join('$');
+}
+
+/** Same as hashPassword, without blocking the event loop (bulk staff add hashes many at once). */
+function hashPasswordAsync(password) {
+  const salt = crypto.randomBytes(16);
+  return new Promise((resolve, reject) => crypto.scrypt(password, salt, SCRYPT.keylen, { N: SCRYPT.N, r: SCRYPT.r, p: SCRYPT.p }, (err, hash) => (
+    err ? reject(err) : resolve(['scrypt', SCRYPT.N, SCRYPT.r, SCRYPT.p, salt.toString('base64'), hash.toString('base64')].join('$')))));
+}
+
+/** Random one-time password that always meets validateNewPassword: 16 random characters, a digit and a letter. */
+function oneTimePassword() {
+  return `${crypto.randomBytes(12).toString('base64url')}${crypto.randomInt(10)}a`;
 }
 
 function verifyPassword(password, stored) {
@@ -48,14 +60,14 @@ async function createSession(db, userId, ttlHours) {
 async function getSession(db, token) {
   if (!token) return null;
   const row = await db.one(`
-    SELECT s.csrf_token, u.id, u.email, u.name, u.role, u.manager_id, u.must_change_password
+    SELECT s.csrf_token, u.id, u.email, u.name, u.role, u.manager_id, u.must_change_password, u.accepting
     FROM crm_sessions s JOIN crm_users u ON u.id = s.user_id
     WHERE s.token_hash = $1 AND s.expires_at > now() AND u.active
   `, [sha256(token)]);
   if (!row) return null;
   return {
     csrfToken: row.csrf_token,
-    user: { id: row.id, email: row.email, name: row.name, role: row.role, manager_id: row.manager_id, must_change_password: Boolean(row.must_change_password) }
+    user: { id: row.id, email: row.email, name: row.name, role: row.role, manager_id: row.manager_id, must_change_password: Boolean(row.must_change_password), accepting: row.accepting !== false }
   };
 }
 
@@ -89,6 +101,6 @@ class LoginThrottle {
 }
 
 module.exports = {
-  SESSION_COOKIE, MIN_PASSWORD_LENGTH, hashPassword, verifyPassword, validateNewPassword,
+  SESSION_COOKIE, MIN_PASSWORD_LENGTH, hashPassword, hashPasswordAsync, oneTimePassword, verifyPassword, validateNewPassword,
   createSession, getSession, destroySession, parseCookies, LoginThrottle
 };

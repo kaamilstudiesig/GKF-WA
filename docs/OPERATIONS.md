@@ -41,6 +41,23 @@ npm run dev:demo-data
 
 It refuses to run with `NODE_ENV=production`.
 
+### Demo clients (R14)
+
+For portfolio demos, fill one client with a month of realistic real estate activity:
+
+```bash
+npm run demo -- --tenant <slug> --preset realestate --region ae
+```
+
+- `--region ae` (Dubai: AED prices, English, Arabic and Hinglish chats, +971 50 000 xxxx numbers) or `in` (Bengaluru: ₹, English and Hinglish, +91 98000 xxxxx). Default `ae`. When it writes the profile, the region also sets the business's currency (AED or INR, R15).
+- Creates about 60 leads over 30 days (ads and direct WhatsApp; new, qualified, waiting for a person, contacted, no answer, site visit booked, visited, no-show, booked with amount, lost with reason), chats, hand-offs, assignments, follow-ups, AI usage, and a team (1 manager, 4 sales at `@demo-<slug>.test`). The team's one-time passwords are printed once.
+- Writes the business profile (3 projects, unit types with prices, policies) while the profile is still the blank starter, or always with `--profile`. The business name is kept.
+- **Safe to run twice:** the same data each time (seeded by the slug), existing leads and staff are skipped. `--reset` deletes only rows marked `metadata.demo` and recreates them with fresh dates (run it before a demo so nothing looks a week old). The team and any real leads stay.
+- **Never leaves the database:** outcomes are marked `meta_status = 'skipped'` (not sent to Meta), staff replies are stored as already sent (not queued for WhatsApp), no alerts are sent.
+- **Safety:** never tenant 1 (the live business), even locally. On any database other than local PGlite (for example a laptop pointed at Heroku's `DATABASE_URL`), only a client whose settings have `"demo": true` (`npm run tenant -- add` / `set` with `settings.demo`); `NODE_ENV` is not trusted for this. If the run fails part-way, nothing is saved, staff included.
+- **Business profile:** written while it is still the blank starter. A profile the client has edited is only replaced with `--profile`, and the output says so in capitals.
+- Amounts are stored in the business's currency (AED for `ae`); until R15 the CRM still shows them with ₹.
+
 Health checks: `GET /health` (process up) and `GET /health/ready` (database reachable) on the bot host; `GET /health` on the CRM host checks the CRM tables.
 
 ### CRM styles
@@ -57,15 +74,21 @@ All settings are environment variables; `.env.example` lists them with comments.
 | `META_ACCESS_TOKEN`, `META_PHONE_NUMBER_ID` | WhatsApp Cloud API credentials. |
 | `META_WEBHOOK_VERIFY_TOKEN` | Any secret string; the same value goes in Meta's webhook settings. |
 | `META_APP_SECRET` | Meta app secret, used to check webhook signatures. |
+| `META_APP_ID`, `META_ES_CONFIG_ID` | Our Meta app id and the Facebook Login for Business configuration id. Both set: clients connect their own WhatsApp number from a connect link (K9, [ONBOARDING.md](ONBOARDING.md)). |
+| `BOT_BASE_URL` | Public https address of the bot host (e.g. `https://wa.goldkraftfitness.com`), used in connect links. Must be an allowed JavaScript SDK domain in the Meta app. |
 | `OPENROUTER_API_KEY` | OpenRouter key. |
+| `OPENROUTER_ZDR` | Default on: OpenRouter only routes to zero-data-retention providers. Every call also sends `data_collection: 'deny'` (no storage or training), whatever this is set to. Set `false` only if a model stops routing, and only with the owner's OK: the privacy page then drops its "do not store" line and Annexure C must say the same; check with `node scripts/ai-privacy-check.js` (one tiny paid call per model, needs the owner's OK). |
 | `OPENROUTER_MODEL`, `OPENROUTER_FALLBACK_MODEL` | Default `deepseek/deepseek-v4.1-flash`, fallback `google/gemini-3.5-flash-lite` (chosen from a 16-model test on GKF lead scenarios, Oct 2026). |
 | `AI_MONTHLY_TOKEN_BUDGET`, `AI_MONTHLY_REQUEST_BUDGET` | Monthly AI limits. |
 | `AI_HISTORY_MESSAGES` | Earlier messages the AI sees with each reply (default 10). |
 | `MAX_BOT_REPLIES_PER_LEAD_PER_DAY` | Bot replies per lead per 24 hours (default 30). At the limit the lead gets one last reply and goes to staff; after that the bot stays quiet. |
 | `BOT_PAUSE_HOURS_AFTER_STAFF_REPLY` | Hours the bot stays quiet after a staff reply from the CRM (default 12). New messages from that lead are alerted to Telegram. `0` turns the pause off. |
 | `GYM_LATITUDE`, `GYM_LONGITUDE` | Map pin sent after the location answer. Leave empty to send the address only. |
-| `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID` | Staff alerts and daily backups. |
+| `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID` | Staff alerts. |
 | `TELEGRAM_OPS_CHAT_ID` | Optional separate Telegram group for technical alerts (failed sends, account warnings). Defaults to `TELEGRAM_CHAT_ID`. |
+| `BACKUP_ENCRYPTION_KEY` | 32 random bytes, base64. Encrypts the daily backup (K28). Keep a copy outside Heroku; without it no backup can be opened. |
+| `BACKUP_S3_ENDPOINT`, `BACKUP_S3_BUCKET`, `BACKUP_S3_ACCESS_KEY_ID`, `BACKUP_S3_SECRET_ACCESS_KEY` | Private backup storage (Cloudflare R2, EU). `BACKUP_S3_REGION` defaults to `auto` (R2). |
+| `BACKUP_HOUR_UTC` | When the daily backup runs, UTC `HH:MM` (default `21:30`, 03:00 India). |
 | `LEGAL_CONTACT_EMAIL`, `LEGAL_CONTACT_PHONE` | Contact shown on the public `/privacy`, `/terms` and `/data-deletion` pages (optional; without them the pages point to the WhatsApp number). |
 | `META_WABA_ID`, `META_DATASET_ID` | Conversions API: sends *Visit booked* (QualifiedLead) and *Joined* (Purchase, ₹) to Meta. Off until both are set. `node scripts/capi-setup.js --create` finds or creates the dataset. |
 | `META_PAGE_ID` | Optional. Lets leads without an ad click ID be matched by hashed phone (Meta attributes those only within 7 days of the ad). |
@@ -73,6 +96,7 @@ All settings are environment variables; `.env.example` lists them with comments.
 | `OPS_ALERT_COOLDOWN_MINUTES` | Minutes before the same technical alert repeats (default 30). |
 | `CRM_BASE_URL` | CRM address for "Open in CRM" links in Telegram alerts: `https://crm.goldkraftfitness.com`. |
 | `CRM_HOSTS` | Hostnames served by the CRM, comma-separated, matched without the port. Default `crm.goldkraftfitness.com,crm.localhost`. |
+| `SHARED_CRM_HOSTS` | The shared Dartit CRM, where staff of every client sign in (for example `crm.dartit.com`). Empty = off. The first host is also the CRM link in alerts for clients without their own CRM host. A client can't use it as its `crmHost`. See "Shared CRM" below. |
 | `SESSION_TTL_HOURS` | How long a CRM login lasts (default 12). |
 | `DISPLAY_TIMEZONE`, `USD_TO_INR` | CRM display timezone (default `Asia/Kolkata`) and the rate for showing AI cost in rupees (default 85). |
 | `SEED_USERS_FILE` | Starting staff accounts for `npm run crm:seed` (default `crm/seed/users.example.json`). |
@@ -153,11 +177,75 @@ One Basic dyno ($7/month) and Heroku Postgres Essential-0 ($5/month), about $12/
 
 8. First login: open https://crm.goldkraftfitness.com, log in as the owner with the password from the seed file, and set a new password when asked (every seeded account must change its password at first login; at least 10 characters with letters and numbers). Then have the manager and sales accounts do the same, or reset their passwords from **Staff**. Add the rest of the team from **Staff**.
 
-9. Daily backup: Heroku Postgres takes a daily backup (`heroku pg:backups:schedule DATABASE_URL --at '03:00 Asia/Kolkata' -a <name>`, set up for `gkf-wa`). For an off-site copy, the free Heroku Scheduler can also run `npm run backup` daily; it sends a gzipped JSON of the bot and CRM tables (leads, chats, staff accounts, notes, assignments, follow-ups; not login sessions) to the staff Telegram group. To restore into an empty database, download the file from Telegram and run `heroku run --no-tty "node scripts/restore.js /dev/stdin" -a <name> < gkf-wa-....json.gz` (locally: `npm run restore -- <file>`).
+9. Daily backup (K28): Heroku Postgres backups (`pg:backups`) don't work for this app. Every client table uses `FORCE ROW LEVEL SECURITY` (tenant isolation, `src/db/platformMigrations.js`); `pg_dump` runs with row security off, so it stops with *query would be affected by row-level security policy*. Essential plans can't add a database role that bypasses it, and turning `FORCE` off would let the app's own role see every tenant. So the app makes its own backup:
+
+   - **What:** a gzipped JSON of every table with client data (tenants, leads, chats, staff accounts, notes, assignments, follow-ups, CRM settings, Zoho sync state; not login sessions), **encrypted** with AES-256-GCM using `BACKUP_ENCRYPTION_KEY`. Tokens inside stay encrypted with `TENANT_SECRETS_KEY` as well.
+   - **Where:** a private Cloudflare R2 bucket in the EU (S3 API). Nothing goes to Telegram. Key: `gkf/<UTC date>/gkf-wa-<time>.json.gz.enc`.
+   - **When:** the web dyno makes one a day by itself after `BACKUP_HOUR_UTC` (default `21:30`, 03:00 India), so no Scheduler add-on and no extra dyno time. It uploads, reads the file back and checks it before counting the day as done; a deploy or restart finds today's file and doesn't make another.
+   - **Alerts (ops group):** "✅ Backup OK" each day; "🚨 Backup failed" (retries every 30 minutes, alert at most every 6 hours); "⚠️ No backup today: not set up" once a day while settings are missing. No backup data is ever in an alert.
+   - **Keeping:** a lifecycle rule on the bucket deletes files after 30 days, so the app's token needs no delete permission.
+
+   **Set-up (once):**
+   1. Cloudflare dashboard → **R2** → create bucket `gkf-backups`, location/jurisdiction **EU**.
+   2. Bucket → **Settings → Object lifecycle rules** → delete objects 30 days after upload.
+   3. R2 → **Manage API tokens** → create a token with **Object Read & Write**, limited to that bucket. Note the access key id, secret and the S3 endpoint (EU: `https://<account id>.eu.r2.cloudflarestorage.com`).
+   4. Make the key: `node -e "console.log(require('crypto').randomBytes(32).toString('base64'))"`.
+   5. In your own terminal (never a chat box), set them:
+      ```bash
+      heroku config:set BACKUP_ENCRYPTION_KEY=<key> BACKUP_S3_ENDPOINT=https://<account id>.eu.r2.cloudflarestorage.com BACKUP_S3_BUCKET=gkf-backups BACKUP_S3_ACCESS_KEY_ID=<id> BACKUP_S3_SECRET_ACCESS_KEY=<secret> -a gkf-wa
+      ```
+   6. **Store `BACKUP_ENCRYPTION_KEY` and `TENANT_SECRETS_KEY` outside Heroku too** (a password manager). If the Heroku app is lost, a backup can't be opened without the first, and client WhatsApp tokens inside can't be read without the second.
+   7. Test storage: `heroku run -a gkf-wa "npm run backup -- --check"`. Make one now: `heroku run -a gkf-wa "npm run backup"`.
+
+   **Restore** into an empty database (it runs the migrations, then refuses if there are leads or staff accounts): `heroku run -a <app> "node scripts/restore.js --latest"`, or with a file: `npm run restore -- <file>` (encrypted `.enc` needs `BACKUP_ENCRYPTION_KEY`; old plain `.json.gz` files still work).
+
+   **Restore drill** (no real database touched): `DATABASE_URL=pglite://$(mktemp -d) BACKUP_...=… node scripts/restore.js --latest` on a machine with the backup settings, check the counts, then delete that temp folder (it holds real client data). Last drill: _not done yet_ (do one after the first real backup).
+
+   The old `heroku pg:backups:schedule` for `gkf-wa` still runs and fails every night; remove it with `heroku pg:backups:unschedule DATABASE_URL -a gkf-wa`.
 
 10. Check `https://wa.goldkraftfitness.com/health`, then in the Meta app dashboard (**WhatsApp → Configuration**) change the webhook URL to `https://wa.goldkraftfitness.com/webhook` with the same verify token. Send a test message.
 
 11. Retire Render: once Heroku has handled real messages, delete the Render service and remove `render.yaml` from the repo.
+
+## Shared CRM (one address for every client)
+
+Staff of any client sign in at one Dartit address with their phone or email. The CRM finds their business; someone in two businesses picks one. Each session runs as its own client (row-level security as everywhere). The page looks like Dartit (theme, logo) with the business's name; a client's own CRM address (`crm_host`, `CRM_HOSTS`) keeps its own white-label brand.
+
+It's off until a domain is bought. To switch it on:
+1. Buy the domain (for example on Cloudflare). Add a CNAME `crm` to the Heroku DNS target from `heroku domains:add crm.<domain> -a gkf-wa`. Certificates are automatic (ACM, free on our dyno).
+2. `heroku config:set SHARED_CRM_HOSTS=crm.<domain> -a gkf-wa`.
+3. Open `https://crm.<domain>/login` and sign in. Locally it runs on `http://app.localhost:3000` with `SHARED_CRM_HOSTS=app.localhost`.
+
+Never put the shared address on a host that also serves the bot (`wa.*` or the `herokuapp.com` address): the CRM answers every path on it, `/webhook` included.
+
+## Lead usage and invoicing (K26)
+
+- Every inbound WhatsApp message counts its sender once per calendar month, in the client's time zone (Business settings → Lead queue). Rows hold a keyed hash (from `TENANT_SECRETS_KEY`), never the number, and stay when a lead is deleted. Don't change `TENANT_SECRETS_KEY` mid-month: people would be counted again.
+- Set a client's monthly limit from its plan (Schedule A): a JSON file `{ "settings": { "leadMonthlyLimit": 500 } }`, then `npm run tenant -- set <slug> file.json`. With a limit, the staff Telegram group (and our ops group, if different) gets one alert at 80% and one at 100% each month. Without one, the meter only counts.
+- Month end: `heroku run -a gkf-wa "npm run usage -- --month 2026-11"` prints every client's leads, limit and overage (`--month` is required). If no staff Telegram group is set when a level is reached, the alert waits and goes out with the next new lead after the group is added. A late message from last month counts in that month but never sends an alert. A person whose phone is hidden at first and shared later in the same month may count twice; check by hand if a client disputes.
+
+## Service levels: uptime and reply time (K27, Annexure B)
+
+**Reply time** is measured in the app: each automatic reply, from when we received the lead's last message to when WhatsApp accepted our reply. Staff replies, templates and staff alerts don't count. A reply that fails for good is recorded as a miss. If the dyno stops in the instant between sending and recording, that one reply is not counted. The owner sees this month's figure at the top of Reports. For every client: `heroku run -a gkf-wa "npm run service-levels -- --month 2026-11"` (target: 95% within 30 s). Rows are kept 13 months.
+
+**Uptime** comes from an external monitor (one-time setup, about 10 minutes):
+
+1. Create a free HetrixTools account (its free plan checks every minute, allows commercial use and alerts to Telegram; check the limits on its pricing page when you sign up).
+2. Add an HTTPS uptime monitor on `https://wa.goldkraftfitness.com/health/ready` (and later the product domain), every 1 minute, expecting status 200, from several locations.
+3. Add a second monitor on the CRM login page, expecting 200.
+4. Alerts: connect Telegram and send them to our ops group. Turn on the monthly report email.
+5. Each month, take availability from the monitor's report. Downtime counts only when the Platform is down for all clients through a fault in our control (Annexure B1).
+
+## Automatic deletion (K31)
+
+Every night after `RETENTION_HOUR_UTC` (default 22:00 UTC, 03:30 IST) each active client's leads with no activity for its retention period are deleted: no message from them or us, no first contact and no staff update in `retentionMonths` (tenant setting from Schedule A, default 24). It uses the same deletion as `npm run delete-lead`. The ops group gets a line when anything is deleted.
+
+- Off everywhere: `heroku config:set LEAD_RETENTION=off -a gkf-wa`.
+- At most 200 leads per client per night (the rest follow the next nights).
+- If more than 20% of a client's leads (and over 50) are due at once, nothing is deleted for that client and the ops group gets "🛑 Automatic deletion stopped". That usually means a wrong clock or a data problem. If the data is right (for example a client's first big batch of old leads), approve it for that client until a date: `{ "settings": { "retentionAllowSurgeUntil": "2028-12-31" } }`. The 200-per-night cap still applies.
+- A lead that fails to delete is reported in the nightly line and tried again the next night. A client whose whole run fails gets "⚠️ Automatic deletion failed" and is retried later that day.
+- An opted-out lead (STOP) that is deleted keeps its opt-out as a keyed hash (`opt_out_list`): templates to that number stay refused, and if the person comes back the opt-out returns to the new lead.
+- Change a client's period: `{ "settings": { "retentionMonths": 12 } }` with `npm run tenant -- set <slug> file.json`.
 
 ## Data deletion requests
 
@@ -168,6 +256,15 @@ heroku run "npm run delete-lead -- <lead key>" -a gkf-wa
 ```
 
 That's a dry run showing what would go; add `--confirm` to delete. The lead key is the part after `/leads/` in the CRM URL. Then tell the lead on WhatsApp it's done (the reply must go out before deleting, or within their 24h window).
+
+## Data breach
+
+The client agreement (clause 7.5) promises a first notice to the client within 24 hours of learning about a breach of their personal data, and details within 48 hours. A breach is any access, loss, change or disclosure that shouldn't have happened: a leaked token or key, a lost laptop with a `.env`, data sent to the wrong client, a public backup.
+
+1. **Contain (first hour).** Rotate whatever leaked: Meta token (Business settings → System users), `TENANT_SECRETS_KEY`-encrypted keys (re-save them), Razorpay and Zoho keys, OpenRouter key, Heroku API key, CRM sessions (`DELETE FROM crm_sessions` for the client). Turn off the affected feature if needed.
+2. **Work out the scope.** Which clients, which data (names, phones, chats, amounts), how many people, from when to when. Use Heroku logs, Sentry and `crm_activity_log`. Keep notes with times.
+3. **Tell each affected client within 24 hours** (owner and the privacy contact in their Annexure C): what happened, what data, what we did, what they need to do. Follow up with details within 48 hours. The client decides whether to notify its regulator (in India, the Data Protection Board within 72 hours under the DPDP Rules once in force) and its customers; help them with facts.
+4. **Fix the cause** and write a short note in this file: date, cause, fix.
 
 ## Incident runbook
 
@@ -197,7 +294,7 @@ Per-message failures (for example the 24h window closed for one lead) are logged
 3. Monthly budget reached (`AI_MONTHLY_TOKEN_BUDGET`, `AI_MONTHLY_REQUEST_BUDGET`).
 
 **Database**
-- `heroku pg:info -a gkf-wa`; backups: `heroku pg:backups -a gkf-wa`.
+- `heroku pg:info -a gkf-wa`. Backups are the daily encrypted file in Cloudflare R2 (setup step 9; the ops group gets "Backup OK" each day); `heroku pg:backups` fails on this database.
 - `heroku pg:psql` can fail on networks that block port 5432; use `heroku run` with a small node script instead.
 
 Errors also go to Sentry (`SENTRY_DSN`).

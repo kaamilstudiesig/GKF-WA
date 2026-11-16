@@ -5,14 +5,17 @@ const { migrateAll } = require('./migrate');
 const webhookWorker = require('./workers/webhookWorker');
 const outboundWorker = require('./workers/outboundWorker');
 const conversionsWorker = require('./workers/conversionsWorker');
+const zohoWorker = require('./workers/zohoWorker');
 const conversionsApi = require('./services/conversionsApi');
 const businessProfile = require('./services/businessProfile');
 const eventRepository = require('./db/eventRepository');
 const outboundRepository = require('./db/outboundRepository');
 const logger = require('./utils/logger');
+const tenancy = require('./tenancy/context');
+const registry = require('./tenancy/registry');
 const { initSentry, captureException } = require('./utils/sentry');
 
-/** No CRM staff yet: seed the example accounts on local PGlite, otherwise say how. */
+/** No CRM staff yet (tenant 1): seed the example accounts on local PGlite, otherwise say how. */
 async function ensureCrmUsers() {
   const { c } = await db.one('SELECT COUNT(*)::int AS c FROM crm_users');
   if (c > 0) return;
@@ -29,10 +32,15 @@ async function ensureCrmUsers() {
 async function main() {
   env.validateForProduction(); // throws in production when settings are missing
   initSentry();
-  await migrateAll(); // connects, then applies pending bot and CRM migrations
-  await ensureCrmUsers();
-  await businessProfile.load(); // K10: business facts from the database (first run saves the defaults)
+  await migrateAll(); // connects, then applies pending bot, CRM and platform migrations
+  if (!(await db.checkRlsActive())) {
+    logger.error('Row-level security does not apply to this database role (superuser or BYPASSRLS). Tenants are NOT isolated.');
+  }
+  await businessProfile.loadAll(); // K8 + K10: every tenant and its business facts
+  registry.startRefresh();
   businessProfile.startRefresh();
+  logger.info('Tenants loaded', { tenants: registry.list().map(t => t.slug) });
+  await tenancy.run(registry.DEFAULT_TENANT_ID, ensureCrmUsers);
 
   const app = createApp();
   const server = app.listen(env.port, () => {
@@ -44,20 +52,41 @@ async function main() {
 
   webhookWorker.start();
   outboundWorker.start();
-  if (conversionsApi.enabled) conversionsWorker.start(); // K7: sales results back to Meta
-  else logger.info('Conversions API off (set META_DATASET_ID and META_WABA_ID to send sales results to Meta)');
+  if (conversionsApi.enabledForAny) conversionsWorker.start(); // K7: sales results back to Meta
+  else logger.info('Conversions API off for every tenant (set a dataset and WABA id to send sales results to Meta)');
+  zohoWorker.start(); // K20: does nothing until a tenant connects Zoho (scripts/zoho-connect.js)
 
   // Housekeeping: keep the small Postgres plan small.
   const housekeeping = setInterval(async () => {
     try {
-      const events = await eventRepository.cleanup(14);
-      const sent = await outboundRepository.cleanup(30);
-      if (events || sent) logger.info('Housekeeping removed old queue rows', { events, sent });
+      const { events, sent, intake, replyTimes } = await tenancy.runAsSystem(async () => ({
+        events: await eventRepository.cleanup(14),
+        sent: await outboundRepository.cleanup(30),
+        // R16: lead intake submissions (duplicate checks and limits only look back a day).
+        intake: await require('./services/leadIntake').cleanup(90),
+        replyTimes: await require('./services/replyTimes').cleanup() // K27: 13 months
+      }));
+      if (events || sent || intake || replyTimes) logger.info('Housekeeping removed old rows', { events, sent, intake, replyTimes });
     } catch (err) {
       logger.error('Housekeeping failed', { error: err.message });
     }
   }, 6 * 60 * 60 * 1000);
   housekeeping.unref();
+
+  // K19: leads not picked up in 5 / 15 working minutes escalate (only for clients with auto-assign on).
+  const leadQueue = require('./services/leadQueue');
+  // R11b: the morning "waiting for an outcome" reminder, once a day per client at the start of its working day.
+  const dailyNudges = require('./services/dailyNudges');
+  // K28: one encrypted off-site backup a day (no Scheduler add-on); alerts ops if it fails or isn't set up.
+  const dailyBackup = require('./services/dailyBackup');
+  const retention = require('./services/retention');
+  const queueSweep = setInterval(() => {
+    dailyBackup.tick().catch(err => logger.error('Daily backup crashed', { error: err.message }));
+    retention.tick().catch(err => logger.error('Automatic deletion crashed', { error: err.message })); // K31
+    leadQueue.sweepAll().catch(err => logger.error('Lead queue sweep crashed', { error: err.message }));
+    dailyNudges.runAll().catch(err => logger.error('Daily reminder crashed', { error: err.message }));
+  }, 60 * 1000);
+  queueSweep.unref();
 
   let stopping = false;
   async function shutdown(signal) {
@@ -67,7 +96,8 @@ async function main() {
     logger.info(`${signal} received; finishing in-flight work`);
     setTimeout(() => process.exit(1), 25000).unref(); // Heroku allows 30s
     server.close();
-    await Promise.all([webhookWorker.stop(), outboundWorker.stop(), conversionsWorker.stop()]);
+    clearInterval(queueSweep);
+    await Promise.all([webhookWorker.stop(), outboundWorker.stop(), conversionsWorker.stop(), zohoWorker.stop()]);
     await db.close();
     process.exit(0);
   }

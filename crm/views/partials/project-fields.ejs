@@ -1,0 +1,7 @@
+<%# R17: the fields of a project (add and edit forms on the Projects page). %>
+<fieldset class="<%= field %>"><legend class="fieldset-legend">Project name</legend><input name="name" required maxlength="80" value="<%= p.name || '' %>" placeholder="Project name" class="input input-sm w-full"></fieldset>
+<fieldset class="<%= field %>"><legend class="fieldset-legend">Area</legend><input name="area" maxlength="80" value="<%= p.area || '' %>" placeholder="Neighbourhood or city" class="input input-sm w-full"></fieldset>
+<fieldset class="<%= field %>"><legend class="fieldset-legend">Kind</legend><input name="kind" maxlength="40" value="<%= p.kind || '' %>" placeholder="Apartments, villas, offices…" class="input input-sm w-full"></fieldset>
+<fieldset class="<%= field %>"><legend class="fieldset-legend">Handover</legend><input name="handover" maxlength="40" value="<%= p.handover || '' %>" placeholder="Ready, or a date" class="input input-sm w-full"></fieldset>
+<fieldset class="<%= field %>"><legend class="fieldset-legend">Brochure link</legend><input name="brochure_url" type="url" value="<%= p.brochure_url || '' %>" placeholder="https://…" class="input input-sm w-full"></fieldset>
+<fieldset class="<%= field %>"><legend class="fieldset-legend">Photo link</legend><input name="photo_url" type="url" value="<%= p.photo_url || '' %>" placeholder="https://…" class="input input-sm w-full"></fieldset>

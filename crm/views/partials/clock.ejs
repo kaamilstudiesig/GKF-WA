@@ -1,0 +1,2 @@
+<%# R2: working minutes since an auto-assigned lead was given to someone, until they reply or log an outcome. Red after 5. -%>
+<% if (typeof clock === 'number') { %><span class="badge badge-xs badge-soft <%= clock >= 5 ? 'badge-error' : 'badge-warning' %>" title="Working minutes since it was assigned, not picked up yet">Waiting <%= clock %> min</span><% } %>

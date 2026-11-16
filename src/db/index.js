@@ -1,6 +1,7 @@
 const { AsyncLocalStorage } = require('async_hooks');
 const env = require('../config/env');
 const logger = require('../utils/logger');
+const tenancy = require('../tenancy/context');
 const { migrations } = require('./schema');
 
 /**
@@ -15,7 +16,22 @@ const { migrations } = require('./schema');
  *
  * db.tx(fn) runs fn in a transaction; every db.query() made inside it (including
  * from repositories) automatically uses that transaction.
+ *
+ * Tenancy (K8): every query runs as the current tenant (src/tenancy/context.js).
+ * The tenant is set on the connection with set_config('app.tenant_id'), and row
+ * level security only shows that tenant's rows. A connection remembers its
+ * setting, so a query costs an extra round trip only when the tenant changes.
+ * Inside a transaction the setting is LOCAL and ends with the transaction.
  */
+const SET_TENANT = "SELECT set_config('app.tenant_id', $1, $3), set_config('app.all_tenants', $2, $3)";
+
+/** The connection settings for the current work. Throws outside a tenant (fail closed). */
+function tenantSettings() {
+  const c = tenancy.current();
+  if (!c) throw new tenancy.TenancyError('Database query outside a tenant. Wrap the entry point in tenancy.run() or tenancy.runAsSystem().');
+  return c.system ? { tenant: '', all: 'on' } : { tenant: String(c.tenantId), all: 'off' };
+}
+const settingsKey = s => `${s.tenant}|${s.all}`;
 const txStore = new AsyncLocalStorage();
 let driver = null;
 let initPromise = null;
@@ -41,16 +57,71 @@ async function createPgliteDriver(url) {
   if (!inMemory) require('fs').mkdirSync(require('path').dirname(require('path').resolve(location)), { recursive: true });
   const pg = inMemory ? new PGlite() : new PGlite(location);
   await pg.waitReady;
+  // One connection: setting the tenant and running the query must not interleave
+  // with another query's, so they run one pair at a time.
+  let current = null;
+  let chain = Promise.resolve();
+  const format = res => ({ rows: res.rows.map(normaliseRow), rowCount: res.affectedRows ?? res.rows.length });
   return {
     kind: 'pglite',
     async query(client, sql, params = []) {
-      const res = await (client || pg).query(sql, params);
-      return { rows: res.rows.map(normaliseRow), rowCount: res.affectedRows ?? res.rows.length };
+      return format(await (client || pg).query(sql, params));
+    },
+    queryAs(settings, sql, params = []) {
+      const key = settingsKey(settings);
+      const run = async () => {
+        if (current !== key) {
+          await pg.query(SET_TENANT, [settings.tenant, settings.all, false]);
+          current = key;
+        }
+        return format(await pg.query(sql, params));
+      };
+      const p = chain.then(run, run);
+      chain = p.catch(() => {});
+      return p;
     },
     async exec(sql) { await pg.exec(sql); },
     async transaction(fn) { return pg.transaction(tx => fn(tx)); },
+    async listen(channel, fn) { return pg.listen(channel, fn); }, // in-process: never drops, so no onReconnect
     async close() { await pg.close(); }
   };
+}
+
+/**
+ * Keeps a LISTEN going on its own client, reconnecting with back-off (1 s doubling to 30 s).
+ * NOTIFYs sent while no LISTEN was active are lost, so onReconnect() runs every time LISTEN
+ * starts working, the first time included: a viewer who arrived during an outage at start-up
+ * still gets one refresh. makeClient() returns a pg Client (tests pass a fake).
+ * Returns an async function that stops listening.
+ */
+function listenLoop(makeClient, channel, fn, { onReconnect, minDelayMs = 1000, maxDelayMs = 30000 } = {}) {
+  let client = null; let stopped = false; let delay = minDelayMs;
+  const connect = () => {
+    if (stopped) return;
+    const c = makeClient();
+    let dead = false;
+    const retry = err => {
+      if (dead) return;
+      dead = true;
+      if (client === c) client = null;
+      if (err) logger.warn('LISTEN connection lost; reconnecting', { channel, error: err.message });
+      Promise.resolve().then(() => c.end()).catch(() => {});
+      if (!stopped) { const t = setTimeout(connect, delay); if (t.unref) t.unref(); delay = Math.min(delay * 2, maxDelayMs); }
+    };
+    c.on('notification', msg => { if (msg.channel === channel) fn(msg.payload); });
+    c.on('error', retry);
+    c.on('end', () => retry(null));
+    c.connect().then(() => c.query(`LISTEN ${channel}`)).then(() => {
+      if (dead) return; // retry() already ended it
+      if (stopped) { Promise.resolve().then(() => c.end()).catch(() => {}); return; } // stopped while connecting
+      client = c; delay = minDelayMs;
+      if (onReconnect) {
+        try { onReconnect(); } catch (err) { logger.warn('LISTEN onReconnect failed', { channel, error: err.message }); }
+      }
+    }).catch(retry);
+  };
+  connect();
+  return async () => { stopped = true; if (client) await client.end().catch(() => {}); };
 }
 
 function createPgDriver(url) {
@@ -65,13 +136,39 @@ function createPgDriver(url) {
     idleTimeoutMillis: 30000
   });
   pool.on('error', err => logger.error('Postgres pool error', { error: err.message }));
+  const format = res => ({ rows: res.rows.map(normaliseRow), rowCount: res.rowCount });
   return {
     kind: 'pg',
     async query(client, sql, params = []) {
-      const res = await (client || pool).query(sql, params);
-      return { rows: res.rows.map(normaliseRow), rowCount: res.rowCount };
+      return format(await (client || pool).query(sql, params));
+    },
+    async queryAs(settings, sql, params = []) {
+      const client = await pool.connect();
+      let broken = null;
+      try {
+        const key = settingsKey(settings);
+        if (client.tenancyKey !== key) {
+          client.tenancyKey = null; // unknown until the set succeeds
+          await client.query(SET_TENANT, [settings.tenant, settings.all, false]);
+          client.tenancyKey = key;
+        }
+        return format(await client.query(sql, params));
+      } catch (err) {
+        if (!err.code) broken = err; // connection-level error: don't reuse this client
+        throw err;
+      } finally {
+        client.release(broken || undefined);
+      }
     },
     async exec(sql) { await pool.query(sql); },
+    /**
+     * LISTEN on its own connection (a pooled one would be handed to other queries).
+     * Reconnects with back-off, so a database restart doesn't stop live updates (see listenLoop).
+     */
+    async listen(channel, fn, opts = {}) {
+      const { Client } = require('pg');
+      return listenLoop(() => new Client({ connectionString: url, ssl: isLocal ? false : { rejectUnauthorized: false } }), channel, fn, opts);
+    },
     async transaction(fn) {
       const client = await pool.connect();
       try {
@@ -104,6 +201,8 @@ async function init() {
       const d = url.startsWith('pglite://') ? await createPgliteDriver(url) : createPgDriver(url);
       driver = d;
       await migrate();
+      // Then the CRM's and the platform's (tenancy) migrations, so every caller sees the full schema.
+      await require('../migrate').migrateAfterBot();
       logger.info('Database ready', { driver: d.kind });
       return d;
     })().catch(err => { initPromise = null; driver = null; throw err; });
@@ -112,9 +211,11 @@ async function init() {
 }
 
 async function query(sql, params) {
+  const settings = tenantSettings();
   const d = driver || await init();
   const store = txStore.getStore();
-  return d.query(store ? store.client : null, sql, params);
+  if (store) return d.query(store.client, sql, params);
+  return d.queryAs(settings, sql, params);
 }
 
 /** All rows. */
@@ -122,10 +223,22 @@ async function many(sql, params) { return (await query(sql, params)).rows; }
 /** First row or null. */
 async function one(sql, params) { return (await query(sql, params)).rows[0] || null; }
 
-async function tx(fn) {
-  if (txStore.getStore()) return fn(); // already inside a transaction
+/**
+ * `repeatableRead`: every read sees one snapshot (consistent exports, e.g. backups).
+ * Postgres only accepts it as the first statement, so it can't apply to an outer transaction.
+ */
+async function tx(fn, { repeatableRead = false } = {}) {
+  if (txStore.getStore()) {
+    if (repeatableRead) throw new Error('A repeatable-read transaction cannot run inside another transaction.');
+    return fn(); // already inside a transaction
+  }
+  const settings = tenantSettings();
   const d = driver || await init();
-  return d.transaction(client => txStore.run({ client }, fn));
+  return d.transaction(async client => {
+    if (repeatableRead) await d.query(client, 'SET TRANSACTION ISOLATION LEVEL REPEATABLE READ', []);
+    await d.query(client, SET_TENANT, [settings.tenant, settings.all, true]); // LOCAL: ends with the transaction
+    return txStore.run({ client }, fn);
+  });
 }
 
 async function migrate() {
@@ -153,9 +266,57 @@ async function close() {
   if (d) await d.close();
 }
 
-/** Test helper: empties every app table. */
+/** Test helper: empties every app table (all tenants). Tenants other than 1 are removed. */
 async function truncateAll() {
-  await query(`TRUNCATE leads, messages, handoffs, webhook_events, outbound_messages, ai_usage RESTART IDENTITY CASCADE`);
+  const d = driver || await init();
+  const sql = 'TRUNCATE leads, messages, handoffs, webhook_events, outbound_messages, ai_usage RESTART IDENTITY CASCADE';
+  // RESTART IDENTITY needs the sequences' owner: locally that is the superuser, not the restricted role.
+  if (d.kind === 'pglite') await d.exec(`RESET ROLE; ${sql}; SET ROLE app_tenant;`);
+  else await tenancy.runAsSystem(() => query(sql));
 }
 
-module.exports = { init, query, many, one, tx, close, truncateAll, driverKind: () => driver && driver.kind };
+/**
+ * Row-level security does not apply to superusers. PGlite (local and tests) runs
+ * as one, so after migrations it switches to a plain role and tests see the same
+ * isolation as Heroku. Heroku's app role is the table owner; FORCE ROW LEVEL
+ * SECURITY covers owners, and checkRlsActive() warns when the role bypasses it.
+ */
+async function useRestrictedRole() {
+  const d = driver || await init();
+  if (d.kind !== 'pglite') return;
+  await d.exec(`RESET ROLE;
+    DO $$ BEGIN
+      IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'app_tenant') THEN CREATE ROLE app_tenant NOLOGIN; END IF;
+    END $$;
+    GRANT USAGE, CREATE ON SCHEMA public TO app_tenant;
+    GRANT SELECT, INSERT, UPDATE, DELETE, TRUNCATE ON ALL TABLES IN SCHEMA public TO app_tenant;
+    GRANT USAGE, SELECT, UPDATE ON ALL SEQUENCES IN SCHEMA public TO app_tenant;
+    SET ROLE app_tenant;`);
+}
+
+/** Back to the superuser for migrations (PGlite only; no-op on Heroku). */
+async function useMigrationRole() {
+  const d = driver || await init();
+  if (d.kind === 'pglite') await d.exec('RESET ROLE');
+}
+
+/**
+ * Calls fn(payload) for every NOTIFY on `channel` (all tenants: the payload says which).
+ * onReconnect() runs each time LISTEN starts working (first connect and every reconnect):
+ * anything sent before or in a gap was missed. Returns an async function that stops listening. Used by the CRM's live board (R3).
+ */
+async function listen(channel, fn, opts = {}) {
+  if (!/^[a-z_]{1,63}$/.test(channel)) throw new Error(`Invalid channel name: ${channel}`);
+  const d = driver || await init();
+  return d.listen(channel, fn, opts);
+}
+
+/** True when row-level security applies to this connection's role (not a superuser, not BYPASSRLS). */
+async function checkRlsActive() {
+  const row = await tenancy.runAsSystem(() => one('SELECT rolsuper, rolbypassrls FROM pg_roles WHERE rolname = current_user'));
+  return Boolean(row) && !row.rolsuper && !row.rolbypassrls;
+}
+
+module.exports = {
+  init, query, many, one, tx, listen, listenLoop, close, truncateAll, useRestrictedRole, useMigrationRole, checkRlsActive, driverKind: () => driver && driver.kind
+};

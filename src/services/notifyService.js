@@ -1,8 +1,12 @@
 const axios = require('axios');
 const logger = require('../utils/logger');
+const gymConfig = require('../config/gymConfig');
+const registry = require('../tenancy/registry');
+const tenancy = require('../tenancy/context');
 
 const REASON_LABELS = {
   ready_to_book: 'Ready to book a trial',
+  form_lead: 'New lead from a form or portal', // R16
   price_negotiation: 'Price negotiation',
   custom_program: 'Wants a custom program',
   injury_question: 'Injury / medical question',
@@ -35,13 +39,18 @@ class NotifyService {
     this.sendOverride = null; // test hook
   }
 
+  /**
+   * One Telegram bot (TELEGRAM_BOT_TOKEN) for all tenants; each tenant has its own
+   * staff group and CRM address (tenant 1: the env vars). Outside a tenant: tenant 1.
+   */
   get config() {
+    const t = registry.config(tenancy.tenantIdOrNull() || registry.DEFAULT_TENANT_ID) || { telegram: {}, crm: {} };
     return {
       token: process.env.TELEGRAM_BOT_TOKEN || '',
-      chatId: process.env.TELEGRAM_CHAT_ID || '',
+      chatId: t.telegram.chatId || '',
       // Technical alerts (failed sends, account warnings). Defaults to the staff group.
-      opsChatId: process.env.TELEGRAM_OPS_CHAT_ID || process.env.TELEGRAM_CHAT_ID || '',
-      crmBaseUrl: (process.env.CRM_BASE_URL || '').replace(/\/+$/, '')
+      opsChatId: t.telegram.opsChatId || t.telegram.chatId || '',
+      crmBaseUrl: t.crm.baseUrl || ''
     };
   }
 
@@ -50,7 +59,7 @@ class NotifyService {
     return Boolean(token && chatId);
   }
 
-  buildHandoffMessage({ waId, reason, summary, lead }) {
+  buildHandoffMessage({ waId, reason, summary, lead, assignee = null }) {
     const name = lead?.display_name || 'Unknown name';
     const lines = [
       `🔔 <b>Lead needs a human</b>`,
@@ -58,6 +67,7 @@ class NotifyService {
       `Reason: <b>${escapeHtml(REASON_LABELS[reason] || reason)}</b>`
     ];
     if (summary) lines.push(`“${escapeHtml(String(summary).slice(0, 300))}”`);
+    if (assignee) lines.push(`Assigned to <b>${escapeHtml(assignee.name)}</b> (lead queue)`);
     const ad = lead?.metadata?.referral;
     if (ad) lines.push(`From ad: ${escapeHtml(ad.headline || ad.source_id || ad.platform || 'Meta ad')}`);
     const { fallbackLinks } = this.leadLinks(waId, lead, { replyLabel: 'Open in CRM' });
@@ -72,6 +82,8 @@ class NotifyService {
   async send(text, { ops = false, buttons = [] } = {}) {
     if (this.sendOverride) return this.sendOverride(text, { ops, buttons });
     const { token, chatId, opsChatId } = this.config;
+    // Ops groups can be shared by several client deployments: say which client it is.
+    if (ops) text = `<b>[${escapeHtml(gymConfig.gymName)}]</b> ${text}`;
     const body = { chat_id: ops ? opsChatId : chatId, text, parse_mode: 'HTML', disable_web_page_preview: true };
     if (buttons.length) body.reply_markup = { inline_keyboard: buttons };
     await axios.post(`https://api.telegram.org/bot${token}/sendMessage`, body, { timeout: 5000 });
@@ -124,7 +136,7 @@ class NotifyService {
    * Fire-and-forget alert for a newly opened hand-off. Runs after the current
    * call stack so a slow Telegram call never delays the WhatsApp reply.
    */
-  notifyHandoff({ waId, reason, summary = null }) {
+  notifyHandoff({ waId, reason, summary = null, assignee = null }) {
     if (!this.sendOverride && (!this.isEnabled() || process.env.NODE_ENV === 'test')) return;
     setImmediate(async () => {
       try {
@@ -132,7 +144,7 @@ class NotifyService {
         const leadRepository = require('../db/leadRepository');
         const lead = await leadRepository.findByWaId(waId);
         const { buttons } = this.leadLinks(waId, lead, { replyLabel: 'Open in CRM' });
-        await this.send(this.buildHandoffMessage({ waId, reason, summary, lead }), { buttons });
+        await this.send(this.buildHandoffMessage({ waId, reason, summary, lead, assignee }), { buttons });
         logger.info('Staff handoff alert sent to Telegram', { wa_id: waId, reason });
       } catch (err) {
         logger.error('Failed to send Telegram staff alert', { wa_id: waId, reason, error: err.message });
@@ -140,6 +152,48 @@ class NotifyService {
     });
   }
 }
+
+/**
+ * K19: a lead the queue assigned was not picked up (no reply, call or outcome) within
+ * `minutes` working minutes. One message per lead and level to the staff group.
+ */
+NotifyService.prototype.notifyNotPickedUp = function notifyNotPickedUp({ waId, minutes, assigneeName, to }) {
+  if (!this.sendOverride && (!this.isEnabled() || process.env.NODE_ENV === 'test')) return;
+  setImmediate(async () => {
+    try {
+      const leadRepository = require('../db/leadRepository');
+      const lead = await leadRepository.findByWaId(waId);
+      const { buttons, fallbackLinks } = this.leadLinks(waId, lead, { replyLabel: 'Open in CRM' });
+      await this.send([
+        `⏰ <b>Not picked up in ${minutes} min</b>`,
+        `<b>${escapeHtml(lead?.display_name || 'Lead')}</b> · ${escapeHtml(contactLabel(lead, waId))}`,
+        `Assigned to <b>${escapeHtml(assigneeName || 'nobody')}</b>; alerted: ${escapeHtml(to)}`,
+        ...fallbackLinks
+      ].join('\n'), { buttons });
+    } catch (err) {
+      logger.error('Failed to send Telegram not-picked-up alert', { wa_id: waId, error: err.message });
+    }
+  });
+};
+
+/** R11b: the morning list of leads waiting for an outcome, one post to the staff group. */
+NotifyService.prototype.notifyDailyNudges = function notifyDailyNudges({ lines, total }) {
+  if (!this.sendOverride && (!this.isEnabled() || process.env.NODE_ENV === 'test')) return;
+  setImmediate(async () => {
+    try {
+      const { crmBaseUrl } = this.config;
+      const url = crmBaseUrl ? `${crmBaseUrl}/leads?waiting=1&sort=waiting` : null;
+      const buttons = url && /^https:\/\/(?!localhost|127\.|[^/]*\.localhost)/i.test(url) ? [[{ text: '📋 Log what happened', url }]] : [];
+      await this.send([
+        `🌅 <b>${total} ${total === 1 ? 'lead is' : 'leads are'} waiting for an outcome</b>`,
+        ...lines.map(l => `• ${escapeHtml(l)}`),
+        ...(url && !buttons.length ? [`<a href="${escapeHtml(url)}">Open the list</a>`] : [])
+      ].join('\n'), { buttons });
+    } catch (err) {
+      logger.error('Failed to send Telegram daily reminder', { error: err.message });
+    }
+  });
+};
 
 module.exports = new NotifyService();
 module.exports.NotifyService = NotifyService;

@@ -1,0 +1,20 @@
+{
+  "clientId": "acme",
+  "herokuApp": "acme-wa",
+  "region": "eu",
+  "crmHost": "crm.acme.example",
+  "config": {
+    "META_PHONE_NUMBER_ID": "",
+    "META_WABA_ID": "",
+    "META_ACCESS_TOKEN": "",
+    "META_APP_SECRET": "",
+    "META_WEBHOOK_VERIFY_TOKEN": "",
+    "OPENROUTER_API_KEY": "",
+    "TELEGRAM_BOT_TOKEN": "",
+    "TELEGRAM_CHAT_ID": "",
+    "TELEGRAM_OPS_CHAT_ID": "",
+    "SENTRY_DSN": "",
+    "AI_MONTHLY_TOKEN_BUDGET": "5000000",
+    "AI_MONTHLY_REQUEST_BUDGET": "20000"
+  }
+}

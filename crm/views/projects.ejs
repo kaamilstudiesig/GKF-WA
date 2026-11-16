@@ -1,0 +1,105 @@
+<%- include('partials/header', { title: 'Projects' }) %>
+<%
+  const card = 'rounded-box bg-base-100 p-4';
+  const field = 'fieldset py-0';
+  const STATUS_BADGE = { active: '', sold_out: 'badge-warning', archived: 'badge-ghost' };
+  const STATUS_TEXT = { active: '', sold_out: 'Sold out', archived: 'Archived' };
+  const NEED_TEXT = { photo: 'Needs a photo', link: 'Needs a link', price: 'Needs a price' };
+  const statusForm = (path, status, label, cls = 'btn-ghost') => `<form method="post" action="${path}/status" class="inline"><input type="hidden" name="_csrf" value="${csrfToken}"><input type="hidden" name="status" value="${status}"><button class="btn btn-xs ${cls}" type="submit">${label}</button></form>`;
+  const moveForm = (path, dir, label) => `<form method="post" action="${path}/move" class="inline"><input type="hidden" name="_csrf" value="${csrfToken}"><input type="hidden" name="direction" value="${dir}"><button class="btn btn-xs btn-ghost btn-square" type="submit" aria-label="${label}">${dir === 'up' ? '↑' : '↓'}</button></form>`;
+%>
+<div class="mb-4 flex flex-wrap items-end justify-between gap-3">
+  <div><p class="text-sm text-base-content/60">What you sell, in <%= CURRENCY %></p><h1 class="page-title max-lg:hidden">Projects</h1></div>
+  <a href="/projects<%= showArchived ? '' : '?archived=1' %>" class="btn btn-ghost btn-sm"><%= showArchived ? 'Hide archived' : 'Show archived' %></a>
+</div>
+
+<div role="note" class="alert alert-info alert-soft mb-4 text-sm">
+  <span>Staff send these to leads from the lead page (<strong>Send projects</strong>). The WhatsApp assistant still answers from <a class="link" href="/settings">Business settings</a> for now, so keep the main projects there too.</span>
+</div>
+
+<div class="grid gap-4 lg:grid-cols-[minmax(0,1fr)_22rem]">
+  <ul class="min-w-0 space-y-3">
+    <% if (!list.length) { %><li class="<%= card %> text-sm text-base-content/60">No projects yet. Add your first one.</li><% } %>
+    <% for (const p of list) { const pPath = '/projects/' + p.id; %>
+    <li class="rounded-box bg-base-100 scroll-mt-20" id="project-<%= p.id %>">
+      <div class="flex flex-wrap items-start gap-2 p-4 pb-2">
+        <div class="min-w-0 flex-1">
+          <div class="flex flex-wrap items-center gap-1.5"><h2 class="text-base font-semibold"><%= p.name %></h2><% if (p.status !== 'active') { %><span class="badge badge-xs badge-soft <%= STATUS_BADGE[p.status] %>"><%= STATUS_TEXT[p.status] %></span><% } %></div>
+          <p class="text-xs text-base-content/60"><%= [p.area, p.kind, p.handover ? 'Handover ' + p.handover : null].filter(Boolean).join(' · ') || 'No details yet' %><% if (p.brochure_url) { %> · <a class="link" href="<%= p.brochure_url %>" target="_blank" rel="noopener noreferrer">Brochure</a><% } %></p>
+        </div>
+        <div class="flex items-center gap-1"><%- moveForm(pPath, 'up', 'Move project up') %><%- moveForm(pPath, 'down', 'Move project down') %></div>
+      </div>
+
+      <ul class="divide-y divide-base-300 px-4">
+        <% for (const u of p.units) { const uPath = '/units/' + u.id; %>
+        <li class="py-2">
+          <details>
+            <summary class="flex cursor-pointer list-none flex-wrap items-center gap-x-2 gap-y-1">
+              <span class="font-medium"><%= u.name %></span>
+              <span class="text-sm text-base-content/70"><%= [u.size_sqft ? u.size_sqft.toLocaleString('en-US') + ' sq ft' : null, u.price_from ? 'from ' + money(u.price_from) : null].filter(Boolean).join(' · ') %></span>
+              <% if (u.status !== 'active') { %><span class="badge badge-xs badge-soft <%= STATUS_BADGE[u.status] %>"><%= STATUS_TEXT[u.status] %></span><% } %>
+              <% for (const n of u.needs) { %><span class="badge badge-xs badge-ghost" title="Needed before it can go to a Meta catalog"><%= NEED_TEXT[n] %></span><% } %>
+              <span class="ml-auto text-xs text-base-content/50">Edit</span>
+            </summary>
+            <form method="post" action="<%= uPath %>" class="mt-2 grid gap-2 sm:grid-cols-2">
+              <%- include('partials/csrf') %>
+              <fieldset class="<%= field %>"><legend class="fieldset-legend">Unit</legend><input name="name" required maxlength="60" value="<%= u.name %>" class="input input-sm w-full"></fieldset>
+              <fieldset class="<%= field %>"><legend class="fieldset-legend">Price from (<%= CURRENCY_SHORT %>)</legend><input name="price_from" inputmode="numeric" autocomplete="off" value="<%= u.price_from || '' %>" class="input input-sm w-full"></fieldset>
+              <fieldset class="<%= field %>"><legend class="fieldset-legend">Size (sq ft)</legend><input name="size_sqft" inputmode="numeric" value="<%= u.size_sqft || '' %>" class="input input-sm w-full"></fieldset>
+              <fieldset class="<%= field %>"><legend class="fieldset-legend">Photo link (optional)</legend><input name="photo_url" type="url" placeholder="https://…" value="<%= u.photo_url || '' %>" class="input input-sm w-full"></fieldset>
+              <button class="btn btn-sm btn-primary sm:col-span-2" type="submit">Save unit</button>
+            </form>
+            <div class="mt-2 flex flex-wrap items-center gap-1">
+              <%- moveForm(uPath, 'up', 'Move unit up') %><%- moveForm(uPath, 'down', 'Move unit down') %>
+              <% if (u.status === 'active') { %><%- statusForm(uPath, 'sold_out', 'Mark sold out') %><% } else { %><%- statusForm(uPath, 'active', 'Back on sale') %><% } %>
+              <% if (u.status !== 'archived') { %><%- statusForm(uPath, 'archived', 'Archive', 'btn-ghost text-error') %><% } %>
+            </div>
+          </details>
+        </li>
+        <% } %>
+        <% if (!p.units.length) { %><li class="py-2 text-sm text-base-content/60">No units yet.</li><% } %>
+      </ul>
+
+      <% if (p.status !== 'archived') { %>
+      <details class="collapse collapse-arrow">
+        <summary class="collapse-title text-sm font-medium">Add a unit</summary>
+        <form method="post" action="<%= pPath %>/units" class="collapse-content grid gap-2 sm:grid-cols-2">
+          <%- include('partials/csrf') %>
+          <fieldset class="<%= field %>"><legend class="fieldset-legend">Unit</legend><input name="name" required maxlength="60" placeholder="<%= LABELS.planName %>" class="input input-sm w-full"></fieldset>
+          <fieldset class="<%= field %>"><legend class="fieldset-legend">Price from (<%= CURRENCY_SHORT %>)</legend><input name="price_from" inputmode="numeric" autocomplete="off" class="input input-sm w-full"></fieldset>
+          <fieldset class="<%= field %>"><legend class="fieldset-legend">Size (sq ft)</legend><input name="size_sqft" inputmode="numeric" class="input input-sm w-full"></fieldset>
+          <fieldset class="<%= field %>"><legend class="fieldset-legend">Photo link (optional)</legend><input name="photo_url" type="url" placeholder="https://…" class="input input-sm w-full"></fieldset>
+          <button class="btn btn-sm sm:col-span-2" type="submit">Add unit</button>
+        </form>
+      </details>
+      <% } %>
+
+      <details class="collapse collapse-arrow border-t border-base-300">
+        <summary class="collapse-title text-sm font-medium">Edit project</summary>
+        <div class="collapse-content space-y-2">
+          <form method="post" action="<%= pPath %>" class="grid gap-2 sm:grid-cols-2">
+            <%- include('partials/csrf') %>
+            <%- include('partials/project-fields', { p, field }) %>
+            <button class="btn btn-sm btn-primary sm:col-span-2" type="submit">Save project</button>
+          </form>
+          <div class="flex flex-wrap gap-1">
+            <% if (p.status === 'active') { %><%- statusForm(pPath, 'sold_out', 'Mark project sold out') %><% } else { %><%- statusForm(pPath, 'active', 'Back on sale') %><% } %>
+            <% if (p.status !== 'archived') { %><%- statusForm(pPath, 'archived', 'Archive project', 'btn-ghost text-error') %><% } %>
+          </div>
+        </div>
+      </details>
+    </li>
+    <% } %>
+  </ul>
+
+  <aside class="<%= card %> h-fit space-y-3 lg:sticky lg:top-20">
+    <h2>Add a project</h2>
+    <form method="post" action="/projects" class="grid gap-2">
+      <%- include('partials/csrf') %>
+      <%- include('partials/project-fields', { p: {}, field }) %>
+      <button class="btn btn-primary" type="submit">Add project</button>
+    </form>
+    <p class="text-xs text-base-content/50">Photo and brochure: https links (a shared drive or your website). Archived projects and units disappear from Send projects but stay in leads' history. One message holds up to <%= SEND_LIMITS.units %> units from <%= SEND_LIMITS.projects %> projects.</p>
+  </aside>
+</div>
+<%- include('partials/footer') %>

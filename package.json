@@ -11,8 +11,15 @@
     "restore": "node scripts/restore.js",
     "test": "NODE_ENV=test node --test --test-concurrency=4 \"test/**/*.test.js\"",
     "crm:seed": "node crm/scripts/seed.js",
+    "crm:owner": "node crm/scripts/create-owner.js",
+    "new-client": "node scripts/new-client.js",
+    "tenant": "node scripts/tenant.js",
+    "zoho": "node scripts/zoho.js",
     "dev:demo-data": "node scripts/demo-data.js",
+    "demo": "node scripts/demo.js",
     "delete-lead": "node scripts/delete-lead.js",
+    "service-levels": "node scripts/service-levels.js",
+    "usage": "node scripts/usage.js",
     "build:css": "tailwindcss -i crm/styles/app.css -o crm/public/css/app.css --minify",
     "predev": "npm run build:css",
     "heroku-postbuild": "npm run build:css"
@@ -27,6 +34,7 @@
   "license": "ISC",
   "dependencies": {
     "@sentry/node": "^10.73.0",
+    "aws4": "1.13.2",
     "axios": "^1.7.9",
     "dotenv": "^16.4.7",
     "ejs": "7.0.1",

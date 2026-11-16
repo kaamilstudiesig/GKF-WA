@@ -32,3 +32,46 @@ test('a backup restores into an empty database with identical data', async () =>
 
   await assert.rejects(restore(file), /already has leads/);
 });
+
+test('brand settings, including the logo image, survive a backup and restore', async () => {
+  await db.close();
+  await converse('919855555502', 'hello');
+  await require('../src/migrate').migrateAll(); // CRM tables too
+  const png = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 1, 2, 3]);
+  await db.query(`INSERT INTO crm_branding (mark, color, logo_type, logo_data) VALUES ('GK', '#112233', 'image/png', $1)`, [png]);
+  const file = await createBackup();
+  await db.close();
+  await restore(file);
+  const row = await db.one('SELECT mark, color, logo_data FROM crm_branding');
+  assert.strictEqual(row.mark, 'GK');
+  assert.strictEqual(row.color, '#112233');
+  assert.ok(Buffer.from(row.logo_data).equals(png));
+});
+
+test('the backup covers every table with client data except login sessions', () => {
+  const { ALL_TENANT_TABLES } = require('../src/db/platformMigrations');
+  const { TABLES } = require('../scripts/backup');
+  assert.deepStrictEqual(ALL_TENANT_TABLES.filter(t => t !== 'crm_sessions' && !TABLES.includes(t)), []);
+});
+
+test('CRM settings and Zoho sync state survive a backup and restore', async () => {
+  await db.close();
+  await require('../src/migrate').migrateAll();
+  await db.query(`UPDATE tenants SET settings = settings || '{"zohoSync": "on"}'::jsonb WHERE id = 1`);
+  await converse('919855555503', 'hello'); // the trigger adds a dirty zoho_links row
+  await db.query(`UPDATE zoho_links SET zoho_lead_id = 'Z1', dirty = false, status = 'synced', zoho_state = '{"Lead_Status": "New"}'::jsonb`);
+  await db.query(`INSERT INTO zoho_cursors (pulled_until) VALUES ('2026-11-01T00:00:00Z')`);
+  await db.query(`INSERT INTO crm_settings (auto_assign, work_start) VALUES (true, '08:30')`);
+  const before = {
+    links: await db.many('SELECT * FROM zoho_links'),
+    cursors: await db.many('SELECT * FROM zoho_cursors'),
+    settings: await db.many('SELECT * FROM crm_settings')
+  };
+  const file = await createBackup();
+  await db.close();
+  const counts = await restore(file);
+  assert.strictEqual(counts.zoho_links, 1);
+  assert.deepStrictEqual(await db.many('SELECT * FROM zoho_links'), before.links);
+  assert.deepStrictEqual(await db.many('SELECT * FROM zoho_cursors'), before.cursors);
+  assert.deepStrictEqual(await db.many('SELECT * FROM crm_settings'), before.settings);
+});

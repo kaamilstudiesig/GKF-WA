@@ -112,6 +112,53 @@ const CRM_MIGRATIONS = [
       'ALTER TABLE crm_lead_outcomes ADD COLUMN meta_attempts INTEGER NOT NULL DEFAULT 0',
       'ALTER TABLE crm_lead_outcomes ADD COLUMN meta_error TEXT'
     ]
+  },
+  {
+    id: 4,
+    name: 'payment_links',
+    up: [
+      `CREATE TABLE crm_payment_links (
+        id INTEGER GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+        wa_id TEXT NOT NULL,
+        user_id INTEGER NOT NULL REFERENCES crm_users(id),
+        reference_id TEXT NOT NULL UNIQUE,
+        razorpay_id TEXT UNIQUE,
+        plan TEXT NOT NULL,
+        amount_inr INTEGER NOT NULL,
+        short_url TEXT,
+        status TEXT NOT NULL DEFAULT 'created', -- created, paid
+        payment_id TEXT,
+        paid_at TIMESTAMPTZ,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+      )`,
+      'CREATE INDEX crm_payment_links_wa_id ON crm_payment_links (wa_id)'
+    ]
+  },
+  {
+    // R12: white-label CRM. One row: logo mark, brand colour and optional logo image.
+    // The business name itself comes from the bot's business profile.
+    id: 5,
+    name: 'branding',
+    up: [
+      `CREATE TABLE crm_branding (
+        id INTEGER PRIMARY KEY CHECK (id = 1),
+        mark TEXT,
+        color TEXT,
+        logo_type TEXT,
+        logo_data BYTEA,
+        updated_by TEXT,
+        updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+      )`
+    ]
+  },
+  {
+    // Staff WhatsApp alerts: each staff member's WhatsApp number and which leads they get alerts for.
+    id: 6,
+    name: 'staff_whatsapp_alerts',
+    up: [
+      'ALTER TABLE crm_users ADD COLUMN alert_phone TEXT',
+      `ALTER TABLE crm_users ADD COLUMN alert_mode TEXT NOT NULL DEFAULT 'off' CHECK (alert_mode IN ('off', 'mine', 'all'))`
+    ]
   }
 ];
 

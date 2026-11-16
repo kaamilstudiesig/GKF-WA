@@ -1,4 +1,5 @@
 const logger = require('../utils/logger');
+const tenancy = require('../tenancy/context');
 
 /**
  * Small polling worker for a Postgres-backed queue.
@@ -6,6 +7,9 @@ const logger = require('../utils/logger');
  * - handle(job): does the work and marks the job done/failed itself
  * Runs up to `concurrency` jobs at once, polls every `intervalMs`, and can be
  * woken immediately with kick() when new work arrives.
+ *
+ * K8: the claim runs across all tenants; each job then runs as the tenant on its
+ * row (job.tenant_id), so everything the handler does stays inside that tenant.
  */
 class QueueWorker {
   constructor(name, { claim, handle, concurrency = 1, intervalMs = 2000 }) {
@@ -23,12 +27,13 @@ class QueueWorker {
   async drain(max = Infinity) {
     let handled = 0;
     while (handled < max) {
-      const job = await this.claim();
+      const job = await tenancy.runAsSystem(() => this.claim());
       if (!job) break;
       try {
-        await this.handle(job);
+        if (!job.tenant_id) throw new Error('Job has no tenant_id');
+        await tenancy.run(job.tenant_id, () => this.handle(job));
       } catch (err) {
-        logger.error(`${this.name} job crashed`, { id: job.id, error: err.message });
+        logger.error(`${this.name} job crashed`, { id: job.id, tenant: job.tenant_id, error: err.message });
       }
       handled++;
     }

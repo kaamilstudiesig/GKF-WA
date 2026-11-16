@@ -3,6 +3,7 @@ const outboundWorker = require('./outboundWorker');
 const eventRepository = require('../db/eventRepository');
 const outboundRepository = require('../db/outboundRepository');
 const leadRepository = require('../db/leadRepository');
+const env = require('../config/env');
 const aiPolicy = require('../services/aiPolicy');
 const deterministicRouter = require('../services/deterministicRouter');
 const aiService = require('../services/aiService');
@@ -10,13 +11,21 @@ const whatsappService = require('../services/whatsappService');
 const botGuard = require('../services/botGuard');
 const identity = require('../services/identity');
 const notifyService = require('../services/notifyService');
+const staffAlerts = require('../services/staffAlerts');
 const { applyLeadUpdates } = require('../services/leadUpdates');
 const { applyReferral } = require('../services/adAttribution');
 const gymConfig = require('../config/gymConfig');
+const businessProfile = require('../services/businessProfile');
 const logger = require('../utils/logger');
 const { captureException } = require('../utils/sentry');
+const optOut = require('../services/optOut');
+const leadUsage = require('../services/leadUsage');
+const optOutList = require('../services/optOutList');
 
 /** Text the lead actually sent, including taps on buttons and list items. */
+/** A photo, video or document caption, or ''. */
+const captionOf = msg => String(msg?.image?.caption || msg?.video?.caption || msg?.document?.caption || '').trim();
+
 function textOf(msg) {
   switch (msg.type) {
     case 'text': return msg.text?.body || '';
@@ -30,18 +39,40 @@ function textOf(msg) {
  * Decides the reply to one inbound message: safety check, fixed replies, then AI.
  * Returns { text, buttons?, location? }.
  */
-async function decideReply(lead, text) {
+async function decideReply(lead, text, { burst = false } = {}) {
+  // K33: in a health-related business, health questions go to staff with a fixed reply (no AI).
+  const healthMode = Boolean(gymConfig.profile.healthRelated);
+  if (healthMode) {
+    // An open health hand-off: the assistant stays out until staff have dealt with it.
+    if (lead.needs_human && lead.handoff_reason === 'injury_question') return { text: aiPolicy.healthHoldReply(text) };
+    // Every message the lead sent since our last reply (a burst, a photo caption), not only this one.
+    const texts = [text, ...(await leadRepository.unansweredInboundTexts(lead.wa_id))];
+    const hit = texts.map(t => aiPolicy.checkHealthQuestion(t)).find(r => r.isHealthQuestion);
+    if (hit) {
+      // The summary stays generic: the details are in the conversation, not copied into alerts.
+      await applyLeadUpdates(lead, { needs_human: true, handoff_reason: hit.handoffReason, summary: 'Asked a health question.' });
+      return { text: aiPolicy.checkHealthQuestion(text).replyText || hit.replyText };
+    }
+  }
   const medical = aiPolicy.checkMedicalInjurySafety(text);
   if (medical.isMedicalQuery) {
     await applyLeadUpdates(lead, { needs_human: true, handoff_reason: medical.handoffReason, summary: 'Asked an injury/medical question.' });
     return { text: medical.disclaimerText };
   }
-  const routed = deterministicRouter.routeMessage(text, {}, lead);
+  // After a burst the lead asked several things: the AI answers them together.
+  const routed = burst ? { matched: false } : deterministicRouter.routeMessage(text, {}, lead);
   if (routed.matched) {
     if (routed.updates) await applyLeadUpdates(lead, routed.updates);
     return { text: routed.replyText, buttons: routed.buttons, location: routed.location };
   }
-  return { text: (await aiService.reply(lead, text)).replyText };
+  const replyText = (await aiService.reply(lead, text)).replyText;
+  // K33 safety net: in health mode, an assistant reply that reads like advice is never sent.
+  if (healthMode && aiPolicy.looksLikeAdvice(replyText)) {
+    logger.warn('Health mode: an AI reply looked like advice and was replaced', { wa_suffix: String(lead.wa_id).slice(-4) });
+    await applyLeadUpdates(lead, { needs_human: true, handoff_reason: 'injury_question', summary: 'Asked a health question.' });
+    return { text: aiPolicy.healthReply(text) };
+  }
+  return { text: replyText };
 }
 
 async function processEvent(event) {
@@ -52,11 +83,22 @@ async function processEvent(event) {
       await eventRepository.failPermanent(event.id, 'Event is missing the message or sender');
       return;
     }
+    // Staff numbers get WhatsApp alerts from this number; the AI never answers them.
+    if (await staffAlerts.isStaffPhone(waId)) {
+      whatsappService.markReadWithTyping(msg.id, { typing: false });
+      logger.info('Message from a staff number: no AI reply', { wa_suffix: String(waId).slice(-4) });
+      await eventRepository.complete(event.id);
+      return;
+    }
+    await businessProfile.ensureLoaded(); // this tenant's facts, before anything replies
     const timestamp = msg.timestamp ? new Date(Number(msg.timestamp) * 1000).toISOString() : new Date().toISOString();
 
     let lead = await leadRepository.upsertInbound(waId, contact?.profile?.name || null, timestamp,
       ids || identity.fromWebhook(msg, contact));
     lead = await applyReferral(lead, msg);
+    // K31: a deleted lead who had written STOP is back: their opt-out returns to the new row first.
+    const restored = await optOutList.restore(lead);
+    if (restored) lead = { ...lead, opted_out_at: restored };
 
     const replyKey = `reply:${msg.id}`;
     const alreadySaved = await leadRepository.hasMessage(msg.id);
@@ -69,14 +111,50 @@ async function processEvent(event) {
     if (!alreadySaved) {
       await leadRepository.saveMessage({
         messageId: msg.id, waId, direction: 'in', timestamp,
-        text: text !== null ? text : `[${String(msg.type || 'unknown').toUpperCase()} message]`
+        text: text !== null ? text : `[${String(msg.type || 'unknown').toUpperCase()} message]${captionOf(msg) ? ` ${captionOf(msg)}` : ''}`
       });
+      // K26: every contact counts towards this month's leads (once per person), STOP included.
+      await leadUsage.record(lead, { channel: 'whatsapp', at: new Date(timestamp) });
     }
+    // K30: STOP is handled before anything else (even a burst or staff pause), with a fixed
+    // reply and no AI. START, or any other message from an opted-out lead, opts them back in.
+    // Typed text only: a button or list title is the business's wording, never an opt-out.
+    const optKind = msg.type === 'text' && text !== null ? optOut.classify(text) : null;
+    if (optKind === 'stop' || (optKind === 'start' && lead.opted_out_at)) {
+      await leadRepository.setOptedOut(waId, optKind === 'stop');
+      logger.info(optKind === 'stop' ? 'Lead opted out' : 'Lead opted back in', { wa_id: waId });
+      whatsappService.markReadWithTyping(msg.id, { typing: false });
+      await outboundRepository.enqueue({ dedupKey: replyKey, waId, text: optOut.replyFor(optKind, text), metadata: { in_reply_to: msg.id, opt_out: optKind } });
+      if (outboundWorker.running) outboundWorker.kick();
+      await eventRepository.complete(event.id);
+      return;
+    }
+    if (lead.opted_out_at) {
+      if (optOut.isAcknowledgement(text)) { // "ok", "thanks", 👍 after STOP: stay opted out, no reply
+        whatsappService.markReadWithTyping(msg.id, { typing: false });
+        logger.info('Opted-out lead acknowledged; no reply', { wa_id: waId });
+        await eventRepository.complete(event.id);
+        return;
+      }
+      await leadRepository.setOptedOut(waId, false); // they wrote to us again
+      logger.info('Lead opted back in by messaging', { wa_id: waId });
+    }
+
+    // A newer text from the same lead is waiting: let that one answer the whole burst.
+    if (text !== null && await eventRepository.hasNewerText(waId, event.id)) {
+      logger.info('Burst: answering with the next message', { wa_id: waId });
+      await eventRepository.complete(event.id);
+      return;
+    }
+
     const guard = await botGuard.check(waId);
     if (guard.paused || guard.overCap) {
       // Staff are handling this lead (or it hit the daily cap): record the message, don't answer.
       whatsappService.markReadWithTyping(msg.id, { typing: false });
-      if (guard.paused) notifyService.notifyLeadMessage({ waId, text: text ?? `[${msg.type} message]` });
+      if (guard.paused) {
+        notifyService.notifyLeadMessage({ waId, text: text ?? `[${msg.type} message]` });
+        staffAlerts.alert({ waId, event: 'lead_message', details: text ?? `[${msg.type} message]` });
+      }
       logger.info('Bot stayed quiet', { wa_id: waId, reason: guard.paused ? 'staff_handling' : 'daily_cap' });
       await eventRepository.complete(event.id);
       return;
@@ -88,9 +166,11 @@ async function processEvent(event) {
       await applyLeadUpdates(lead, { needs_human: true, handoff_reason: 'other', summary: 'Daily bot reply limit reached for this lead.' });
       reply = { text: gymConfig.fallbackMessages.systemError };
     } else {
+      // K33: a photo or document caption with a health question goes to staff like typed text.
+      const captionHealth = text === null && gymConfig.profile.healthRelated && aiPolicy.checkHealthQuestion(captionOf(msg)).isHealthQuestion;
       reply = text !== null && text.trim()
-        ? await decideReply(lead, text)
-        : { text: gymConfig.fallbackMessages.nonTextMessage };
+        ? await decideReply(lead, text, { burst: await leadRepository.unansweredInboundCount(waId) > 1 })
+        : captionHealth ? await decideReply(lead, captionOf(msg)) : { text: gymConfig.fallbackMessages.nonTextMessage };
     }
 
     const metadata = { in_reply_to: msg.id };
@@ -109,7 +189,8 @@ async function processEvent(event) {
 const webhookWorker = new QueueWorker('Inbound message worker', {
   claim: () => eventRepository.claimNext(),
   handle: processEvent,
-  concurrency: 3
+  concurrency: 3,
+  intervalMs: env.queuePollMs
 });
 
 module.exports = webhookWorker;

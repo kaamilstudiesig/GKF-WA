@@ -5,7 +5,8 @@ const LEAD_STATUSES = ['new', 'contacted', 'qualified', 'hot', 'cold', 'converte
 const HANDOFF_REASONS = [
   'ready_to_book', 'price_negotiation', 'custom_program', 'injury_question',
   'human_requested', 'complaint', 'rate_limit_exceeded', 'ai_service_unavailable',
-  'ai_network_error', 'budget_exceeded', 'other'
+  'ai_network_error', 'budget_exceeded', 'other',
+  'form_lead' // R16: a lead from a website form or portal (never chosen by the AI)
 ];
 
 const ROLES = ['owner', 'manager', 'sales'];
@@ -14,6 +15,9 @@ const ROLE_LABELS = { owner: 'Owner', manager: 'Manager', sales: 'Sales' };
 // WhatsApp only allows free-form replies within 24h of the lead's last message.
 const WINDOW_MS = 24 * 60 * 60 * 1000;
 
+// Money (R15): every amount_inr column (crm_lead_outcomes, crm_payment_links) holds whole units of
+// the business's currency (profile.currency: INR, AED, SAR or USD), not always rupees; the name is
+// historical. Format and read amounts with util.money / util.parseAmount (src/config/currency.js).
 // One-tap outcomes staff log after following up a lead (R1). Order = order on screen.
 const OUTCOMES = {
   called_connected: 'Called, spoke',
@@ -25,15 +29,8 @@ const OUTCOMES = {
   joined: 'Joined',
   lost: 'Lost'
 };
-const LOST_REASONS = {
-  price: 'Price too high',
-  distance: 'Too far',
-  timing: 'Timings don\'t suit',
-  joined_elsewhere: 'Joined another gym',
-  no_response: 'Stopped replying',
-  not_interested: 'Not interested',
-  other: 'Other'
-};
+// Why a lead was lost: shared with the bot, see src/config/lostReasons.js.
+const { LOST_REASONS } = require('../../src/config/lostReasons');
 
 // Pipeline board columns: the real sales journey, worked out from status + the latest visit outcome.
 const STAGES = {

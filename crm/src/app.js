@@ -14,17 +14,40 @@ const express = require('express');
 const config = require('./config');
 const auth = require('./auth');
 const { Crm, HttpError } = require('./crm');
-const { Users } = require('./users');
+const { Users, parseLogin } = require('./users');
+const { LiveBoard } = require('./liveBoard');
+const tenancy = require('../../src/tenancy/context');
+const { ZohoStatus } = require('./zohoStatus');
+const pwa = require('./pwa');
+const bulkStaff = require('./bulkStaff');
+const { LeadQueue, QueueError, TIMEZONES } = require('./queue');
+const { MIN_AGE_HOURS } = require('./nudges');
+const { Analytics, GRADE_MIN_LEADS } = require('./analytics');
+
+const { csvCell } = require('./csv'); // shared with the R19 data export
+const { buildExport } = require('./dataExport');
+const { Branding, forPlatform } = require('./branding');
 const { can } = require('./permissions');
+const intakeSettings = require('./intakeSettings');
 const { LEAD_STATUSES, ROLE_LABELS, ROLES, OUTCOMES, LOST_REASONS, STAGES } = require('./constants');
 
 // The bot's business profile (K10): plan names for "Joined", and the Business settings page.
 let gymConfig = null;
 let businessProfile = null;
+let leadUsage = null;
 try {
   gymConfig = require('../../src/config/gymConfig');
   businessProfile = require('../../src/services/businessProfile');
+  leadUsage = require('../../src/services/leadUsage'); // K26
 } catch (e) { /* standalone CRM without the bot */ }
+// K26: this month's lead count for owners and managers, or null (sales, no bot, or the meter failed).
+const usageFor = async user => {
+  if (!leadUsage || user.role === 'sales') return null;
+  try { return await leadUsage.usage(); } catch (e) { return null; }
+};
+// K27: this month's reply time for the owner's line in Reports (optional: needs the bot).
+let replyTimes = null;
+try { replyTimes = require('../../src/services/replyTimes'); } catch (e) { /* standalone CRM */ }
 const planOptions = () => (gymConfig ? gymConfig.pricingTiers.map(t => `${t.name} (${t.price})`) : []);
 const toArray = v => (Array.isArray(v) ? v : v === undefined ? [] : [v]);
 
@@ -33,7 +56,7 @@ function profileFromForm(b) {
   const names = toArray(b.plan_name); const prices = toArray(b.plan_price); const details = toArray(b.plan_details);
   const pNames = toArray(b.policy_name); const pTexts = toArray(b.policy_text);
   return {
-    name: b.name, type: b.type, area: b.area, address: b.address, parking: b.parking, facility: b.facility,
+    name: b.name, type: b.type, currency: b.currency, healthRelated: b.health_related === '1', area: b.area, address: b.address, parking: b.parking, facility: b.facility,
     latitude: b.latitude, longitude: b.longitude, voice: b.voice,
     hours: b.hours, programs: b.programs, sellingPoints: b.selling_points,
     plans: names.map((n, i) => ({ name: n, price: prices[i], details: details[i] })),
@@ -42,6 +65,18 @@ function profileFromForm(b) {
   };
 }
 const util = require('./util');
+const { currencyOptions } = require('../../src/config/currency');
+const razorpay = require('../../src/services/razorpay');
+const botGuard = require('../../src/services/botGuard');
+const { labelsFor, lostReasonsFor, verticalFor } = require('../../src/config/verticals');
+const { Projects, catalogNeeds, SEND_LIMITS } = require('./projects');
+
+/** Outcome, stage and settings names for the business type (real estate says "Booked", not "Joined"). */
+function namesFor(type, currency = 'INR') {
+  const l = labelsFor(type, currency);
+  const pick = base => Object.fromEntries(Object.entries(base).map(([k, v]) => [k, l[k] || v]));
+  return { OUTCOMES: pick(OUTCOMES), STAGES: pick(STAGES), LABELS: l, LOST_REASONS: lostReasonsFor(type) };
+}
 
 /** Express 4 does not catch rejected promises; pass them to the error handler. */
 const h = fn => (req, res, next) => Promise.resolve(fn(req, res, next)).catch(next);
@@ -61,13 +96,32 @@ function createCrmApp({
   app.locals.assetV = assetVersion(); // cache-busting ?v= on CSS/JS links
   const crm = new Crm(db);
   const users = new Users(db);
+  const liveBoard = new LiveBoard(db);
+  app.locals.liveBoard = liveBoard; // tests and shutdown
+  const queue = new LeadQueue(db);
+  // R2: "waiting N min" on leads assigned but not picked up yet (only while auto-assign is on).
+  const withClock = async leads => {
+    const clock = await queue.waitingClock(leads.map(l => l.wa_id));
+    for (const l of leads) l.clock = clock[l.wa_id] ?? null;
+    return leads;
+  };
+  // Zoho sync status (K20). Without the bot's tenant registry (standalone CRM) it is simply off.
+  let registry = null;
+  try { registry = require('../../src/tenancy/registry'); } catch (e) { if (e.code !== 'MODULE_NOT_FOUND') throw e; /* standalone */ }
+  const zoho = new ZohoStatus(db, registry || { config: () => ({}) });
+  const projects = new Projects(db);
+  const businessCurrency = () => util.currencyCode(gymConfig ? gymConfig.profile.currency : 'INR');
+  const analytics = new Analytics(db);
   const throttle = new auth.LoginThrottle();
+  const branding = new Branding(db, () => (gymConfig ? gymConfig.gymName : ''));
 
   app.set('view engine', 'ejs');
   app.set('views', path.join(__dirname, '..', 'views'));
   app.set('trust proxy', 1);
   app.disable('x-powered-by');
   app.locals.crm = crm;
+  // Used if a page renders before the session middleware has loaded the real branding (early errors).
+  app.locals.brand = { name: 'Staff CRM', first: 'Staff CRM', last: '', mark: 'CR', color: '#d4af37', contentColor: '#141106', style: '', logoUrl: null, logoSquarePng: false, shortName: 'Staff CRM', key: '', fileSlug: 'crm' };
 
   app.use((req, res, next) => {
     res.setHeader('X-Content-Type-Options', 'nosniff');
@@ -82,14 +136,26 @@ function createCrmApp({
 
   // ---- session + view helpers ----
   app.use(h(async (req, res, next) => {
+    if (businessProfile) await businessProfile.ensureLoaded(); // a tenant added by another process
     const token = auth.parseCookies(req.headers.cookie)[auth.SESSION_COOKIE];
     const session = await auth.getSession(db, token);
     req.sessionToken = token;
     req.user = session ? session.user : null;
     req.csrfToken = session ? session.csrfToken : null;
+    // R15: the business's currency. Every amount on the page goes through money(); Razorpay
+    // links are INR-only, so they're off for other currencies.
+    const CURRENCY = util.currencyCode(gymConfig ? gymConfig.profile.currency : 'INR');
     Object.assign(res.locals, {
-      user: req.user, csrfToken: req.csrfToken, can, util, LEAD_STATUSES, ROLE_LABELS, ROLES, OUTCOMES, LOST_REASONS, PLAN_OPTIONS: planOptions(), STAGES,
-      path: req.path, query: req.query, flash: req.query.ok || null, error: req.query.err || null
+      MIN_AGE_HOURS,
+      user: req.user, csrfToken: req.csrfToken, can, util, LEAD_STATUSES, ROLE_LABELS, ROLES, LOST_REASONS, PLAN_OPTIONS: planOptions(),
+      PAYMENTS_ON: razorpay.enabled() && CURRENCY === 'INR',
+      CURRENCY, CURRENCY_SHORT: util.CURRENCIES[CURRENCY].prefix.trim(), money: v => util.money(v, CURRENCY),
+      // R17: the Projects page is in the menu for business types that sell projects (real estate).
+      SHOW_PROJECTS: verticalFor(gymConfig ? gymConfig.profile.type : 'gym').projectsPage === true,
+      ...namesFor(gymConfig ? gymConfig.profile.type : 'gym', CURRENCY),
+      path: req.path, query: req.query, flash: req.query.ok || null, error: req.query.err || null,
+      // The shared CRM always looks like Dartit, with this business's name (src/routes/sharedCrm.js).
+      brand: req.sharedCrm ? forPlatform(await branding.get()) : await branding.get()
     });
     next();
   }));
@@ -124,20 +190,69 @@ function createCrmApp({
   };
   const withOk = (url, msg) => `${url.split('?')[0]}?${new URLSearchParams({ ...Object.fromEntries(new URLSearchParams(url.split('?')[1] || '')), ok: msg })}`;
 
-  // ---- auth ----
-  app.get('/login', (req, res) => (req.user ? res.redirect('/') : res.render('login', { email: '' })));
+  // Logo image (R12). Public: the login page shows it. Versioned URL, so it can be cached.
+  app.get('/brand/logo', h(async (req, res) => {
+    const logo = await branding.logo();
+    if (!logo) return res.status(404).end();
+    res.set('Content-Type', logo.type);
+    res.set('Cache-Control', req.query.v ? 'public, max-age=31536000, immutable' : 'no-cache');
+    res.send(logo.data);
+  }));
 
+  // ---- installable app (R4). Public: the browser fetches these before anyone logs in. ----
+  const SW_SOURCE = fs.readFileSync(path.join(__dirname, '..', 'public', 'sw.js'), 'utf8').replace('__ASSET_VERSION__', app.locals.assetV);
+  app.get('/sw.js', (req, res) => {
+    res.set('Content-Type', 'text/javascript; charset=utf-8');
+    res.set('Cache-Control', 'no-cache'); // browsers must see a new version right after a deploy or a brand change
+    res.send(SW_SOURCE.replace('__BRAND_VERSION__', res.locals.brand.key || ''));
+  });
+  app.get('/manifest.webmanifest', h(async (req, res) => {
+    res.set('Content-Type', 'application/manifest+json; charset=utf-8');
+    res.set('Cache-Control', 'no-cache');
+    res.send(JSON.stringify(pwa.manifest(res.locals.brand, await branding.logo())));
+  }));
+  app.get('/brand/icon.svg', (req, res) => {
+    res.set('Content-Type', 'image/svg+xml');
+    res.set('Cache-Control', 'no-cache');
+    res.send(pwa.iconSvg(res.locals.brand, { pad: req.query.maskable === '1' }));
+  });
+  // iPhones need a PNG home-screen icon; head.ejs uses the uploaded logo when there is one.
+  app.get('/brand/apple-touch-icon.png', (req, res) => {
+    res.set('Content-Type', 'image/png');
+    res.set('Cache-Control', 'no-cache');
+    res.send(pwa.solidPng(res.locals.brand.color));
+  });
+  // Android install icons (Chrome wants 192 and 512 PNGs).
+  app.get(['/brand/icon-192.png', '/brand/icon-512.png'], (req, res) => {
+    res.set('Content-Type', 'image/png');
+    res.set('Cache-Control', 'no-cache');
+    res.send(pwa.solidPng(res.locals.brand.color, req.path.includes('512') ? 512 : 192));
+  });
+  app.get('/offline', (req, res) => res.render('offline'));
+
+  // ---- auth ----
+  app.get('/login', (req, res) => (req.user ? res.redirect('/') : res.render('login', { login: '' })));
+
+  // Sign in with a phone number or an email (the form field was called `email` before).
   app.post('/login', h(async (req, res) => {
-    const email = String(req.body.email || '').trim();
-    if (throttle.blocked(req.ip, email)) {
-      return res.status(429).render('login', { email, error: 'Too many failed attempts. Try again in 15 minutes.' });
+    const login = String(req.body.login ?? req.body.email ?? '').trim();
+    const throttleKey = Users.throttleKey(login);
+    if (throttle.blocked(req.ip, throttleKey)) {
+      return res.status(429).render('login', { login, error: 'Too many failed attempts. Try again in 15 minutes.' });
     }
-    const user = await users.findByEmail(email);
+    const found = await users.findByLogin(login);
+    if (found.error) { // empty or not a phone/email: says nothing about accounts
+      throttle.fail(req.ip, throttleKey);
+      return res.status(400).render('login', { login, error: found.error });
+    }
+    const user = found.user;
     if (!user || !user.active || !auth.verifyPassword(String(req.body.password || ''), user.password_hash)) {
-      throttle.fail(req.ip, email);
-      return res.status(401).render('login', { email, error: 'Email or password is incorrect.' });
+      throttle.fail(req.ip, throttleKey);
+      // The hint depends only on what was typed, never on which accounts exist.
+      const hint = parseLogin(login).local ? ' If you typed a phone number, try it with the country code, for example +91 98450 12345.' : '';
+      return res.status(401).render('login', { login, error: 'Phone number, email or password is incorrect.' + hint });
     }
-    throttle.reset(req.ip, email);
+    throttle.reset(req.ip, throttleKey);
     await db.query('UPDATE crm_users SET last_login_at = now() WHERE id = $1', [user.id]);
     const { token, expires } = await auth.createSession(db, user.id, sessionTtlHours);
     setSessionCookie(res, token, expires);
@@ -171,20 +286,44 @@ function createCrmApp({
     }
   }));
 
+  // R2: a sales person switches "Taking leads" off (on leave, busy, end of shift). Their
+  // leads nobody has picked up yet go back into the queue.
+  app.post('/account/accepting', h(async (req, res) => {
+    // Only sales people take leads from the queue; the switch means nothing for anyone else.
+    if (req.user.role !== 'sales') return res.status(403).render('error', { status: 403, message: 'Only sales people take leads from the queue.' });
+    const on = req.body.accepting === '1';
+    await db.query('UPDATE crm_users SET accepting = $1, updated_at = now() WHERE id = $2', [on, req.user.id]);
+    const moved = on ? 0 : await queue.release(req.user.id);
+    await crm.log(req.user, null, on ? 'taking_leads_on' : 'taking_leads_off', { moved });
+    const msg = on ? 'You are taking new leads.' : `You are not taking new leads.${moved ? ` ${moved} lead${moved === 1 ? '' : 's'} went to someone else.` : ''}`;
+    res.redirect(withOk(back(req, '/'), msg));
+  }));
+
   // ---- dashboard ----
-  app.get('/', h(async (req, res) => res.render('dashboard', { d: await crm.dashboard(req.user) })));
+  app.get('/', h(async (req, res) => {
+    const d = await crm.dashboard(req.user);
+    await withClock([...d.attention, ...d.recent]);
+    res.render('dashboard', { d, usage: await usageFor(req.user) });
+  }));
 
   // ---- leads ----
   app.get('/leads', h(async (req, res) => {
     const filters = {
       status: req.query.status || '', assignee: req.query.assignee || '', q: req.query.q || '',
-      needsHuman: req.query.needs_human === '1', sort: req.query.sort || 'attention', page: req.query.page || 1
+      needsHuman: req.query.needs_human === '1', waiting: req.query.waiting === '1', sort: req.query.sort || 'attention', page: req.query.page || 1
     };
-    res.render('leads', { result: await crm.listLeads(req.user, filters), filters, staff: await crm.assignableUsers(req.user) });
+    const result = await crm.listLeads(req.user, filters);
+    await withClock(result.leads);
+    res.render('leads', { result, filters, staff: await crm.assignableUsers(req.user) });
   }));
 
+  // R3: live board stream. Pings "board changed" for this client only; no lead data.
+  app.get('/events', (req, res) => liveBoard.subscribe(tenancy.tenantId(), req, res));
+
   app.get('/pipeline', h(async (req, res) => {
-    res.render('pipeline', { columns: await crm.pipelineBoard(req.user) });
+    const columns = (await crm.pipelineBoard(req.user)).map(c => ({ ...c, label: res.locals.STAGES[c.stage] || c.label }));
+    await withClock(columns.flatMap(c => c.leads || []));
+    res.render('pipeline', { columns });
   }));
 
   // Kanban move. JSON for drag-and-drop (fetch), redirect for plain forms.
@@ -202,7 +341,7 @@ function createCrmApp({
       throw err;
     }
     if (wantsJson) return res.json({ ok: true, stage: req.body.stage });
-    res.redirect(withOk('/pipeline', `Moved to ${STAGES[req.body.stage]}.`));
+    res.redirect(withOk('/pipeline', `Moved to ${res.locals.STAGES[req.body.stage]}.`));
   }));
 
   // SortableJS (MIT) for drag-and-drop, served from node_modules (CSP allows only same-origin scripts).
@@ -215,6 +354,7 @@ function createCrmApp({
     const waId = util.cleanWaId(req.params.waId);
     const lead = await crm.getLead(req.user, waId);
     if (!lead) return res.status(404).render('error', { status: 404, message: 'Lead not found, or it is not assigned to you.' });
+    await withClock([lead]);
     res.render('lead', {
       lead,
       messages: await crm.messages(waId),
@@ -224,7 +364,10 @@ function createCrmApp({
       followUps: await crm.leadFollowUps(waId),
       activity: await crm.leadActivity(waId),
       outcomes: await crm.leadOutcomes(waId),
-      staff: await crm.assignableUsers(req.user)
+      staff: await crm.assignableUsers(req.user),
+      botPausedUntil: await botGuard.pausedUntil(waId),
+      zoho: await zoho.forLead(waId),
+      projectUnits: await projects.sendable(), SEND_LIMITS // R17: Send projects
     });
   }));
 
@@ -234,6 +377,16 @@ function createCrmApp({
     res.redirect(withOk(back(req, `/leads/${waId}`), okMsg));
   });
 
+  // R17: send chosen units to the lead as one WhatsApp message (plain text until K24's catalog).
+  // A CRM reply like any other (counts as picked up and for speed to lead), with the unit ids kept.
+  app.post('/leads/:waId/projects', leadAction(async (req, waId) => {
+    const lead = await crm.getLead(req.user, waId);
+    if (lead && lead.opted_out_at) throw new HttpError(400, 'They wrote STOP, so no projects lists. Reply normally if they write to you.');
+    const { text, units } = await projects.message(req.body.units, {
+      businessName: gymConfig ? gymConfig.profile.name : '', currency: businessCurrency()
+    });
+    await crm.queueMessage(req.user, waId, text, { units });
+  }, 'Projects sent on WhatsApp.'));
   app.post('/leads/:waId/status', leadAction((req, waId) => crm.setStatus(req.user, waId, req.body.status), 'Status updated.'));
   app.post('/leads/:waId/assign', allow(can.assignLeads), leadAction((req, waId) => crm.assign(req.user, waId, req.body.user_id || null), 'Assignment updated.'));
   app.post('/leads/:waId/notes', leadAction((req, waId) => crm.addNote(req.user, waId, req.body.body), 'Note added.'));
@@ -249,8 +402,15 @@ function createCrmApp({
       note: req.body.note
     });
     // No #outcome here: the sheet opens on that hash, and after saving it should be closed.
-    res.redirect(withOk(`/leads/${waId}`, `Saved: ${OUTCOMES[outcome]}.`));
+    res.redirect(withOk(`/leads/${waId}`, `Saved: ${res.locals.OUTCOMES[outcome]}.`));
   }));
+  app.post('/leads/:waId/payment-link', h(async (req, res) => {
+    const waId = util.cleanWaId(req.params.waId);
+    const { url, sent } = await crm.createPaymentLink(req.user, waId, { plan: req.body.plan, amount: req.body.amount });
+    res.redirect(withOk(`/leads/${waId}`, sent ? 'Payment link sent on WhatsApp.' : `Reply window closed. Send this link yourself: ${url}`));
+  }));
+  app.post('/leads/:waId/bot/resume', leadAction((req, waId) => crm.resumeBot(req.user, waId), 'AI is back on for this lead. It answers their next message.'));
+  app.post('/leads/:waId/suggestion/dismiss', leadAction((req, waId) => crm.dismissSuggestion(req.user, waId), 'Suggestion dismissed.'));
   app.post('/leads/:waId/handoff/resolve', leadAction((req, waId) => crm.resolveHandoff(req.user, waId), 'Handoff resolved.'));
   app.post('/leads/:waId/followups', leadAction((req, waId) => crm.addFollowUp(req.user, waId, {
     title: req.body.title, dueAt: util.localInputToIso(req.body.due_at), assigneeId: req.body.user_id || null
@@ -270,53 +430,243 @@ function createCrmApp({
   // ---- reports ----
   app.get('/reports', allow(can.viewReports), h(async (req, res) => {
     const days = [7, 30, 90].includes(Number(req.query.days)) ? Number(req.query.days) : 30;
-    res.render('reports', { r: await crm.reports(req.user, { days, includeAiCost: can.viewAiCost(req.user), usdToInr }) });
+    const a = await analytics.summary(req.user, { days, names: res.locals.OUTCOMES, lostNames: res.locals.LOST_REASONS });
+    // R6: "By ad" is sorted by revenue (the default from byAd) or by leads; "not from an ad" stays last.
+    const KIND_ORDER = { ad: 0, missing: 1, none: 2 };
+    const adSort = req.query.adsort === 'leads' ? 'leads' : 'revenue';
+    const adRows = adSort === 'leads'
+      ? [...a.ads].sort((x, y) => KIND_ORDER[x.kind] - KIND_ORDER[y.kind] || y.leads - x.leads || y.revenueInr - x.revenueInr)
+      : a.ads;
+    res.render('reports', {
+      r: await crm.reports(req.user, { days, includeAiCost: can.viewAiCost(req.user), usdToInr }),
+      a, adRows, adSort, GRADE_MIN_LEADS,
+      replyStats: replyTimes && req.user.role === 'owner' ? await replyTimes.monthStats().catch(() => null) : null
+    });
+  }));
+  // R6: the "By ad" table as a spreadsheet (same scope and period as the page).
+  app.get('/reports/ads.csv', allow(can.viewReports), h(async (req, res) => {
+    const days = [7, 30, 90].includes(Number(req.query.days)) ? Number(req.query.days) : 30;
+    const rows = await analytics.byAd(req.user, await analytics.range({ days }));
+    const L = res.locals.OUTCOMES;
+    const AD_KIND_LABEL = { missing: 'Ad (id missing)', none: 'Not from an ad' };
+    const cols = [['ad_id', 'adId'], ['platform', 'platform'], ['headline', 'headline'], ['campaign', 'campaignName'], ['leads', 'leads'],
+      ['qualified', 'qualified'], [L.visit_booked, 'visitBooked'], [L.visited, 'visited'], [L.joined, 'won'], [res.locals.CURRENCY === 'INR' ? 'revenue' : `revenue_${res.locals.CURRENCY.toLowerCase()}`, 'revenueInr'], // INR keeps its old column name
+      ['win_rate_pct', 'winRate'], ['median_minutes_to_contact', 'medianMinutes'], ['grade', 'grade'], ['spend', 'spend'],
+      ['cost_per_sale', 'costPerSale'], ['roas', 'roas']];
+    const lines = [cols.map(([h]) => csvCell(h)).join(','),
+      ...rows.map(r => cols.map(([, k]) => csvCell(k === 'headline' && r.kind !== 'ad' ? AD_KIND_LABEL[r.kind] : r[k])).join(','))];
+    res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+    res.setHeader('Content-Disposition', `attachment; filename="${res.locals.brand.fileSlug}-ads-${days}d-${util.localDay(new Date().toISOString())}.csv"`);
+    res.send(lines.join('\n'));
   }));
   app.get('/reports/leads.csv', allow(can.exportLeads), h(async (req, res) => {
     const cols = ['wa_id', 'phone', 'username', 'display_name', 'status', 'interest', 'source', 'assignee_name', 'needs_human', 'handoff_reason',
       'open_followups', 'first_contact_at', 'last_inbound_message_at', 'last_outbound_message_at'];
-    const esc = v => {
-      let s = v === null || v === undefined ? '' : String(v);
-      if (/^[=+\-@\t\r]/.test(s)) s = `'${s}`; // block spreadsheet formula injection
-      return /[",\n\r]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
-    };
-    const lines = [cols.join(','), ...(await crm.exportLeads(req.user)).map(l => cols.map(c => esc(l[c])).join(','))];
+    const lines = [cols.join(','), ...(await crm.exportLeads(req.user)).map(l => cols.map(c => csvCell(l[c])).join(','))];
     res.setHeader('Content-Type', 'text/csv; charset=utf-8');
-    res.setHeader('Content-Disposition', `attachment; filename="gkf-leads-${util.localDay(new Date().toISOString())}.csv"`);
+    res.setHeader('Content-Disposition', `attachment; filename="${res.locals.brand.fileSlug}-leads-${util.localDay(new Date().toISOString())}.csv"`);
     res.send(lines.join('\n'));
+  }));
+
+  // ---- projects and units (R17; owners and managers) ----
+  const toProjects = (msg, hash = '') => withOk('/projects', msg) + hash;
+  app.get('/projects', allow(can.manageProjects), h(async (req, res) => {
+    const list = await projects.list({ archived: req.query.archived === '1' });
+    for (const p of list) for (const u of p.units) u.needs = catalogNeeds(u, p);
+    res.render('projects', { list, showArchived: req.query.archived === '1', SEND_LIMITS });
+  }));
+  app.post('/projects', allow(can.manageProjects), h(async (req, res) => {
+    const p = await projects.addProject(req.body);
+    await crm.log(req.user, null, 'project_added', { project_id: p.id, name: p.name });
+    res.redirect(toProjects(`Project "${p.name}" added. Add its units below.`, `#project-${p.id}`));
+  }));
+  app.post('/projects/:id', allow(can.manageProjects), h(async (req, res) => {
+    const p = await projects.updateProject(req.params.id, req.body);
+    await crm.log(req.user, null, 'project_updated', { project_id: p.id });
+    res.redirect(toProjects('Project saved.', `#project-${p.id}`));
+  }));
+  app.post('/projects/:id/units', allow(can.manageProjects), h(async (req, res) => {
+    const u = await projects.addUnit(req.params.id, req.body);
+    await crm.log(req.user, null, 'unit_added', { unit_id: u.id, project_id: u.project_id, name: u.name });
+    res.redirect(toProjects(`"${u.name}" added.`, `#project-${u.project_id}`));
+  }));
+  app.post('/units/:id', allow(can.manageProjects), h(async (req, res) => {
+    const u = await projects.updateUnit(req.params.id, req.body);
+    await crm.log(req.user, null, 'unit_updated', { unit_id: u.id });
+    res.redirect(toProjects('Unit saved.', `#project-${u.project_id}`));
+  }));
+  const STATUS_WORDS = { active: 'back on sale', sold_out: 'marked sold out', archived: 'archived' };
+  app.post('/:kind(projects|units)/:id/status', allow(can.manageProjects), h(async (req, res) => {
+    const kind = req.params.kind === 'projects' ? 'project' : 'unit';
+    const row = await projects.setStatus(kind, req.params.id, req.body.status);
+    await crm.log(req.user, null, `${kind}_status`, { id: row.id, status: req.body.status });
+    res.redirect(toProjects(`"${row.name}" ${STATUS_WORDS[req.body.status]}.`, `#project-${kind === 'project' ? row.id : row.project_id}`));
+  }));
+  app.post('/:kind(projects|units)/:id/move', allow(can.manageProjects), h(async (req, res) => {
+    const kind = req.params.kind === 'projects' ? 'project' : 'unit';
+    await projects.move(kind, req.params.id, req.body.direction === 'up' ? 'up' : 'down');
+    const row = kind === 'project' ? await projects.project(req.params.id) : await projects.unit(req.params.id);
+    res.redirect(`/projects#project-${kind === 'project' ? row.id : row.project_id}`);
   }));
 
   // ---- users (owner only) ----
   const usersPage = async (res, extra = {}) => res.render('users', { list: await users.list(), managers: await users.managers(), form: {}, ...extra });
   // ---- business settings (owner only, K10) ----
+  // R15: stored amounts that a currency change would re-label: recorded sales and payment links.
+  // One query for the Business settings warning and the confirm check, so they can't drift apart.
+  const storedAmounts = async () => (await db.one(`SELECT
+      (SELECT COUNT(*) FROM crm_lead_outcomes WHERE outcome = 'joined' AND amount_inr IS NOT NULL)::int AS sales,
+      (SELECT COUNT(*) FROM crm_payment_links)::int AS links`));
   const settingsPage = async (res, extra = {}) => {
     const { VERTICALS } = require('../../src/config/verticals');
     res.render('settings', {
       profile: gymConfig.profile, meta: await businessProfile.meta(), verticals: VERTICALS,
-      prompt: gymConfig.getSystemPrompt(), limits: businessProfile.LIMITS, ...extra
+      prompt: gymConfig.getSystemPrompt(), limits: businessProfile.LIMITS, brandForm: null,
+      queueSettings: await queue.settings(), TIMEZONES, queueBotWired: LeadQueue.botWired,
+      ownBrand: await branding.get(), // the Brand form edits the client's own brand, also on the shared CRM
+      zoho: await zoho.summary(), usage: leadUsage ? await leadUsage.usage().catch(() => null) : null, intake: await intakePage(),
+      // R15: the currency select, and the warning when sales already have amounts.
+      currencyOptions: currencyOptions(),
+      amounts: await storedAmounts(),
+      ...extra
     });
   };
+  // R16: Business settings -> Lead sources. The client's intake settings live in the tenant registry.
+  const intakePage = async () => {
+    if (!registry) return null; // standalone CRM: no bot host to receive leads
+    const t = registry.config(tenancy.tenantId());
+    if (!t) return null;
+    const env = require('../../src/config/env');
+    return intakeSettings.intakeView(db, { cfg: t.intake, slug: t.slug, botBaseUrl: env.botBaseUrl, businessName: gymConfig ? gymConfig.profile.name : t.name });
+  };
+  const saveIntake = async (req, res, input, message) => {
+    await registry.update(tenancy.tenantId(), input);
+    res.redirect(withOk('/settings', message) + '#lead-sources');
+  };
+  app.post('/settings/intake', allow(can.manageBusiness), h(async (req, res) => {
+    let origins; let country;
+    try {
+      origins = intakeSettings.parseOrigins(req.body.origins);
+      country = intakeSettings.parseCountry(req.body.phone_country);
+    } catch (err) {
+      res.status(400);
+      return settingsPage(res, { error: err.message });
+    }
+    await crm.log(req.user, null, 'intake_settings_updated', { origins: origins.length, phone_country: country });
+    await saveIntake(req, res, { settings: { intakeOrigins: origins, phoneCountry: country } }, 'Lead sources saved.');
+  }));
+  // A new public form key: forms already on websites stop working until the snippet is updated.
+  app.post('/settings/intake/form-key', allow(can.manageBusiness), h(async (req, res) => {
+    await crm.log(req.user, null, 'intake_form_key_created');
+    await saveIntake(req, res, { settings: { intakeFormKey: intakeSettings.newFormKey() } }, 'New form key made. Copy the snippet again to your website.');
+  }));
+  // The signing secret is shown once, right after it is made; it is stored encrypted and can't be shown again.
+  app.post('/settings/intake/secret', allow(can.manageBusiness), h(async (req, res) => {
+    const secret = intakeSettings.newSecret();
+    await registry.update(tenancy.tenantId(), { secrets: { intakeSecret: secret } });
+    await crm.log(req.user, null, 'intake_secret_regenerated');
+    res.set('Cache-Control', 'no-store');
+    await settingsPage(res, { newIntakeSecret: secret, flash: 'New signing secret made. Copy it now: it is not shown again. The old one stops working.' });
+  }));
   app.get('/settings', allow(can.manageBusiness), h(async (req, res) => {
     if (!businessProfile) return res.status(404).render('error', { status: 404, message: 'Business settings need the WhatsApp bot.' });
     await settingsPage(res);
   }));
   app.post('/settings', allow(can.manageBusiness), h(async (req, res) => {
     const submitted = profileFromForm(req.body);
+    const formAgain = message => {
+      res.status(400);
+      return settingsPage(res, { error: message, profile: { ...gymConfig.profile, ...submitted, fallback: submitted.fallback } });
+    };
+    // R15: a new currency re-labels every stored amount (they are not converted), so once sales
+    // exist the owner must tick "I understand" before it changes.
+    const fromCurrency = util.currencyCode(gymConfig.profile.currency);
+    const toCurrency = util.currencyCode(submitted.currency);
+    if (fromCurrency !== toCurrency && req.body.currency_confirm !== '1') {
+      const { sales, links } = await storedAmounts();
+      if (sales || links) return formAgain(`Tick the box under Currency to change it from ${fromCurrency} to ${toCurrency}. Amounts already recorded keep their numbers in the new currency.`);
+    }
     try {
       await businessProfile.save(submitted, req.user.email);
     } catch (err) {
       if (!(err instanceof businessProfile.ProfileError)) throw err;
-      res.status(400);
-      return settingsPage(res, { error: err.message, profile: { ...gymConfig.profile, ...submitted, fallback: submitted.fallback } });
+      return formAgain(err.message);
     }
     await crm.log(req.user, null, 'business_profile_updated');
+    if (fromCurrency !== toCurrency) await crm.log(req.user, null, 'currency_changed', { from: fromCurrency, to: toCurrency });
     res.redirect(withOk('/settings', 'Saved. The WhatsApp assistant uses the new details from its next reply.'));
   }));
 
+  // R19: the full data export. Owner only; every download is in the activity log.
+  app.get('/settings/export.zip', allow(can.manageBusiness), h(async (req, res) => {
+    const profile = gymConfig ? gymConfig.profile : {};
+    const when = new Date();
+    const { zip, counts } = await buildExport(db, {
+      businessName: profile.name || res.locals.brand.name, currency: profile.currency || 'INR', when
+    });
+    await crm.log(req.user, null, 'data_exported', { files: counts, bytes: zip.length });
+    res.setHeader('Content-Type', 'application/zip');
+    res.setHeader('Content-Disposition', `attachment; filename="${res.locals.brand.fileSlug}-data-${util.localDay(when.toISOString())}.zip"`);
+    res.setHeader('Cache-Control', 'no-store'); // private data: never kept by a browser or proxy cache
+    res.send(zip);
+  }));
+
+  // Branding (R12): logo letters, colour and logo image, on the Business settings page.
+  // R2: lead queue settings (auto-assign, working hours, time zone).
+  app.post('/settings/queue', allow(can.manageBusiness), h(async (req, res) => {
+    // Until the bot calls autoAssign (K19), turning it on would do nothing: keep it off.
+    const input = { autoAssign: LeadQueue.botWired && req.body.auto_assign === '1', workStart: req.body.work_start, workEnd: req.body.work_end, timezone: req.body.timezone };
+    try {
+      await queue.saveSettings(input, req.user.email);
+    } catch (err) {
+      if (!(err instanceof QueueError)) throw err;
+      res.status(400);
+      return settingsPage(res, { error: err.message, queueSettings: { auto_assign: input.autoAssign, work_start: input.workStart, work_end: input.workEnd, timezone: input.timezone } });
+    }
+    await crm.log(req.user, null, 'queue_settings_updated', { autoAssign: input.autoAssign });
+    res.redirect(withOk('/settings', input.autoAssign ? 'Lead queue saved. New hand-offs go to sales people in turn.' : 'Lead queue saved. Auto-assign is off.') + '#queue');
+  }));
+
+  app.post('/settings/brand', allow(can.manageBusiness), h(async (req, res) => {
+    if (!businessProfile) return res.status(404).render('error', { status: 404, message: 'Business settings need the WhatsApp bot.' });
+    try {
+      await branding.save(req.body, req.user.email);
+    } catch (err) {
+      if (!(err instanceof HttpError)) throw err;
+      res.status(err.status);
+      return settingsPage(res, { error: err.message, brandForm: { mark: req.body.mark, color: req.body.color } });
+    }
+    await crm.log(req.user, null, 'branding_updated');
+    res.redirect(withOk('/settings', 'Branding saved.') + '#brand');
+  }));
+
   app.get('/users', allow(can.manageUsers), h((req, res) => usersPage(res)));
+
+  // R13: add many staff at once (pasted CSV and/or rows). All or none; one-time passwords shown once.
+  const bulkPage = async (res, extra = {}) => res.render('users-bulk', {
+    rows: [], csv: '', managers: await users.managers(), maxRows: bulkStaff.MAX_ROWS, ...extra
+  });
+  app.get('/users/bulk', allow(can.manageUsers), h((req, res) => bulkPage(res)));
+  app.post('/users/bulk', allow(can.manageUsers), h(async (req, res) => {
+    let created;
+    try {
+      created = await bulkStaff.bulkCreate(db, bulkStaff.rowsFromForm(req.body));
+    } catch (err) {
+      if (!(err instanceof bulkStaff.BulkError)) throw err;
+      res.status(400);
+      // Rows that were checked come back with their errors. Before checking (too many, none),
+      // give back exactly what was sent so a long paste is never lost.
+      if (err.rows.length) return bulkPage(res, { error: err.message, rows: err.rows });
+      return bulkPage(res, { error: err.message, rows: bulkStaff.rowsFromForm({ ...req.body, csv: '' }), csv: String(req.body.csv || '') });
+    }
+    await crm.log(req.user, null, 'staff_bulk_added', { count: created.length });
+    // The passwords are in this page only: never cache it.
+    res.set('Cache-Control', 'no-store');
+    res.render('users-bulk-done', { created });
+  }));
   app.post('/users', allow(can.manageUsers), h(async (req, res) => {
     try {
-      await users.create({ name: req.body.name, email: req.body.email, role: req.body.role, managerId: req.body.manager_id || null, password: req.body.password });
+      await users.create({ name: req.body.name, email: req.body.email, role: req.body.role, managerId: req.body.manager_id || null, password: req.body.password, loginPhone: req.body.login_phone });
       res.redirect('/users?ok=' + encodeURIComponent('User created. They must change the password at first login.'));
     } catch (err) {
       if (!(err instanceof HttpError)) throw err;
@@ -325,10 +675,35 @@ function createCrmApp({
   }));
   app.post('/users/:id', allow(can.manageUsers), h(async (req, res) => {
     try {
-      await users.update(req.user, req.params.id, {
+      const updated = await users.update(req.user, req.params.id, {
         name: req.body.name, email: req.body.email, role: req.body.role, managerId: req.body.manager_id || null, active: req.body.active === '1'
       });
-      res.redirect('/users?ok=' + encodeURIComponent('User updated.'));
+      // R2: leads nobody has picked up go back into the queue when the person is deactivated
+      // or stops being sales (managers and owners are not in the round-robin).
+      const moved = updated.active && updated.role === 'sales' ? 0 : await queue.release(updated.id);
+      res.redirect('/users?ok=' + encodeURIComponent(`User updated.${moved ? ` ${moved} lead${moved === 1 ? '' : 's'} went to someone else.` : ''}`));
+    } catch (err) {
+      if (!(err instanceof HttpError)) throw err;
+      res.status(err.status); await usersPage(res, { error: err.message });
+    }
+  }));
+  // Phone number the person signs in with (optional; email always works too).
+  app.post('/users/:id/login-phone', allow(can.manageUsers), h(async (req, res) => {
+    try {
+      const u = await users.setLoginPhone(req.params.id, req.body.login_phone);
+      await crm.log(req.user, null, 'staff_login_phone_updated', { user_id: u.id, set: Boolean(u.login_phone) });
+      res.redirect('/users?ok=' + encodeURIComponent(u.login_phone ? `${u.name} can now sign in with +${u.login_phone}.` : 'Sign-in phone removed. They sign in with email.'));
+    } catch (err) {
+      if (!(err instanceof HttpError)) throw err;
+      res.status(err.status); await usersPage(res, { error: err.message });
+    }
+  }));
+  // Staff WhatsApp alerts: number and which leads (off / their leads / all leads).
+  app.post('/users/:id/alerts', allow(can.manageUsers), h(async (req, res) => {
+    try {
+      const u = await users.setAlerts(req.params.id, { phone: req.body.alert_phone, mode: req.body.alert_mode });
+      await crm.log(req.user, null, 'staff_alerts_updated', { user_id: u.id, mode: u.alert_mode });
+      res.redirect('/users?ok=' + encodeURIComponent(u.alert_mode === 'off' ? 'WhatsApp alerts off.' : 'WhatsApp alerts saved.'));
     } catch (err) {
       if (!(err instanceof HttpError)) throw err;
       res.status(err.status); await usersPage(res, { error: err.message });

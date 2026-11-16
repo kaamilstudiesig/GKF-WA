@@ -1,13 +1,14 @@
 <%- include('partials/header', { title: 'Dashboard' }) %>
 <% const nowIso = new Date().toISOString(); %>
 <div class="mb-4">
-  <p class="text-sm text-base-content/60"><%= user.role === 'sales' ? 'My leads' : user.role === 'manager' ? 'My team' : 'All of GKF' %></p>
+  <p class="text-sm text-base-content/60"><%= user.role === 'sales' ? 'My leads' : user.role === 'manager' ? 'My team' : 'All of ' + brand.name %></p>
   <h1 class="page-title max-lg:hidden">Dashboard</h1>
 </div>
 
-<div class="mb-4 grid grid-cols-2 gap-3 lg:grid-cols-6">
+<div class="mb-4 grid grid-cols-2 gap-3 <%= typeof usage !== 'undefined' && usage ? 'lg:grid-cols-8' : 'lg:grid-cols-7' %>">
   <% const kpis = [
        ['/leads?needs_human=1', 'Needs human', d.needsHuman, d.needsHuman ? 'text-primary' : ''],
+       ['/leads?waiting=1&sort=waiting', 'No outcome yet', d.waitingCount, d.waitingCount ? 'text-warning' : ''],
        ['/leads?status=hot', 'Hot leads', d.counts.hot, ''],
        ['/followups', 'Overdue follow-ups', d.overdue, d.overdue ? 'text-error' : ''],
        ['/leads?sort=created', 'New this week', d.newThisWeek, ''],
@@ -20,7 +21,18 @@
       <div class="mt-1 text-3xl font-bold tabular-nums <%= cls %>"><%= value %></div>
     </a>
   <% } %>
+  <%- include('partials/lead-usage', { usage: typeof usage !== 'undefined' ? usage : null, detail: false }) %>
 </div>
+
+<% if (d.waiting.length) { %>
+<section class="mb-4">
+  <div class="mb-2 flex items-center justify-between gap-2">
+    <div><h2>Log what happened</h2><p class="text-xs text-base-content/60">Hand-offs and hot leads with no outcome for <%= MIN_AGE_HOURS %>+ hours, longest waiting first. One tap on the lead logs it.</p></div>
+    <a href="/leads?waiting=1&sort=waiting" class="link link-hover shrink-0 text-sm text-primary">See all <%= d.waitingCount %></a>
+  </div>
+  <%- include('partials/lead-table', { leads: d.waiting, hash: '#outcome', emptyText: '' }) %>
+</section>
+<% } %>
 
 <div class="grid gap-4 lg:grid-cols-2">
   <section>

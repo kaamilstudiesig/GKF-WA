@@ -13,6 +13,159 @@
   </div>
 </div>
 
+<div class="mb-4" id="usage"><%- include('partials/lead-usage', { usage: typeof usage !== 'undefined' ? usage : null, detail: true }) %></div>
+
+<%
+  // The client's own brand (R12), also on the shared CRM, where the page itself looks like Dartit.
+  const ob = typeof ownBrand !== 'undefined' && ownBrand ? ownBrand : brand;
+  const bf = brandForm || { mark: ob.markIsDefault ? '' : ob.mark, color: ob.color };
+%>
+<%
+  const qs = queueSettings;
+  const tzLabels = { 'Asia/Kolkata': 'India (IST)', 'Asia/Dubai': 'UAE (GST)' };
+%>
+<form method="post" action="/settings/queue" id="queue" class="<%= card %> mb-4 scroll-mt-20">
+  <%- include('partials/csrf') %>
+  <h2>Lead queue</h2>
+  <p class="text-sm text-base-content/60">When the bot hands a lead to a person, give it to a sales person straight away, in turn. If nobody replies or logs an outcome, their manager is alerted after 5 working minutes and the owners after 15.</p>
+  <% if (!queueBotWired) { %>
+  <div role="status" class="alert alert-warning alert-soft text-sm"><span><strong>Needs the WhatsApp bot update.</strong> Auto-assign starts working once the bot assigns hand-offs as they open. Until then, assign leads by hand. You can set working hours now.</span></div>
+  <% } %>
+  <label class="label tap gap-3 text-base-content <%= queueBotWired ? 'cursor-pointer' : 'opacity-60' %>"><input type="checkbox" name="auto_assign" value="1" class="toggle toggle-primary" <%= qs.auto_assign && queueBotWired ? 'checked' : '' %> <%= queueBotWired ? '' : 'disabled' %>> Auto-assign hand-offs</label>
+  <div class="grid grid-cols-2 gap-2 sm:grid-cols-[9rem_9rem_1fr]">
+    <fieldset class="<%= field %>"><legend class="fieldset-legend">Working from</legend><input type="time" name="work_start" value="<%= qs.work_start %>" required class="input w-full"></fieldset>
+    <fieldset class="<%= field %>"><legend class="fieldset-legend">Until</legend><input type="time" name="work_end" value="<%= qs.work_end %>" required class="input w-full"></fieldset>
+    <fieldset class="<%= field %> col-span-2 sm:col-span-1"><legend class="fieldset-legend">Time zone</legend>
+      <select name="timezone" class="select w-full"><% for (const tz of TIMEZONES) { %><option value="<%= tz %>" <%= qs.timezone === tz ? 'selected' : '' %>><%= tzLabels[tz] || tz %></option><% } %></select></fieldset>
+  </div>
+  <p class="text-xs text-base-content/50">The 5 and 15 minutes only count during working hours, so nobody is alerted at night. Sales people can switch <em>Taking leads</em> off in their menu.</p>
+  <button class="btn btn-primary w-full sm:w-auto" type="submit">Save lead queue</button>
+</form>
+
+<% if (intake) { %>
+<section class="<%= card %> mb-4 scroll-mt-20 space-y-3" id="lead-sources">
+  <div class="flex items-center justify-between gap-2">
+    <h2>Lead sources</h2>
+    <span class="badge <%= intake.formKey || intake.hasSecret ? 'badge-success' : 'badge-ghost' %> badge-soft"><%= intake.formKey || intake.hasSecret ? 'On' : 'Off' %></span>
+  </div>
+  <p class="text-sm text-base-content/60">Leads from your website form and property portals land here like WhatsApp leads: a lead, a hand-off to your team, and (with their consent) a WhatsApp welcome message. Leads need a phone number.</p>
+
+  <fieldset class="fieldset py-0"><legend class="fieldset-legend">Address that receives leads</legend>
+    <input readonly value="<%= intake.endpoint %>" class="input input-sm w-full font-mono" aria-label="Lead intake address" data-select>
+    <% if (!intake.botBaseUrl) { %><p class="label whitespace-normal text-warning">Your setup contact still needs to set the bot's web address (BOT_BASE_URL).</p><% } %></fieldset>
+
+  <form method="post" action="/settings/intake" class="grid gap-3 sm:grid-cols-2">
+    <%- include('partials/csrf') %>
+    <fieldset class="fieldset py-0 sm:col-span-2"><legend class="fieldset-legend">Websites allowed to send the form (one per line)</legend>
+      <textarea name="origins" rows="2" placeholder="https://www.example.com" class="textarea w-full font-mono text-sm"><%= intake.origins.join('\n') %></textarea>
+      <p class="label whitespace-normal">Only these sites can post the form below. Use the address people see in the browser.</p></fieldset>
+    <fieldset class="fieldset py-0"><legend class="fieldset-legend">Country code for local numbers</legend>
+      <input name="phone_country" inputmode="numeric" maxlength="4" value="<%= intake.phoneCountry %>" class="input w-full">
+      <p class="label whitespace-normal">91 for India, 971 for the UAE. "050 123 4567" then becomes +971 50 123 4567.</p></fieldset>
+    <button class="btn btn-primary sm:self-start sm:justify-self-end sm:mt-7" type="submit">Save lead sources</button>
+  </form>
+
+  <div class="rounded-field bg-base-200 p-3 text-sm">
+    <p class="font-medium">WhatsApp welcome message</p>
+    <p class="text-base-content/60"><% if (intake.welcomeTemplate) { %>On: new form leads who agree get the approved message "<%= intake.welcomeTemplate %>" on WhatsApp.<% } else { %>Off until your setup contact adds an approved WhatsApp template. Until then, your team follows these leads up themselves.<% } %></p>
+  </div>
+
+  <div class="space-y-2 border-t border-base-300 pt-3">
+    <p class="text-sm font-medium">Website form</p>
+    <% if (intake.snippet) { %>
+    <p class="text-sm text-base-content/60">Paste this where the form should appear on your website. Edit the wording and style freely; keep the field names.</p>
+    <textarea readonly rows="8" class="textarea w-full font-mono text-xs" aria-label="Website form code" data-select><%= intake.snippet %></textarea>
+    <% } else { %><p class="text-sm text-base-content/60">Make a form key to get the code for your website.</p><% } %>
+    <form method="post" action="/settings/intake/form-key" <% if (intake.formKey) { %>data-confirm="Forms already on your website stop working until you paste the new code. Continue?"<% } %>>
+      <%- include('partials/csrf') %>
+      <button class="btn btn-sm" type="submit"><%= intake.formKey ? 'Make a new form key' : 'Make a form key' %></button>
+    </form>
+  </div>
+
+  <div class="space-y-2 border-t border-base-300 pt-3">
+    <p class="text-sm font-medium">Portals and other systems</p>
+    <p class="text-sm text-base-content/60">They send signed JSON to the address above (header <code>X-Intake-Signature: sha256=…</code>, an HMAC-SHA256 of the body with this secret).</p>
+    <% if (typeof newIntakeSecret !== 'undefined' && newIntakeSecret) { %>
+    <div role="alert" class="alert alert-warning alert-soft text-sm"><div class="min-w-0 space-y-1"><p>Copy this secret now. It is not shown again.</p>
+      <input readonly value="<%= newIntakeSecret %>" class="input input-sm w-full font-mono" aria-label="New signing secret" data-select></div></div>
+    <% } else { %><p class="text-sm"><%= intake.hasSecret ? 'A signing secret is set.' : 'No signing secret yet.' %></p><% } %>
+    <form method="post" action="/settings/intake/secret" <% if (intake.hasSecret) { %>data-confirm="The old secret stops working at once. Continue?"<% } %>>
+      <%- include('partials/csrf') %>
+      <button class="btn btn-sm" type="submit"><%= intake.hasSecret ? 'Make a new secret' : 'Make a signing secret' %></button>
+    </form>
+  </div>
+
+  <div class="space-y-2 border-t border-base-300 pt-3">
+    <p class="text-sm font-medium">Last 20 submissions</p>
+    <% if (!intake.recent.length) { %><p class="text-sm text-base-content/60">Nothing received yet.</p><% } else { %>
+    <ul class="list rounded-field bg-base-200 text-sm">
+      <% for (const s of intake.recent) { %><li class="list-row items-center">
+        <div class="min-w-0"><% if (s.wa_id && s.status === 'accepted') { %><a class="link link-hover font-medium" href="/leads/<%= s.wa_id %>"><%= s.display_name || ('+' + s.wa_id) %></a><% } else { %><span class="font-medium"><%= s.wa_id ? '+' + s.wa_id : 'No valid phone' %></span><% } %>
+          <div class="truncate text-xs text-base-content/60"><%= util.intakeLabel('intake_' + (s.source || 'other')) %> · <%= util.timeAgo(s.received_at) %><%= s.error ? ' · ' + s.error : '' %></div></div>
+        <span class="badge badge-xs badge-soft <%= { accepted: 'badge-success', processing: 'badge-info', duplicate: 'badge-ghost', rejected: 'badge-error', limited: 'badge-warning' }[s.status] %>"><%= { accepted: 'Added', processing: 'Saving', duplicate: 'Repeat', rejected: 'Refused', limited: 'Too many' }[s.status] %></span>
+      </li><% } %>
+    </ul><% } %>
+  </div>
+</section>
+<% } %>
+
+<section class="<%= card %> mb-4" id="zoho">
+  <div class="flex items-center justify-between gap-2">
+    <h2>Zoho CRM</h2>
+    <span class="badge <%= zoho.on ? 'badge-success' : 'badge-ghost' %> badge-soft"><%= zoho.on ? 'Connected' : 'Off' %></span>
+  </div>
+  <% if (!zoho.on) { %>
+  <p class="text-sm text-base-content/60">If your sales team works in Zoho CRM, leads and sales can sync both ways: new leads and outcomes go to Zoho, and deals won or lost there come back here. Ask your setup contact to connect it (it takes a few minutes with your Zoho admin).</p>
+  <% } else { const c = zoho.counts; %>
+  <p class="text-sm text-base-content/60">New leads and outcomes go to Zoho within a minute. Changes in Zoho are read every 5 minutes<% if (zoho.pulledUntil) { %>, last up to <strong class="text-base-content"><%= util.timeAgo(zoho.pulledUntil) %></strong><% } else { %>, not read yet<% } %>.</p>
+  <% if (zoho.readError) { %><div role="alert" class="alert alert-warning alert-soft text-sm">Reading from Zoho failed: <%= zoho.readError %></div><% } %>
+  <div class="grid grid-cols-2 gap-2 sm:grid-cols-4">
+    <% for (const [label, n, cls] of [['In sync', c.synced, ''], ['Waiting to send', c.waiting, ''], ['Retrying', c.retrying, c.retrying ? 'text-warning' : ''], ['Not sent', c.notSent, c.notSent ? 'text-error' : '']]) { %>
+    <div class="rounded-field bg-base-200 p-3"><div class="text-xs text-base-content/60"><%= label %></div><div class="text-2xl font-bold tabular-nums <%= cls %>"><%= n %></div></div>
+    <% } %>
+  </div>
+  <% if (zoho.notSent.length) { %>
+  <div>
+    <p class="mb-1 text-sm font-medium">Zoho refused these leads</p>
+    <ul class="list rounded-field bg-base-200 text-sm">
+      <% for (const x of zoho.notSent) { %><li class="list-row"><div class="min-w-0"><a class="link link-hover font-medium" href="/leads/<%= x.waId %>"><%= x.name %></a><div class="truncate text-xs text-base-content/60"><%= x.error %></div></div></li><% } %>
+    </ul>
+  </div>
+  <% } %>
+  <% if (zoho.domain) { %><a class="link link-primary text-sm" href="<%= zoho.domain %>/crm" target="_blank" rel="noopener noreferrer">Open Zoho CRM</a><% } %>
+  <% } %>
+</section>
+
+<section class="<%= card %> mb-4 scroll-mt-20" id="export">
+  <h2>Your data</h2>
+  <p class="text-sm text-base-content/60">Download everything <%= brand.name %> has here: leads, every WhatsApp conversation, outcomes, notes, assignments, hand-offs, follow-ups, payment links and staff. One ZIP of spreadsheet (CSV) files, with a README that explains each one. Each download is recorded in the activity log.</p>
+  <a class="btn btn-sm mt-1 w-full sm:w-auto" href="/settings/export.zip" download><%- include('partials/icon', { name: 'download', cls: 'size-4' }) %>Download all data (ZIP)</a>
+</section>
+
+<form method="post" action="/settings/brand" id="brand" class="<%= card %> mb-4 scroll-mt-20" data-brand-form>
+  <%- include('partials/csrf') %>
+  <div class="flex items-center gap-3">
+    <%- include('partials/logo-mark', { size: 'size-12', brand: ob }) %>
+    <div class="min-w-0"><h2>Brand</h2><p class="text-sm text-base-content/60">How the CRM looks for your team. The name comes from <em>Business name</em> below.<% if (brand.platform) { %> It shows on your own CRM address; this shared Dartit address keeps the Dartit look.<% } %></p></div>
+  </div>
+  <div class="grid gap-3 sm:grid-cols-[8rem_12rem_1fr]">
+    <fieldset class="<%= field %>"><legend class="fieldset-legend">Logo letters</legend>
+      <input name="mark" maxlength="3" value="<%= bf.mark %>" placeholder="<%= ob.markIsDefault ? ob.mark : '' %>" autocapitalize="characters" class="input w-full uppercase">
+      <p class="label whitespace-normal">Up to 3. Empty uses initials.</p></fieldset>
+    <fieldset class="<%= field %>"><legend class="fieldset-legend">Brand colour</legend>
+      <label class="input w-full"><input type="color" value="<%= bf.color %>" aria-label="Pick brand colour" class="size-6 shrink-0 cursor-pointer rounded border-0 bg-transparent p-0" data-color-pick><input name="color" required maxlength="7" value="<%= bf.color %>" pattern="#?[0-9a-fA-F]{3}([0-9a-fA-F]{3})?" class="grow" data-color-text></label>
+      <p class="label whitespace-normal">Buttons, highlights, logo.</p></fieldset>
+    <fieldset class="<%= field %> min-w-0"><legend class="fieldset-legend">Logo image (optional)</legend>
+      <input type="file" accept="image/png,image/jpeg,image/webp" class="file-input w-full" data-logo-file aria-label="Logo image">
+      <input type="hidden" name="logo" data-logo-data>
+      <p class="label whitespace-normal" data-logo-hint>Square PNG, JPEG or WebP under 40 KB. Replaces the letters.</p>
+      <% if (!ob.logoSquarePng) { %><p class="label whitespace-normal text-warning"><%= ob.logoUrl ? 'Your logo is not a square PNG, so phones use a plain tile in your brand colour as the app icon. Upload a square PNG (180×180 or larger) to use your logo.' : 'For the app icon on iPhones, upload a square PNG (180×180 or larger). Without one, iPhones show a plain tile in your brand colour.' %></p><% } %>
+      <% if (ob.logoUrl) { %><label class="label mt-1 cursor-pointer gap-2"><input type="checkbox" name="remove_logo" value="1" class="checkbox checkbox-sm"> Remove the current logo</label><% } %>
+    </fieldset>
+  </div>
+  <button class="btn btn-primary w-full sm:w-auto" type="submit">Save brand</button>
+</form>
+
 <form method="post" action="/settings" class="grid gap-4 lg:grid-cols-2">
   <%- include('partials/csrf') %>
 
@@ -22,6 +175,15 @@
     <fieldset class="<%= field %>"><legend class="fieldset-legend">Type of business</legend>
       <select name="type" class="select w-full"><% for (const [k, v] of Object.entries(verticals)) { %><option value="<%= k %>" <%= profile.type === k ? 'selected' : '' %>><%= v.label %></option><% } %></select>
       <p class="label whitespace-normal">Sets how the assistant sells (what it asks, what it offers). More types coming.</p></fieldset>
+    <fieldset class="<%= field %>" id="currency"><legend class="fieldset-legend">Currency</legend>
+      <select name="currency" class="select w-full"><% for (const c of currencyOptions) { %><option value="<%= c.code %>" <%= (profile.currency || 'INR') === c.code ? 'selected' : '' %>><%= c.label %></option><% } %></select>
+      <p class="label whitespace-normal">Sale amounts, reports and the pipeline use it. Payment links work only in rupees.</p>
+      <% if (amounts.sales || amounts.links) { const parts = [amounts.sales ? amounts.sales + ' recorded sale' + (amounts.sales === 1 ? '' : 's') : null, amounts.links ? amounts.links + ' payment link' + (amounts.links === 1 ? '' : 's') : null].filter(Boolean); %><div role="alert" class="alert alert-warning alert-soft mt-1 text-sm"><div>You have <%= parts.join(' and ') %>. Changing the currency doesn't convert them: the same numbers then show in the new currency.
+        <label class="label mt-2 cursor-pointer gap-2 whitespace-normal text-base-content"><input type="checkbox" name="currency_confirm" value="1" class="checkbox checkbox-sm"> I understand. Change the currency anyway.</label></div></div><% } %></fieldset>
+    <label class="flex cursor-pointer items-start gap-3 py-1">
+      <input type="checkbox" name="health_related" value="1" class="checkbox checkbox-sm mt-0.5" <%= profile.healthRelated ? 'checked' : '' %>>
+      <span><span class="text-sm font-medium">Health-related business</span><span class="block text-xs text-base-content/60">Clinics, pharmacies, physiotherapy, wellness. Questions about symptoms, medicines or treatment always go to your team; the assistant only answers services, prices, timings, location and appointments.</span></span>
+    </label>
     <fieldset class="<%= field %>"><legend class="fieldset-legend">One-line description</legend><input name="facility" maxlength="160" value="<%= profile.facility %>" placeholder="10,000 sq ft functional training gym" class="input w-full"></fieldset>
   </section>
 
@@ -40,7 +202,7 @@
   <section class="<%= card %> min-w-0">
     <h2>Hours and programs</h2>
     <fieldset class="<%= field %>"><legend class="fieldset-legend">Opening hours (one line each)</legend><textarea name="hours" rows="3" required class="textarea w-full"><%= lines(profile.hours) %></textarea></fieldset>
-    <fieldset class="<%= field %>"><legend class="fieldset-legend">Programs and services (one per line)</legend><textarea name="programs" rows="6" class="textarea w-full"><%= lines(profile.programs) %></textarea></fieldset>
+    <fieldset class="<%= field %>"><legend class="fieldset-legend"><%= LABELS.programs %> (one per line)</legend><textarea name="programs" rows="6" class="textarea w-full"><%= lines(profile.programs) %></textarea></fieldset>
   </section>
 
   <section class="<%= card %> min-w-0">
@@ -50,13 +212,13 @@
   </section>
 
   <section class="<%= card %> min-w-0 lg:col-span-2">
-    <h2>Plans and prices</h2>
+    <h2><%= LABELS.plans %></h2>
     <p class="text-sm text-base-content/60">Exactly what the assistant quotes. Leave a row empty to remove it.</p>
     <div class="space-y-2">
       <% plans.forEach((pl, i) => { %>
       <div class="grid gap-2 rounded-field bg-base-200 p-2 sm:grid-cols-[10rem_9rem_1fr]">
-        <input name="plan_name" maxlength="60" value="<%= pl.name || '' %>" placeholder="Plan name" aria-label="Plan <%= i + 1 %> name" class="input w-full">
-        <input name="plan_price" maxlength="60" value="<%= pl.price || '' %>" placeholder="₹4,040/month" aria-label="Plan <%= i + 1 %> price" class="input w-full">
+        <input name="plan_name" maxlength="60" value="<%= pl.name || '' %>" placeholder="<%= LABELS.planName %>" aria-label="Plan <%= i + 1 %> name" class="input w-full">
+        <input name="plan_price" maxlength="60" value="<%= pl.price || '' %>" placeholder="<%= LABELS.planPrice %>" aria-label="Plan <%= i + 1 %> price" class="input w-full">
         <input name="plan_details" maxlength="240" value="<%= pl.details || '' %>" placeholder="What's included" aria-label="Plan <%= i + 1 %> details" class="input w-full">
       </div>
       <% }) %>

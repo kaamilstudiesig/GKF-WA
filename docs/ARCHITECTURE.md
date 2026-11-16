@@ -16,7 +16,7 @@ How the system works today, and the architecture we are moving to. **Lead Engine
 
 ## 1. The idea in one picture
 
-Marketing agencies run Meta ads for local businesses (gyms first). Leads come in on WhatsApp or through lead forms. An AI answers in seconds and qualifies them. Hot leads go to a salesperson with a timer. Every outcome (contacted, visited, joined + ₹) is recorded and sent back to Meta so the ads learn who actually buys.
+Marketing agencies run Meta ads for businesses of any kind. Leads come in on WhatsApp or through lead forms. An AI answers in seconds, qualifies them and scores how likely they are to buy. Hot leads go to a salesperson with a timer. The real sale is captured (payment link, AI-suggested outcome or one tap). A high score sends Meta an early qualified event within minutes, and every real outcome (visited, won + ₹) follows, so the ads learn who actually buys. Why this loop, not the chatbot, is the product: [PRODUCT_PLAN.md §3](PRODUCT_PLAN.md#3-where-we-win-the-moat).
 
 ```mermaid
 flowchart LR
@@ -25,8 +25,9 @@ flowchart LR
     A2[Lead Ads forms]
   end
   subgraph Engine["Lead Engine"]
-    B[AI front desk<br/>answers in seconds, qualifies]
+    B[AI front desk<br/>answers in seconds, qualifies, scores]
     C[Sales floor<br/>assign, 5-min timer, outcomes]
+    P[Proof of sale<br/>payment links, AI-suggested outcomes]
     D[(Lead + outcome data)]
     E[Owner & agency analytics]
   end
@@ -40,8 +41,10 @@ flowchart LR
   B -->|hot lead| C
   B --> D
   C --> D
+  P --> D
   D --> E
-  D -->|lead / visit / purchase events| M2
+  B -->|early qualified event| M2
+  D -->|visit / purchase events, real ₹| M2
   M3 -->|ad spend| E
   M2 -.->|better targeting| A2
 ```
@@ -60,6 +63,7 @@ flowchart TB
     Router{Host header router<br/>src/app.js}
     Router -->|wa.* host| Bot[Bot routes<br/>/webhook, /health]
     Router -->|CRM_HOSTS| CRM[Staff CRM<br/>crm/ Express + EJS]
+    Router -->|SHARED_CRM_HOSTS| Shared[Shared Dartit CRM<br/>src/routes/sharedCrm.js<br/>client from the session] --> CRM
     Bot --> InQ[Inbound worker<br/>x3]
     OutQ[Outbound worker<br/>x2]
   end
@@ -78,7 +82,7 @@ flowchart TB
 | Staff CRM | `crm/` | Roles owner/manager/sales, chat, pipeline, notes, follow-ups, reports, CSV |
 | Business facts + AI prompt | `business_profile` table → `src/config/gymConfig.js` (live view) + `src/config/verticals.js` (selling method per business type) | Edited on the CRM's owner-only **Business settings** page; the prompt and fixed answers are generated from it |
 | Migrations | `src/db/schema.js`, `crm/src/migrations.js` | Run in Heroku's release phase and on boot, under advisory locks |
-| Backups | Heroku PG daily schedule + `scripts/backup.js` to Telegram | |
+| Backups | Daily encrypted backup made by the web dyno (`src/services/dailyBackup.js`) to private Cloudflare R2, EU (K28). Heroku `pg:backups` can't dump this database (forced row-level security) | |
 
 ## 3. Life of a WhatsApp message
 
@@ -222,12 +226,17 @@ src/
   app.js                 Express app; Host router (bot vs CRM), https redirect
   server.js              boot: migrations, workers, graceful shutdown
   config/env.js          every setting, from environment variables
-  config/gymConfig.js    GKF facts + AI system prompt (per-client data later)
+  config/gymConfig.js    live view of the business profile + AI system prompt
+  config/verticals.js    business-type presets (selling method, stages)
   controllers/           webhook verify + receive
   middleware/            signature check, rate limit
-  workers/               queueWorker base, inbound (webhookWorker), outbound
+  workers/               queueWorker base, inbound (webhookWorker), outbound, Conversions API, Zoho sync
   services/
     deterministicRouter  fixed answers, language detection, buttons
+    optOut               STOP / START (K30): fixed reply, blocks templates to opted-out leads
+    leadUsage            Monthly lead count per client (K26): hashed, once per person, 80%/100% alerts
+    replyTimes           Reply time per automatic reply (K27): received → dispatched, monthly p95
+    clientMonth          A client's calendar month in its own time zone (K26, K27)
     aiService            prompt building, OpenRouter call, JSON parsing, cleanup
     aiPolicy             what the AI may change; medical safety check
     botGuard             staff pause + per-lead daily cap
@@ -236,6 +245,7 @@ src/
     notifyService        Telegram alerts
     whatsappService      Cloud API sends (text, buttons, location), read receipts
     aiCostTracker        usage + monthly budget
+    zoho/                K20: Zoho CRM client (OAuth, data centres) and two-way lead sync
   db/                    pg/PGlite driver, schema, repositories
 crm/                     staff CRM (Express + EJS), mounted by src/app.js
 scripts/                 migrate, backup/restore, demo data, model eval
@@ -252,8 +262,16 @@ docs/                    you are here
 5. **The AI proposes, policy decides.** The model can suggest lead updates; `aiPolicy` decides what's allowed (it can't mark a lead converted or clear a hand-off).
 6. **Never invent facts.** The prompt only knows the business profile. Anything else gets "a coach will confirm".
 7. **Tests never touch real services.** In-memory PGlite and fake transports. Paid model checks are opt-in scripts.
+8. **Per-lead ordering, both ways.** Inbound events and outbound replies are claimed one per lead at a time, oldest first (`NOT EXISTS` an older or in-flight row for the same `wa_id`, plus `FOR UPDATE SKIP LOCKED`). Different leads run in parallel. Replies never cross or arrive swapped.
+9. **One reply per burst (debounce).** Texts wait `BURST_SETTLE_MS` (2s) before processing. If the same lead sent a newer text meanwhile, the older one is saved but not answered; the newest one answers with the whole burst in the AI's history (and skips fixed answers, since the lead asked several things). Fewer AI calls, more human replies.
+10. **Wake on write, poll as backup.** Whoever adds work wakes the worker at once (webhook → inbound worker, inbound worker and CRM → outbound worker via `src/workers/signals.js`). Polling every `QUEUE_POLL_MS` (10s) only catches retries and crashed jobs. With more than one dyno, replace `signals` with Postgres `LISTEN/NOTIFY`: `db.listen(channel, fn)` (added for the CRM's live board, R3) is the building block; it keeps one dedicated connection and reconnects by itself.
+11. **Staff own the conversation, but can hand it back.** A CRM reply pauses the bot for that lead (`BOT_PAUSE_HOURS_AFTER_STAFF_REPLY`, 12h). The lead page shows "AI is paused until …" with **Turn AI back on**, which stores `leads.metadata.bot_resumed_at`; `botGuard` ignores staff replies older than that. The next staff reply pauses it again.
+
+12. **Tenants are isolated by the database, not by care (K8).** One deployment serves many businesses. Every client table has `tenant_id` and forced row-level security; each query runs as one tenant (`src/tenancy/context.js`, set per connection with `set_config('app.tenant_id')`). Entry points set the tenant: webhooks by phone number id (or `/webhook/:slug`), queue jobs by their row, the CRM by hostname. A query with no tenant throws (fails closed). Cross-tenant work (claiming jobs, housekeeping, migrations) runs with `tenancy.runAsSystem`. Keys are per tenant (`(tenant_id, wa_id)` for leads), and composite foreign keys stop links across tenants. Tenant settings live in `tenants` (secrets AES-GCM encrypted with `TENANT_SECRETS_KEY`); tenant 1 falls back to the env vars, other tenants never do. New migrations go to `src/db/platformMigrations.js`; `test/tenancy.test.js` fails for a client table without `tenant_id` and the policy.
 
 ## 8. Target architecture (multi-client)
+
+K8 (tenants, row-level security, routing by phone number id, per-tenant secrets, budgets and alerts) is built; see design rule 12. Still to come: Embedded Signup (K9), fair per-tenant queue claiming, an agency dashboard.
 
 What changes when we serve many businesses from one deployment. See [PRODUCT_PLAN.md](PRODUCT_PLAN.md) for when.
 
@@ -286,7 +304,8 @@ Key decisions:
 - **Tenant = one business.** Every table gets `tenant_id`; Postgres row-level security makes cross-tenant leaks impossible even with a buggy query.
 - **Routing by `phone_number_id`.** All clients' WhatsApp numbers point at one webhook; the payload's `metadata.phone_number_id` picks the tenant.
 - **Secrets per tenant**, encrypted in the database (business tokens from Embedded Signup), never in environment variables.
-- **Business profile in the database** replaces `gymConfig.js`. The prompt and fixed answers are generated from it. Vertical packs (gym, clinic, salon, coaching, real estate) give defaults.
+- **Business profile in the database** (done, K10). The prompt and fixed answers are generated from it. Business-type presets give defaults; the product stays industry-agnostic, so a new kind of business is data, never a code fork.
+- **The bot is optional.** A client may use Meta Business Agent for first replies on a Cloud API number; we still ingest the conversation and run everything after it (sales floor, proof of sale, reports, Conversions API).
 - **Lead identity:** matched by BSUID first, then phone; send to the phone when known, else to the BSUID (done, see [META_PLATFORM.md](META_PLATFORM.md#5-usernames-and-bsuid-identity-change)). With tenants, BSUIDs are per business portfolio, so the lookup is per tenant.
 - **Fair queues.** One client's ad spike must not delay others: claim work round-robin across tenants, and keep per-tenant AI budgets and caps.
 - **Same stack until ~50 clients.** One app, one Postgres, more dynos. Move hosting to an India region when the first paying non-GKF client signs.
@@ -297,8 +316,10 @@ Ordered by risk; owners and timing are in [PRODUCT_PLAN.md](PRODUCT_PLAN.md) and
 
 | Gap | Why it matters |
 | --- | --- |
-| Single tenant (one profile row, one number) | Business facts are now data (K10), but one deployment still serves one business until K8 adds tenants. |
+| Queues are FIFO across tenants | One client's ad spike can delay another's replies by seconds. Next: round-robin claiming per tenant. |
+| One web dyno, in-process signals and caches | Tenant and profile caches refresh every 60s; with more dynos, use Postgres `LISTEN/NOTIFY` for instant updates. |
 | No speed-to-lead timer or live board (outcomes are logged since R1) | Hot leads can sit unanswered unnoticed. |
 | No templates for leads outside the 24h window | Can't win back no-shows and quiet leads. |
-| No Lead Ads webhook / Conversions API | Missing the strongest Meta optimisation loop. |
+| Conversions API built (K7) but only for click-to-WhatsApp, and only on real outcomes | No early signal from the chat score yet (K12); no Lead Ads webhook or Conversion Leads stages (K6). |
+| Sales are only recorded when staff tap an outcome | The whole loop depends on proof of sale; payment links and AI-suggested outcomes (K11) aren't built. |
 | One dyno in the EU, student credits | Not suitable for paying clients' data or uptime. |

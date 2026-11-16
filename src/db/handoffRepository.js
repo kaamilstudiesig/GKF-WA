@@ -1,6 +1,7 @@
 const db = require('./index');
 const logger = require('../utils/logger');
 const notifyService = require('../services/notifyService');
+const staffAlerts = require('../services/staffAlerts');
 
 /** Hand-offs from the bot to human staff. A lead has at most one open hand-off. */
 const handoffRepository = {
@@ -11,12 +12,18 @@ const handoffRepository = {
   async open({ waId, reason, summary = null }) {
     const row = await db.one(`
       INSERT INTO handoffs (wa_id, reason, summary) VALUES ($1, $2, $3)
-      ON CONFLICT (wa_id) WHERE status IN ('pending', 'assigned')
+      ON CONFLICT (tenant_id, wa_id) WHERE status IN ('pending', 'assigned')
       DO UPDATE SET reason = EXCLUDED.reason, summary = COALESCE(EXCLUDED.summary, handoffs.summary), updated_at = now()
       RETURNING id, (xmax = 0) AS inserted`, [waId, reason, summary]);
     if (row.inserted) {
       logger.info('Opened human hand-off', { handoff_id: row.id, wa_id: waId, reason });
-      notifyService.notifyHandoff({ waId, reason, summary });
+      // K19: assign first (when the owner turned auto-assign on), so the alerts name the person
+      // and "their leads only" WhatsApp alerts reach them. Never throws.
+      const leadQueue = require('../services/leadQueue'); // lazy: crm/src/queue requires the db module
+      const assignee = await leadQueue.assignOnHandoff(waId);
+      notifyService.notifyHandoff({ waId, reason, summary, assignee });
+      const why = notifyService.REASON_LABELS[reason] || reason;
+      staffAlerts.alert({ waId, event: 'handoff', details: summary ? `${why}: ${summary}` : why });
     }
     return row.id;
   },

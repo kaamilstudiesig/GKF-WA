@@ -18,6 +18,7 @@ const creds = role => SEED.find(u => u.role === role);
  */
 async function freshDb({ clearMustChange = true } = {}) {
   await db.close();
+  require('../../src/tenancy/registry').resetForTests();
   await migrateAll();
   await insertDemoData(db);
   await seedUsers(db, SEED_FILE);

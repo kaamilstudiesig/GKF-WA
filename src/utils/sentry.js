@@ -1,3 +1,5 @@
+const tenancy = require('../tenancy/context');
+const { redactConnectLinksDeep } = require('./redact');
 const SentryLib = require('@sentry/node');
 const env = require('../config/env');
 const logger = require('./logger');
@@ -187,15 +189,18 @@ function initSentry() {
     SentryLib.init({
       dsn,
       environment: env.nodeEnv || 'development',
-      release: 'gkf-wa@1.0.0',
+      release: `${env.clientId}@${process.env.HEROKU_RELEASE_VERSION || 'dev'}`,
+      initialScope: { tags: { client: env.clientId } },
       tracesSampleRate: env.nodeEnv === 'production' ? 0.2 : 1.0,
-      beforeSend: sanitizeSentryEvent
+      beforeSend: event => redactConnectLinksDeep(sanitizeSentryEvent(event)),
+      // Performance traces carry request URLs too (K9 connect links are secrets).
+      beforeSendTransaction: event => redactConnectLinksDeep(event)
     });
 
     isInitialized = true;
     logger.info('Sentry crash & performance monitoring successfully initialized', {
       environment: env.nodeEnv,
-      release: 'gkf-wa@1.0.0'
+      client: env.clientId
     });
     return true;
   } catch (err) {
@@ -209,8 +214,11 @@ function initSentry() {
  * Sanitizes the error message for internal logging and ensures
  * beforeSend sanitizes the exception event before transmission.
  */
+// K8: every error and message is tagged with the tenant whose work raised it.
+const withTenant = context => ({ ...(tenancy.tenantIdOrNull() ? { tenantId: tenancy.tenantIdOrNull() } : {}), ...context });
+
 function captureException(error, context = {}) {
-  const sanitizedContext = logger.sanitizeMeta(context);
+  const sanitizedContext = logger.sanitizeMeta(withTenant(context));
   const rawMsg = error instanceof Error ? error.message : String(error || '');
   const sanitizedErrorMsg = sanitizeSentryMessage(rawMsg);
   logger.error('Exception captured:', { error: sanitizedErrorMsg, ...sanitizedContext });
@@ -235,7 +243,7 @@ function captureException(error, context = {}) {
  */
 function captureMessage(message, level = 'info', context = {}) {
   const sanitizedMsg = sanitizeSentryMessage(message);
-  const sanitizedContext = logger.sanitizeMeta(context);
+  const sanitizedContext = logger.sanitizeMeta(withTenant(context));
   logger.log(level, sanitizedMsg, sanitizedContext);
 
   if (isInitialized && SentryLib) {

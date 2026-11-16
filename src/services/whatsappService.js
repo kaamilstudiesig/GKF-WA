@@ -3,10 +3,16 @@ const env = require('../config/env');
 const leadRepository = require('../db/leadRepository');
 const identity = require('./identity');
 const logger = require('../utils/logger');
+const registry = require('../tenancy/registry');
+const { OptedOutError } = require('./optOut');
+
+/** The current tenant's WhatsApp number and token (tenant 1: the env vars). */
+const creds = () => (registry.config() || { whatsapp: {} }).whatsapp;
 
 /**
- * Meta WhatsApp Cloud API client. Without META_ACCESS_TOKEN (local dev) or in
- * tests, sends are simulated and still recorded in the conversation.
+ * Meta WhatsApp Cloud API client. Sends from the current tenant's number with its
+ * token. Without a token (local dev) or in tests, sends are simulated and still
+ * recorded in the conversation.
  */
 class WhatsAppService {
   constructor() {
@@ -14,14 +20,18 @@ class WhatsAppService {
   }
 
   get live() {
-    return Boolean(this.transport || (env.metaAccessToken && env.metaPhoneNumberId && env.nodeEnv !== 'test'));
+    if (this.transport) return true;
+    const c = creds();
+    return Boolean(c.accessToken && c.phoneNumberId && env.nodeEnv !== 'test');
   }
 
   async post(payload, timeout = 10000) {
     if (this.transport) return this.transport(payload);
-    const url = `https://graph.facebook.com/${env.metaGraphApiVersion}/${env.metaPhoneNumberId}/messages`;
+    const c = creds();
+    if (!c.accessToken || !c.phoneNumberId) throw new Error('This tenant has no WhatsApp number or token set');
+    const url = `https://graph.facebook.com/${env.metaGraphApiVersion}/${c.phoneNumberId}/messages`;
     const res = await axios.post(url, payload, {
-      headers: { Authorization: `Bearer ${env.metaAccessToken}`, 'Content-Type': 'application/json' },
+      headers: { Authorization: `Bearer ${c.accessToken}`, 'Content-Type': 'application/json' },
       timeout
     });
     return res.data;
@@ -60,6 +70,25 @@ class WhatsAppService {
       }
     }
     return messageId;
+  }
+
+  /**
+   * Sends an approved template to a phone number (staff alerts). Not saved in any
+   * lead's conversation. tpl: { name, language, body: [texts], button: URL suffix }.
+   */
+  async sendTemplate(phone, tpl, { staffAlert = false } = {}) {
+    if (!/^[0-9]{8,15}$/.test(String(phone || ''))) throw new Error('sendTemplate needs a phone number');
+    if (!tpl?.name) throw new Error('sendTemplate needs a template name');
+    // K30: a lead who wrote STOP gets no templates (every template send goes through here).
+    // Staff alerts go to staff, not leads: a staff number that once wrote STOP still gets them.
+    if (!staffAlert && await leadRepository.isOptedOut(phone)) throw new OptedOutError();
+    const components = [];
+    if (tpl.body?.length) components.push({ type: 'body', parameters: tpl.body.map(text => ({ type: 'text', text: String(text) })) });
+    if (tpl.button) components.push({ type: 'button', sub_type: 'url', index: '0', parameters: [{ type: 'text', text: String(tpl.button) }] });
+    return this.deliver({
+      messaging_product: 'whatsapp', recipient_type: 'individual', to: String(phone), type: 'template',
+      template: { name: tpl.name, language: { code: tpl.language || 'en' }, components }
+    }, String(phone));
   }
 
   async deliver(payload, to) {

@@ -19,6 +19,12 @@ const env = {
   metaWebhookVerifyToken: process.env.META_WEBHOOK_VERIFY_TOKEN || '',
   metaAppSecret: process.env.META_APP_SECRET || '',
   metaGraphApiVersion: process.env.META_GRAPH_API_VERSION || 'v23.0',
+  // K9 Embedded Signup (Tech Provider): our Meta app id and the Facebook Login for Business
+  // configuration id. Both set = clients can connect their own WhatsApp number from a link.
+  metaAppId: process.env.META_APP_ID || '',
+  metaEsConfigId: process.env.META_ES_CONFIG_ID || '',
+  // Public https address of the bot host (connect links). Must be an allowed JS SDK domain in the Meta app.
+  botBaseUrl: String(process.env.BOT_BASE_URL || (process.env.HEROKU_APP_NAME ? `https://${process.env.HEROKU_APP_NAME}.herokuapp.com` : '')).replace(/\/+$/, ''),
   // Conversions API (K7): send Visit booked / Joined back to Meta. Off until META_DATASET_ID is set.
   metaWabaId: process.env.META_WABA_ID || '',
   metaDatasetId: process.env.META_DATASET_ID || '',
@@ -30,6 +36,8 @@ const env = {
   openRouterModel: process.env.OPENROUTER_MODEL || 'deepseek/deepseek-v4.1-flash',
   openRouterFallbackModel: process.env.OPENROUTER_FALLBACK_MODEL || 'google/gemini-3.5-flash-lite',
   openRouterBaseUrl: process.env.OPENROUTER_BASE_URL || 'https://openrouter.ai/api/v1',
+  // K29: only route to providers with zero data retention (on unless set to 'false').
+  openRouterZdr: process.env.OPENROUTER_ZDR !== 'false',
 
   // AI cost guardrails (per calendar month, UTC). When hit, leads go to staff instead.
   aiMonthlyTokenBudget: num(process.env.AI_MONTHLY_TOKEN_BUDGET, 5000000),
@@ -46,8 +54,24 @@ const env = {
   gymLongitude: num(process.env.GYM_LONGITUDE, NaN),
 
   // Hostnames that get the staff CRM instead of the bot (comma list, matched without the port).
+  // Backup poll for the queues (new work wakes the workers directly). Retries wait at least 5s anyway.
+  queuePollMs: num(process.env.QUEUE_POLL_MS, 10000),
+  // Staff WhatsApp alerts use this approved Meta template (scripts/create-template.js staff_lead_alert).
+  staffAlertTemplate: process.env.STAFF_ALERT_TEMPLATE || 'staff_lead_alert',
+  staffAlertLanguage: process.env.STAFF_ALERT_TEMPLATE_LANGUAGE || 'en',
+  // Wait this long before answering a text, so a burst of quick messages gets one reply.
+  burstSettleMs: num(process.env.BURST_SETTLE_MS, process.env.NODE_ENV === 'test' ? 0 : 2000),
+  // Short id for this client's deployment (tags alerts, Sentry, backups). One deployment per client until K8.
+  clientId: process.env.CLIENT_ID || 'gkf',
+  // Heroku app name, for commands in alerts. Heroku sets HEROKU_APP_NAME when dyno metadata is on.
+  herokuApp: process.env.HEROKU_APP_NAME || 'gkf-wa',
   crmHosts: (process.env.CRM_HOSTS || 'crm.goldkraftfitness.com,crm.localhost')
     .split(',').map(h => h.trim().toLowerCase()).filter(Boolean),
+  // The shared CRM where staff of every client sign in (src/routes/sharedCrm.js). Off when empty.
+  // The first host is also the CRM link in alerts for clients without their own CRM host.
+  sharedCrmHosts() {
+    return (process.env.SHARED_CRM_HOSTS || '').split(',').map(h => h.trim().toLowerCase()).filter(Boolean);
+  },
 
   validateForProduction() {
     const required = {

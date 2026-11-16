@@ -19,6 +19,26 @@ const leadRepository = {
     return { ...row, metadata: row.metadata || {}, window_open: this.windowOpen(row.last_inbound_message_at) };
   },
 
+  /** K30: marks a lead opted out (on) or back in. Returns the lead, or null if unknown. */
+  async setOptedOut(waId, on) {
+    return this.format(await db.one(
+      'UPDATE leads SET opted_out_at = CASE WHEN $2 THEN COALESCE(opted_out_at, now()) ELSE NULL END, updated_at = now() WHERE wa_id = $1 RETURNING *',
+      [waId, Boolean(on)]));
+  },
+
+  /** K30: when the lead opted out, or null. */
+  async optedOutAt(waId) {
+    const row = await db.one('SELECT opted_out_at FROM leads WHERE wa_id = $1', [String(waId || '')]);
+    return row ? row.opted_out_at : null;
+  },
+
+  /** K30: whether the lead with this key or phone number opted out. */
+  async isOptedOut(waIdOrPhone) {
+    const row = await db.one('SELECT 1 AS yes FROM leads WHERE (wa_id = $1 OR phone = $1) AND opted_out_at IS NOT NULL LIMIT 1', [String(waIdOrPhone || '')]);
+    // Also a deleted lead's STOP (K31), kept as a keyed hash.
+    return Boolean(row) || require('../services/optOutList').isListed(waIdOrPhone);
+  },
+
   async findByWaId(waId) {
     return this.format(await db.one('SELECT * FROM leads WHERE wa_id = $1', [waId]));
   },
@@ -53,7 +73,7 @@ const leadRepository = {
       VALUES ($1, $2, $4,
         (SELECT CASE WHEN EXISTS (SELECT 1 FROM leads WHERE user_id = $5::text) THEN NULL ELSE $5::text END),
         $6, $3, $3, now(), now())
-      ON CONFLICT (wa_id) DO UPDATE SET
+      ON CONFLICT (tenant_id, wa_id) DO UPDATE SET
         display_name = COALESCE(EXCLUDED.display_name, leads.display_name),
         phone = COALESCE($4, leads.phone),
         user_id = CASE
@@ -95,6 +115,27 @@ const leadRepository = {
     return this.format(row);
   },
 
+  /** Messages from the lead since our last reply (queued or sent). More than 1 means a burst. */
+  /** K33: the texts of the lead's messages since our last reply (newest first, at most 10). */
+  async unansweredInboundTexts(waId) {
+    const rows = await db.many(`SELECT m.text FROM messages m
+      WHERE m.wa_id = $1 AND m.direction = 'in'
+        AND m.timestamp > GREATEST(
+          COALESCE((SELECT MAX(created_at) FROM outbound_messages WHERE wa_id = $1), '-infinity'::timestamptz),
+          COALESCE((SELECT MAX(timestamp) FROM messages WHERE wa_id = $1 AND direction = 'out'), '-infinity'::timestamptz))
+      ORDER BY m.timestamp DESC LIMIT 10`, [waId]);
+    return rows.map(r => r.text).filter(Boolean);
+  },
+
+  async unansweredInboundCount(waId) {
+    const row = await db.one(`SELECT COUNT(*)::int AS n FROM messages m
+      WHERE m.wa_id = $1 AND m.direction = 'in'
+        AND m.timestamp > GREATEST(
+          COALESCE((SELECT MAX(created_at) FROM outbound_messages WHERE wa_id = $1), '-infinity'::timestamptz),
+          COALESCE((SELECT MAX(timestamp) FROM messages WHERE wa_id = $1 AND direction = 'out'), '-infinity'::timestamptz))`, [waId]);
+    return row ? row.n : 0;
+  },
+
   async hasMessage(messageId) {
     if (!messageId) return false;
     return Boolean(await db.one('SELECT 1 FROM messages WHERE message_id = $1', [messageId]));
@@ -105,7 +146,7 @@ const leadRepository = {
     await db.query(`
       INSERT INTO messages (message_id, wa_id, direction, text, timestamp)
       VALUES ($1, $2, $3, $4, $5)
-      ON CONFLICT (message_id) DO NOTHING`, [messageId, waId, direction, text, timestamp]);
+      ON CONFLICT (tenant_id, message_id) DO NOTHING`, [messageId, waId, direction, text, timestamp]);
     if (direction === 'out') {
       await db.query('UPDATE leads SET last_outbound_message_at = $2, updated_at = now() WHERE wa_id = $1', [waId, timestamp]);
     }

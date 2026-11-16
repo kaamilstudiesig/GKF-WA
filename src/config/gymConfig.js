@@ -5,11 +5,13 @@
  * (gymName, facility, hours, pricingTiers, policies, fallbackMessages...).
  * DEFAULT_PROFILE is Goldkraft Fitness, used until a profile is saved and in tests.
  */
-const { verticalFor } = require('./verticals');
+const { verticalFor, lostReasonsFor } = require('./verticals');
+const tenancy = require('../tenancy/context');
 
 const DEFAULT_PROFILE = {
   name: 'Goldkraft Fitness',
   type: 'gym',
+  currency: 'INR', // R15: the business's currency (src/config/currency.js)
   area: 'J.P. Nagar, South Bengaluru',
   address: 'ITI Layout, 1st Phase, J.P. Nagar, Bengaluru, Karnataka 560078',
   parking: 'Parking available for bikes and cars',
@@ -50,38 +52,48 @@ const DEFAULT_PROFILE = {
 };
 
 const clone = v => JSON.parse(JSON.stringify(v));
-let current = clone(DEFAULT_PROFILE);
+// K8: one profile per tenant, loaded by businessProfile. The getters below read the current tenant's.
+const profiles = new Map();
+const fallback = clone(DEFAULT_PROFILE);
+const currentProfile = () => profiles.get(tenancy.tenantIdOrNull()) || fallback;
 
 const gymConfig = {
   DEFAULT_PROFILE,
 
-  /** The saved profile (plain object). */
-  get profile() { return current; },
-  /** Replaces the live profile (call with a normalised profile; see businessProfile.normalize). */
-  setProfile(profile) { current = clone(profile); },
-  resetToDefault() { current = clone(DEFAULT_PROFILE); },
+  /** The current tenant's saved profile (plain object). */
+  get profile() { return currentProfile(); },
+  /** Replaces a tenant's live profile (call with a normalised profile; see businessProfile.normalize). */
+  setProfile(profile, tenantId = tenancy.tenantId()) { profiles.set(Number(tenantId), clone(profile)); },
+  /** The profile of a tenant id, or null when none is loaded. */
+  profileFor(tenantId) { return profiles.get(Number(tenantId)) || null; },
+  resetToDefault(tenantId = tenancy.tenantIdOrNull()) {
+    if (tenantId) profiles.set(Number(tenantId), clone(DEFAULT_PROFILE)); else profiles.clear();
+  },
 
-  get vertical() { return verticalFor(current.type); },
-  get gymName() { return current.name; },
-  get brandVoice() { return current.voice; },
+  get vertical() { return verticalFor(currentProfile().type); },
+  get gymName() { return currentProfile().name; },
+  get brandVoice() { return currentProfile().voice; },
   get facility() {
+    const current = currentProfile();
     return { size: current.facility, location: current.address, area: current.area, parking: current.parking, programs: current.programs };
   },
   /** Opening hours as lines. weekday/sunday kept for older callers. */
-  get hours() { return { lines: current.hours, weekday: current.hours[0] || '', sunday: current.hours[1] || '' }; },
-  get pricingTiers() { return current.plans; },
-  get policies() { return current.policies; },
-  get fallbackMessages() { return current.fallback; },
+  get hours() { const h = currentProfile().hours; return { lines: h, weekday: h[0] || '', sunday: h[1] || '' }; },
+  get pricingTiers() { return currentProfile().plans; },
+  get policies() { return currentProfile().policies; },
+  get fallbackMessages() { return currentProfile().fallback; },
   /** Map pin, when the profile has coordinates. */
   get mapPin() {
-    const { latitude, longitude } = current;
+    const { latitude, longitude } = currentProfile();
     return Number.isFinite(latitude) && Number.isFinite(longitude) ? { latitude, longitude } : null;
   },
 
   /** System prompt for the WhatsApp assistant. Same for every lead (no per-lead data) so providers can cache it. */
   getSystemPrompt() {
-    const p = current;
+    const p = currentProfile();
     const v = this.vertical;
+    // The ways a lead says no, in this business type's words (still one prompt, one AI call).
+    const lostWords = Object.entries(lostReasonsFor(currentProfile().type)).filter(([k]) => !['other', 'no_response'].includes(k)).map(([, w]) => w.toLowerCase()).join(', ');
     const plans = p.plans.map(t => `- ${t.name}: ${t.price}${t.details ? ` (${t.details})` : ''}`).join('\n');
     const policies = p.policies.map(x => `- ${x.name}: ${x.text}`).join('\n');
     const examples = v.examples(p).map(([lead, out]) => `Lead: ${lead}\n${JSON.stringify(out)}`).join('\n\n');
@@ -89,13 +101,14 @@ const gymConfig = {
 
 FACTS (the only facts you may use)
 - ${p.name}: ${p.facility}, ${p.address}. ${p.parking}.
-- Programs: ${p.programs.join(', ')}.
+- ${v.labels?.programs || 'Programs'}: ${p.programs.join(', ')}.
 - Timings: ${p.hours.join('. ')}.
-- Plans:
+- ${v.labels?.plans || 'Plans'}:
 ${plans}
 ${policies}
 If something is not in these facts (${v.unknownTopics}), never say we have it and never say we don't have it. Say a ${v.staff} will confirm it.
-No made-up claims about members, results, ratings or numbers (like "many members your age" or "lose 5 kg in a month").
+No made-up claims about members, results, ratings or numbers (like "many members your age" or "lose 5 kg in a month").${p.healthRelated ? `
+HEALTH-RELATED BUSINESS: answer only about services, prices, timings, location and appointments. Never comment on symptoms, conditions, medicines, treatments, results or whether something is safe, and never suggest a diagnosis. If they ask anything like that, say a ${v.staff} will get back to them, and call notify_staff with "injury_question".` : ''}
 
 HOW TO WRITE
 - ${p.voice}
@@ -124,9 +137,10 @@ RULES FOR STAFF HAND-OFF
 
 OUTPUT FORMAT
 Answer with one JSON object and nothing else:
-{"reply": "<the WhatsApp message>", "lead": {<only what you learned or what changed>}, "notify_staff": null}
+{"reply": "<the WhatsApp message>", "lead": {<only what you learned or what changed>}, "notify_staff": null, "outcome": null}
 - lead can have: "name", "interest" (their goal in a few words), "status" (contacted, qualified, hot, cold or lost), "notes" (one line for the ${v.staff}: experience, timing, anything useful). Use {} when nothing is new.
 - notify_staff is null, or {"handoff_reason": "ready_to_book" | "price_negotiation" | "custom_program" | "injury_question" | "human_requested" | "complaint" | "other", "summary": "<one line for the ${v.staff}>"}.
+- outcome is almost always null. Fill it only when the lead clearly says something already happened: a ${v.visit} fixed with staff ("visit_booked"), they came ("visited"), they paid or joined ("joined"), or they are not coming ("lost": ${lostWords}). Format: {"type": "visit_booked" | "visited" | "joined" | "lost", "evidence": "<their words>", "when": "<day or time if said>", "plan": "<plan if said>", "amount_inr": <number if said>, "lost_reason": "price" | "distance" | "timing" | "joined_elsewhere" | "not_interested" | "other"}. A wish or a question ("I want to join", "can I visit Saturday?") is NOT an outcome. Staff confirm it; never tell the lead it is recorded.
 
 EXAMPLES (copy the style, not the exact words)
 ${examples}`;

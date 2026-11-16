@@ -19,6 +19,8 @@
         <%- include('partials/status', { status: lead.status }) %>
         <% if (lead.needs_human) { %><span class="badge badge-primary badge-sm">Needs human · <%= util.humanize(lead.handoff_reason) %></span><% } %>
         <span class="badge badge-sm <%= lead.window_open ? 'badge-success badge-soft' : 'badge-ghost' %>"><%= lead.window_open ? 'Reply window open' : 'Reply window closed' %></span>
+        <%# K30: wrote STOP. Templates (welcome, reminders) are refused until they write again. %>
+        <% if (lead.opted_out_at) { %><span class="badge badge-error badge-soft badge-sm" title="Wrote STOP on <%= util.fmtDate(lead.opted_out_at) %>. No template messages until they write again.">Opted out</span><% } %>
       </div>
     </div>
   </div>
@@ -36,6 +38,8 @@
 
 <%# ---------- Tabs (phones only; desktop shows two columns) ---------- %>
 <div class="sticky top-14 z-20 -mx-4 border-b border-base-300 bg-base-200 px-4 py-2 lg:hidden">
+<%- include('partials/bot-paused', { lead, botPausedUntil }) %>
+<%- include('partials/suggested-outcome', { lead }) %>
 <div role="tablist" class="tabs tabs-box tabs-sm" data-tabs>
   <% for (const [key, label] of [['chat', 'Chat'], ['details', 'Details'], ['tasks', 'Tasks'], ['history', 'History']]) { %>
     <button type="button" role="tab" class="tab flex-1" data-tab="<%= key %>"><%= label %></button>
@@ -61,8 +65,10 @@
             <div class="chat-footer text-[11px] <%= q.status === 'failed' ? 'text-error' : 'text-[#8696a0]' %>"><%= q.metadata.user_name || 'Staff' %> · <%= q.status === 'failed' ? 'Failed: ' + (q.last_error || 'unknown error') : 'Queued, waiting for the WhatsApp bot to send' %></div>
           </div>
         <% } %>
-        <% if (!lead.window_open) { %><p class="wa-system mx-auto mt-3">The 24-hour reply window is closed. The lead has to message GKF first.</p><% } %>
+        <% if (!lead.window_open) { %><p class="wa-system mx-auto mt-3">The 24-hour reply window is closed. The lead has to send a new message first.</p><% } %>
       </div>
+      <%# R17: send units from the Projects page, next to the reply box (it is a message to the lead). %>
+      <%- include('partials/send-projects', { lead }) %>
       <form class="wa-composer sticky bottom-0 flex items-end gap-2 px-2 pt-2 pb-[calc(0.5rem+env(safe-area-inset-bottom))]" method="post" action="/leads/<%= lead.wa_id %>/message">
         <%- include('partials/csrf') %>
         <label for="reply" class="sr-only">Reply on WhatsApp</label>
@@ -80,12 +86,20 @@
       <dl class="grid grid-cols-[7rem_1fr] gap-x-3 gap-y-2 text-sm">
         <dt class="text-base-content/60">Phone</dt><dd><%= util.contactLabel(lead) %><% if (!phone) { %> <span class="text-xs text-base-content/50">(WhatsApp username, number not shared)</span><% } %></dd>
         <dt class="text-base-content/60">Interest</dt><dd class="capitalize"><%= util.humanize(lead.interest) || '—' %></dd>
-        <dt class="text-base-content/60">Source</dt><dd><%= util.humanize(lead.source) %></dd>
+        <dt class="text-base-content/60">Source</dt><dd><%= util.intakeLabel(lead.source) || util.humanize(lead.source) %></dd>
         <% if (lead.ad) { %><dt class="text-base-content/60">Ad</dt><dd><span class="capitalize"><%= lead.ad.platform %></span>: <%= lead.ad.headline || ('ad ' + (lead.ad.source_id || '')) %>
           <% if (lead.ad.source_url && /^https:\/\//.test(lead.ad.source_url)) { %> · <a class="link link-primary" href="<%= lead.ad.source_url %>" target="_blank" rel="noopener noreferrer">view</a><% } %></dd><% } %>
         <dt class="text-base-content/60">First contact</dt><dd><%= util.fmtDate(lead.first_contact_at) %></dd>
         <dt class="text-base-content/60">Last message</dt><dd><%= util.timeAgo(lead.last_inbound_message_at) %></dd>
-        <dt class="text-base-content/60">Owner</dt><dd><%= lead.assignee_name || 'Unassigned' %></dd>
+        <dt class="text-base-content/60">Owner</dt><dd><%= lead.assignee_name || 'Unassigned' %> <%- include('partials/clock', { clock: lead.clock }) %></dd>
+        <% if (zoho) { %>
+        <dt class="text-base-content/60">Zoho CRM</dt>
+        <dd>
+          <% if (zoho.url) { %><a class="link link-primary" href="<%= zoho.url %>" target="_blank" rel="noopener noreferrer">Open <%= zoho.label %> in Zoho</a> · <% } %>
+          <span class="<%= zoho.state === 'dead' ? 'text-error' : zoho.state === 'failed' ? 'text-warning' : 'text-base-content/60' %>"><%= zoho.stateLabel %></span>
+          <% if (zoho.error) { %><div class="text-xs text-base-content/50"><%= zoho.error %></div><% } %>
+        </dd>
+        <% } %>
       </dl>
       <form method="post" action="/leads/<%= lead.wa_id %>/status" class="mt-4 flex items-end gap-2">
         <%- include('partials/csrf') %>
@@ -147,7 +161,7 @@
         <button class="btn btn-sm" type="submit">Save note</button>
       </form>
       <ul class="mt-3 space-y-3">
-        <% for (const n of notes) { %><li class="text-sm"><div class="whitespace-pre-line"><%= n.body %></div><div class="text-xs text-base-content/50"><%= n.user_name || 'Former staff' %> · <%= util.fmtDate(n.created_at) %></div></li><% } %>
+        <% for (const n of notes) { %><li class="text-sm"><div class="whitespace-pre-line"><%= n.body %></div><div class="text-xs text-base-content/50"><%= n.user_name || (!n.user_id && /^From the .+ form: /.test(n.body) ? 'Lead form' : 'Former staff') %> · <%= util.fmtDate(n.created_at) %></div></li><% } %>
         <% if (lead.notes) { %><li class="text-sm"><div class="whitespace-pre-line text-base-content/70"><%= lead.notes %></div><div class="text-xs text-base-content/50">From the WhatsApp bot</div></li><% } %>
         <% if (!notes.length && !lead.notes) { %><li class="text-sm text-base-content/60">No notes yet.</li><% } %>
       </ul>
@@ -161,7 +175,7 @@
       <ul class="mb-4 space-y-2">
         <% for (const o of outcomes.slice(0, 10)) { %>
         <li class="rounded-field bg-base-200 px-3 py-2 text-sm"><strong><%= OUTCOMES[o.outcome] %></strong>
-          <% if (o.outcome === 'joined') { %> · <%= o.plan %> · ₹<%= Number(o.amount_inr).toLocaleString('en-IN') %><% } %>
+          <% if (o.outcome === 'joined') { %> · <%= o.plan %> · <%= money(o.amount_inr) %><% } %>
           <% if (o.outcome === 'visit_booked' && o.visit_at) { %> · for <%= util.fmtDate(o.visit_at) %><% } %>
           <% if (o.outcome === 'lost') { %> · <%= LOST_REASONS[o.lost_reason] || o.lost_reason %><% } %>
           <div class="text-xs text-base-content/50"><%= o.user_name || 'Former staff' %> · <%= util.fmtDate(o.created_at) %><% if (o.note) { %> · <%= o.note %><% } %></div></li>
@@ -199,7 +213,7 @@
     </form>
     <div class="mt-3 space-y-2">
       <details class="collapse collapse-arrow bg-base-200">
-        <summary class="collapse-title flex items-center gap-2 text-sm font-medium"><%- include('partials/icon', { name: 'calendar-plus' }) %>Visit booked…</summary>
+        <summary class="collapse-title flex items-center gap-2 text-sm font-medium"><%- include('partials/icon', { name: 'calendar-plus' }) %><%= OUTCOMES.visit_booked %>…</summary>
         <form method="post" action="/leads/<%= lead.wa_id %>/outcome" class="collapse-content space-y-2">
           <%- include('partials/csrf') %>
           <input type="hidden" name="outcome" value="visit_booked">
@@ -208,17 +222,18 @@
         </form>
       </details>
       <details class="collapse collapse-arrow bg-base-200">
-        <summary class="collapse-title flex items-center gap-2 text-sm font-medium text-primary"><%- include('partials/icon', { name: 'rupee' }) %>Joined…</summary>
+        <summary class="collapse-title flex items-center gap-2 text-sm font-medium text-primary"><%- include('partials/icon', { name: 'rupee' }) %><%= OUTCOMES.joined %>…</summary>
         <form method="post" action="/leads/<%= lead.wa_id %>/outcome" class="collapse-content space-y-2">
           <%- include('partials/csrf') %>
           <input type="hidden" name="outcome" value="joined">
           <fieldset class="fieldset py-0"><legend class="fieldset-legend">Plan</legend>
-            <input id="plan" name="plan" list="plan-options" maxlength="100" required placeholder="Quarterly Elite" class="input w-full">
+            <input id="plan" name="plan" list="plan-options" maxlength="100" required placeholder="<%= LABELS.planName %>" class="input w-full">
             <datalist id="plan-options"><% for (const p of PLAN_OPTIONS) { %><option value="<%= p %>"><% } %></datalist></fieldset>
-          <fieldset class="fieldset py-0"><legend class="fieldset-legend">Amount paid (₹)</legend><input id="amount" name="amount" inputmode="numeric" pattern="[0-9,₹ ]+" required placeholder="7080" class="input w-full"></fieldset>
-          <button class="btn btn-primary w-full" type="submit">Save joined</button>
+          <fieldset class="fieldset py-0"><legend class="fieldset-legend">Amount paid (<%= CURRENCY_SHORT %>)</legend><input id="amount" name="amount" inputmode="numeric" autocomplete="off" required placeholder="7080" class="input w-full"></fieldset>
+          <button class="btn btn-primary w-full" type="submit">Save <%= OUTCOMES.joined.toLowerCase() %></button>
         </form>
       </details>
+      <%- include('partials/payment-link', { lead }) %>
       <details class="collapse collapse-arrow bg-base-200">
         <summary class="collapse-title flex items-center gap-2 text-sm font-medium"><%- include('partials/icon', { name: 'thumbs-down' }) %>Lost…</summary>
         <form method="post" action="/leads/<%= lead.wa_id %>/outcome" class="collapse-content space-y-2">

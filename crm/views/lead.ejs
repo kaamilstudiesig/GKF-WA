@@ -67,6 +67,8 @@
         <% } %>
         <% if (!lead.window_open) { %><p class="wa-system mx-auto mt-3">The 24-hour reply window is closed. The lead has to send a new message first.</p><% } %>
       </div>
+      <%# R17: send units from the Projects page, next to the reply box (it is a message to the lead). %>
+      <%- include('partials/send-projects', { lead }) %>
       <form class="wa-composer sticky bottom-0 flex items-end gap-2 px-2 pt-2 pb-[calc(0.5rem+env(safe-area-inset-bottom))]" method="post" action="/leads/<%= lead.wa_id %>/message">
         <%- include('partials/csrf') %>
         <label for="reply" class="sr-only">Reply on WhatsApp</label>

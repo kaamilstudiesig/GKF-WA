@@ -21,7 +21,8 @@ const tenancy = require('../src/tenancy/context');
 const PLATFORM_TABLES = ['tenants'];
 const BOT_TABLES = ['leads', 'messages', 'handoffs', 'outbound_messages', 'ai_usage', 'webhook_events', 'business_profile'];
 const CRM_TABLES = ['crm_users', 'crm_lead_assignments', 'crm_lead_notes', 'crm_follow_ups', 'crm_lead_outcomes', 'crm_payment_links', 'crm_branding', 'crm_activity_log', 'crm_settings',
-  'intake_submissions']; // R16 (skipped while a database doesn't have it yet, like the other CRM tables)
+  'intake_submissions', // R16
+  'crm_projects', 'crm_units']; // R17 (projects before their units; skipped while a database doesn't have them)
 // After leads and outcomes: restoring those makes the Zoho trigger add zoho_links rows.
 const ZOHO_TABLES = ['zoho_links', 'zoho_cursors'];
 // K26 billing count (platform migration 9; skipped while a database doesn't have it yet).

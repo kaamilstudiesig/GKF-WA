@@ -8,6 +8,7 @@ const can = {
   manageUsers: u => u.role === 'owner',
   manageBusiness: u => u.role === 'owner',
   viewReports: u => u.role === 'owner' || u.role === 'manager',
+  manageProjects: u => u.role === 'owner' || u.role === 'manager', // R17
   viewAiCost: u => u.role === 'owner',
   exportLeads: u => u.role === 'owner' || u.role === 'manager',
   assignLeads: u => u.role === 'owner' || u.role === 'manager',

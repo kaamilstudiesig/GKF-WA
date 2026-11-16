@@ -129,6 +129,8 @@ const realestate = {
     bookButton: 'Book site visit',
     staffButton: 'Talk to advisor'
   },
+  // R17: this type sells projects and units, so the CRM shows the Projects page in its menu.
+  projectsPage: true,
   lostReasons: {
     price: 'Budget', distance: 'Location', timing: 'Not ready to buy yet', joined_elsewhere: 'Bought elsewhere',
     no_response: 'Stopped replying', not_interested: 'Not interested'

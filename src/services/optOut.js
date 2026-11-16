@@ -23,10 +23,15 @@ const STOP_WORDS = new Set([
   'stop messages', 'stop messaging', 'stop msg', 'stop msgs', 'stop sending', 'no more messages',
   // Hindi / Hinglish
   'band karo', 'message band karo', 'msg band karo', 'बंद करो', 'मैसेज बंद करो',
+  'mat bhejo', 'na bhejo', 'मत भेजो',
+  'msg mt kro', 'msg mat bhejiye', 'message band kar do', 'मैसेज मत भेजिए', 'मैसेज नहीं चाहिए',
   // Kannada
   'ನಿಲ್ಲಿಸಿ', 'ನಿಲ್ಲಿಸು',
+  'ನನಗೆ ಮೆಸೇಜ್ ಬೇಡ', 'ಸಂದೇಶಗಳನ್ನು ಕಳುಹಿಸಬೇಡಿ', 'ಮೆಸೇಜ್ ಕಳಿಸ್ಬೇಡಿ',
+  'nanage message beda', 'message kalisabedi', 'msg maadabedi',
   // Arabic
-  'توقف', 'قف', 'الغاء الاشتراك', 'إلغاء الاشتراك', 'الغاء', 'إلغاء'
+  'توقف', 'قف', 'الغاء الاشتراك', 'إلغاء الاشتراك',
+  'ما أبي رسايل', 'ما أبغى رسائل', 'وقفوا الرسايل', 'شيلوني من القائمة', 'لا عاد ترسل'
 ]);
 const START_WORDS = new Set(['start', 'subscribe', 'resume', 'unstop', 'ابدأ', 'اشتراك', 'ಪ್ರಾರಂಭಿಸಿ']);
 
@@ -39,13 +44,14 @@ const STOP_PHRASES = [
   /\bunsubscribe me\b/, /\bopt me out\b/, /\bnot interested,? (don'?t|do not) (message|contact)\b/,
   // Hinglish
   /\b(mujhe |muje )?(message|msg|messages|whatsapp) (mat|na) (karo|kro|karna|bhejo|bhejna|kijiye)\b/,
-  /\b(mat|na) bhejo\b/, /\bmessage (bhejna )?band karo\b/,
+  /\bmessage (bhejna )?band karo\b/,
   // Hindi
-  /(मुझे )?(मैसेज|संदेश) (मत|ना) (करो|भेजो|भेजें|कीजिए)/, /मत भेजो/,
+  /(मुझे )?(मैसेज|संदेश) (मत|ना) (करो|भेजो|भेजें|कीजिए)/,
   // Kannada
   /(ಮೆಸೇಜ್|ಸಂದೇಶ) (ಮಾಡಬೇಡಿ|ಕಳುಹಿಸಬೇಡಿ|ಕಳಿಸಬೇಡಿ)/, /(message|msg) (madbedi|maadbedi|kalisbedi)/,
   // Arabic
-  /(لا|لاتـ?) ?(ترسل|ترسلوا|تراسلني|تراسلوني)/, /توقفوا عن (الارسال|الإرسال|مراسلتي)/
+  /(لا|لاتـ?) ?(ترسل|ترسلوا) (لي|رسائل|رسايل|رسالة)(?= |$)/,
+  /(لا|لاتـ?) ?(تراسلني|تراسلوني)/, /توقفوا عن (الارسال|الإرسال|مراسلتي)/
 ];
 
 const MAX_PHRASE_WORDS = 12;
@@ -80,8 +86,8 @@ function classify(text) {
 function languageOf(text) {
   const raw = String(text || '');
   if (ARABIC.test(raw)) return 'ar';
-  if (KANNADA.test(raw) || /\b(madbedi|maadbedi|kalisbedi)\b/i.test(raw)) return 'kn';
-  if (DEVANAGARI.test(raw) || /\b(mat|band karo|bhejo|karo|kro|mujhe|muje)\b/i.test(raw)) return 'hi';
+  if (KANNADA.test(raw) || /\b(madbedi|maadbedi|kalisbedi|beda|kalisabedi|maadabedi)\b/i.test(raw)) return 'kn';
+  if (DEVANAGARI.test(raw) || /\b(mat|band kar(?:o| do)|bhejo|karo|kro|mujhe|muje)\b/i.test(raw)) return 'hi';
   return 'en';
 }
 

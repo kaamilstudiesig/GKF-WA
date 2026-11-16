@@ -43,6 +43,38 @@ test('STOP, UNSUBSCRIBE and "don\'t message me" in each language are opt-outs; e
   assert.strictEqual(optOut.languageOf('توقف'), 'ar');
 });
 
+test('reviewed opt-out wording is recognized with the right reply language', () => {
+  const phrasesByLanguage = {
+    kn: [
+      'ನನಗೆ ಮೆಸೇಜ್ ಬೇಡ', 'ಸಂದೇಶಗಳನ್ನು ಕಳುಹಿಸಬೇಡಿ', 'ಮೆಸೇಜ್ ಕಳಿಸ್ಬೇಡಿ',
+      'nanage message beda', 'message kalisabedi', 'msg maadabedi'
+    ],
+    hi: ['msg mt kro', 'msg mat bhejiye', 'message band kar do', 'मैसेज मत भेजिए', 'मैसेज नहीं चाहिए'],
+    ar: ['ما أبي رسايل', 'ما أبغى رسائل', 'وقفوا الرسايل', 'شيلوني من القائمة', 'لا عاد ترسل']
+  };
+  for (const [language, phrases] of Object.entries(phrasesByLanguage)) {
+    for (const t of phrases) {
+      assert.strictEqual(optOut.classify(t), 'stop', t);
+      assert.strictEqual(optOut.languageOf(t), language, t);
+    }
+  }
+});
+
+test('cancel and instructions about a specific item are not opt-outs', () => {
+  for (const t of ['الغاء', 'إلغاء', 'paise mat bhejo', 'paise na bhejo', 'पैसे मत भेजो',
+    'لا ترسل الفاتورة الآن', 'لا ترسل', 'لا ترسل ليث']) {
+    assert.strictEqual(optOut.classify(t), null, t);
+  }
+});
+
+test('bare stop commands, subscription cancellation and Arabic message objects remain opt-outs', () => {
+  for (const t of ['mat bhejo', 'na bhejo', 'मत भेजो', 'band karo', 'बंद करो', 'ನಿಲ್ಲಿಸಿ', 'ನಿಲ್ಲಿಸು', 'توقف', 'قف',
+    'الغاء الاشتراك', 'إلغاء الاشتراك', 'لا ترسل لي', 'لا ترسل رسائل', 'لا ترسل رسايل', 'لا ترسل رسالة',
+    'لا ترسلوا لي', 'لا تراسلني', 'لا تراسلوني']) {
+    assert.strictEqual(optOut.classify(t), 'stop', t);
+  }
+});
+
 test('STOP marks the lead, sends a fixed confirmation in their language, and never calls the AI', async () => {
   await converse(LEAD, 'hi');
   const before = aiCalls;

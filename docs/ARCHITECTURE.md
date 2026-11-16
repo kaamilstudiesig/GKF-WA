@@ -233,6 +233,7 @@ src/
   services/
     deterministicRouter  fixed answers, language detection, buttons
     optOut               STOP / START (K30): fixed reply, blocks templates to opted-out leads
+    leadUsage            Monthly lead count per client (K26): hashed, once per person, 80%/100% alerts
     aiService            prompt building, OpenRouter call, JSON parsing, cleanup
     aiPolicy             what the AI may change; medical safety check
     botGuard             staff pause + per-lead daily cap

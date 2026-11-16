@@ -35,9 +35,9 @@ Checked against the code on 14 Nov 2026. "Before signing" means it must be done 
 | Leads from website forms and portals | 3.3 | Contract agreed | R16 |
 | Meta lead forms | 3.3 | Not built | K6 |
 | Instagram DM capture (one reply that moves the lead to WhatsApp) | 3.3 | Not built | K32 |
-| Connect the client's WhatsApp through Meta's signup flow | 3.5, 3.13 | Not built (manual setup today) | K9 |
+| Connect the client's WhatsApp through Meta's signup flow | 3.5, 3.13 | Built (K9, live since 15 Nov): connect link and page, new numbers and WhatsApp Business app numbers (coexistence). Manual setup stays as the fallback ([ONBOARDING.md](ONBOARDING.md)) | K9 |
 | Amounts in the client's currency (international) | Schedule A | Contract agreed | R15 |
-| Monthly lead count and 80% alert | 1 "Lead", 4.3 | Not built. **Before signing** | K26 |
+| Monthly lead count and 80% alert | 1 "Lead", 4.3 | Built (K26): each person once per calendar month (client's time zone) across channels, stored as a keyed hash so a deletion request never changes the count; alerts at 80% and 100% to the staff Telegram group and ops, once each a month, when the plan's `leadMonthlyLimit` is set; `npm run usage -- --month YYYY-MM` for invoicing. The count on Business settings and the dashboard is Krishna's (contract in TEAM.md). **Before signing** | K26 |
 | Uptime monitor and reply-time measurement | Annexure B | Not built. **Before signing** | K27 |
 | Encrypted backups | C1 | Built (K28): daily, AES-256-GCM, private EU storage (Cloudflare R2), 30 days. Counts once the R2 settings are on Heroku and the first restore drill is done (OPERATIONS.md step 9). **Before signing** | K28 |
 | AI providers don't store or train on data | 7.7, C | Built (K29): every OpenRouter call sends `data_collection: 'deny'` and `zdr: true` (zero-retention providers only); if a model has no such provider the fallback model is tried and that model is skipped for 10 minutes. Privacy page lists every provider. Routing checked 15 Nov 2026 (`scripts/ai-privacy-check.js`): both models route. Re-run after changing a model | K29 |

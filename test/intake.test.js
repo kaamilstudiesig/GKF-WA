@@ -219,7 +219,10 @@ test('review fixes: a second submission keeps the first touch and a short histor
 
 test('review fixes: two portal retries arriving together make one lead note and one duplicate', async () => {
   const body = { name: 'Twin', phone: DUBAI, message: 'retry me', source: 'property_finder', sourceRef: 'PF-SAME' };
-  const [a, b] = await Promise.all([api(body), api(body)]);
+  // The second may arrive while the first is still saving: it is told to retry (409), never "done".
+  const retry = async r => (r.status === 409 ? api(body) : r);
+  const [a0, b0] = await Promise.all([api(body), api(body)]);
+  const [a, b] = [await retry(a0), await retry(b0)];
   assert.deepStrictEqual([a.status, b.status], [202, 202]);
   assert.strictEqual([a.body.duplicate, b.body.duplicate].filter(Boolean).length, 1);
   assert.strictEqual((await many('SELECT id FROM crm_lead_notes WHERE wa_id = $1', [DUBAI])).length, 1);
@@ -306,4 +309,42 @@ test('a form or portal lead counts once in the monthly lead meter (K26), togethe
   assert.strictEqual((await api({ name: 'Meter One', phone: '050 765 4321', source: 'bayut', sourceRef: 'BY-M2' })).status, 202);
   const u = await ctx.run(acme.id, () => leadUsage.usage());
   assert.strictEqual(u.count, 1);
+});
+
+test('Codex review fixes: a save abandoned mid-way lets the portal retry do the work', async () => {
+  const body = { name: 'Crash', phone: '971501230001', source: 'bayut', sourceRef: 'BY-CRASH' };
+  // A claim left 'processing' (the process died) more than 2 minutes ago: the retry is not a duplicate.
+  await asAcme(() => db.query(`INSERT INTO intake_submissions (channel, source, source_ref, wa_id, status, received_at)
+    VALUES ('api', 'bayut', 'BY-CRASH', '971501230001', 'processing', now() - interval '5 minutes')`));
+  const r = await api(body);
+  assert.strictEqual(r.status, 202);
+  assert.ok(!r.body.duplicate);
+  assert.ok(await asAcme(() => db.one("SELECT wa_id FROM leads WHERE wa_id = '971501230001'")));
+  // A claim still being saved right now: the retry is asked to come back.
+  await asAcme(() => db.query(`INSERT INTO intake_submissions (channel, source, source_ref, wa_id, status)
+    VALUES ('api', 'bayut', 'BY-BUSY', '971501230002', 'processing')`));
+  assert.strictEqual((await api({ ...body, phone: '971501230002', sourceRef: 'BY-BUSY' })).status, 409);
+});
+
+test('Codex review fixes: paid welcomes stop at the client\'s daily budget', async () => {
+  await registry.update(acme.id, { settings: { leadWelcomeTemplate: 'welcome_v1', leadWelcomeDailyCap: '2' } });
+  try {
+    for (const n of ['971501240001', '971501240002', '971501240003']) {
+      assert.strictEqual((await api({ name: 'W', phone: n, source: 'bayut', consent: true })).status, 202);
+    }
+    const queued = await asAcme(() => db.one("SELECT COUNT(*)::int AS n FROM outbound_messages WHERE metadata ->> 'source' = 'intake'"));
+    assert.strictEqual(queued.n, 2);
+    const h = await asAcme(() => db.one("SELECT summary FROM handoffs WHERE wa_id = '971501240003'"));
+    assert.match(h.summary, /limit of 2 welcomes/);
+  } finally {
+    await registry.update(acme.id, { settings: { leadWelcomeDailyCap: '' } });
+  }
+});
+
+test('Codex review fixes: junk public-form posts from one address hit a limit before validation', async () => {
+  const ip = '203.0.113.77';
+  for (let i = 0; i < 30; i++) assert.strictEqual((await form({ phone: '12' }, { ip })).status, 400);
+  assert.strictEqual((await form({ phone: '12' }, { ip })).status, 429);
+  const rows = await asAcme(() => db.one("SELECT COUNT(*)::int AS n FROM intake_submissions WHERE channel = 'form'"));
+  assert.strictEqual(rows.n, 30); // the refused 31st left no row
 });

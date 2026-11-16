@@ -102,7 +102,7 @@
       <% for (const s of intake.recent) { %><li class="list-row items-center">
         <div class="min-w-0"><% if (s.wa_id && s.status === 'accepted') { %><a class="link link-hover font-medium" href="/leads/<%= s.wa_id %>"><%= s.display_name || ('+' + s.wa_id) %></a><% } else { %><span class="font-medium"><%= s.wa_id ? '+' + s.wa_id : 'No valid phone' %></span><% } %>
           <div class="truncate text-xs text-base-content/60"><%= util.intakeLabel('intake_' + (s.source || 'other')) %> · <%= util.timeAgo(s.received_at) %><%= s.error ? ' · ' + s.error : '' %></div></div>
-        <span class="badge badge-xs badge-soft <%= { accepted: 'badge-success', duplicate: 'badge-ghost', rejected: 'badge-error', limited: 'badge-warning' }[s.status] %>"><%= { accepted: 'Added', duplicate: 'Repeat', rejected: 'Refused', limited: 'Too many' }[s.status] %></span>
+        <span class="badge badge-xs badge-soft <%= { accepted: 'badge-success', processing: 'badge-info', duplicate: 'badge-ghost', rejected: 'badge-error', limited: 'badge-warning' }[s.status] %>"><%= { accepted: 'Added', processing: 'Saving', duplicate: 'Repeat', rejected: 'Refused', limited: 'Too many' }[s.status] %></span>
       </li><% } %>
     </ul><% } %>
   </div>

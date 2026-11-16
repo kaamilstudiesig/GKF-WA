@@ -22,8 +22,12 @@ const COUNTED = ['messages', 'handoffs', 'outbound_messages', 'webhook_events'];
 
 const exists = async table => Boolean((await db.one('SELECT to_regclass($1) AS t', [table])).t);
 
-/** { found: false } | { found: true, deleted: boolean, counts }. Dry run unless confirm. */
-async function deleteLead(key, { confirm = false } = {}) {
+/**
+ * { found: false } | { found: true, deleted: boolean, counts, skipped? }. Dry run unless confirm.
+ * `onlyIf(key)` (automatic deletion) runs inside the transaction after the lead row is locked; when
+ * it returns false (the lead became active meanwhile) nothing is deleted.
+ */
+async function deleteLead(key, { confirm = false, onlyIf = null } = {}) {
   await db.init();
   const lead = await db.one('SELECT wa_id, phone, display_name, opted_out_at FROM leads WHERE wa_id = $1', [key]);
   if (!lead) return { found: false };
@@ -35,13 +39,20 @@ async function deleteLead(key, { confirm = false } = {}) {
   }
   if (!confirm) return { found: true, deleted: false, counts };
   const run = async () => {
+    // Lock the lead: an inbound message or a staff action waits for us, and we re-check after it.
+    const locked = await db.one('SELECT opted_out_at FROM leads WHERE wa_id = $1 FOR UPDATE', [key]);
+    if (!locked) return false;
+    if (onlyIf && !(await onlyIf(key))) return false;
     // A STOP outlives the deletion, as a keyed hash (src/services/optOutList.js).
-    await require('./optOutList').remember(lead);
+    await require('./optOutList').remember({ ...lead, opted_out_at: locked.opted_out_at });
     for (const table of tables) await db.query(`DELETE FROM ${table} WHERE wa_id = $1`, [key]);
+    // Staff alerts about this lead are queued to the staff member's number; the lead is in metadata.
+    await db.query("DELETE FROM outbound_messages WHERE metadata -> 'staff_alert' ->> 'lead' = $1", [key]);
     await db.query('DELETE FROM leads WHERE wa_id = $1', [key]); // the rest cascades
+    return true;
   };
-  await db.tx(run);
-  return { found: true, deleted: true, counts };
+  const done = await db.tx(run);
+  return done ? { found: true, deleted: true, counts } : { found: true, deleted: false, counts, skipped: 'active' };
 }
 
 module.exports = { deleteLead, NO_FK_TABLES };

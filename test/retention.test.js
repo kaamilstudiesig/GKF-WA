@@ -123,13 +123,16 @@ test('deletion removes lead data, including payment links and activity, but keep
     const user = await db.one(`INSERT INTO crm_users (email, name, role, password_hash)
       VALUES ('retention@example.test', 'Retention staff', 'owner', 'unused-test-hash') RETURNING id`);
     await db.query("INSERT INTO messages (wa_id, direction, text, timestamp) VALUES ($1, 'in', 'Hello', $2)", [waId, OLD]);
-    await db.query("INSERT INTO handoffs (wa_id, reason) VALUES ($1, 'other')", [waId]);
-    await db.query("INSERT INTO crm_lead_notes (wa_id, user_id, body) VALUES ($1, $2, 'Staff note')", [waId, user.id]);
-    await db.query("INSERT INTO crm_lead_outcomes (wa_id, user_id, outcome) VALUES ($1, $2, 'no_answer')", [waId, user.id]);
-    await db.query("INSERT INTO outbound_messages (dedup_key, wa_id, text) VALUES ('retention:reply', $1, 'Reply')", [waId]);
+    await db.query("INSERT INTO handoffs (wa_id, reason, created_at) VALUES ($1, 'other', $2)", [waId, OLD]);
+    await db.query("INSERT INTO crm_lead_notes (wa_id, user_id, body, created_at) VALUES ($1, $2, 'Staff note', $3)", [waId, user.id, OLD]);
+    await db.query("INSERT INTO crm_lead_outcomes (wa_id, user_id, outcome, created_at) VALUES ($1, $2, 'no_answer', $3)", [waId, user.id, OLD]);
+    await db.query("INSERT INTO outbound_messages (dedup_key, wa_id, text, created_at) VALUES ('retention:reply', $1, 'Reply', $2)", [waId, OLD]);
+    // A staff alert about this lead, queued to a staff number (the lead is only in metadata).
+    await db.query(`INSERT INTO outbound_messages (dedup_key, wa_id, text, metadata, created_at)
+      VALUES ('retention:alert', '919800000777', 'Lead X needs you', $1::jsonb, $2)`, [JSON.stringify({ staff_alert: { event: 'handoff', lead: waId } }), OLD]);
     await db.query(`INSERT INTO crm_payment_links (wa_id, user_id, reference_id, plan, amount_inr)
       VALUES ($1, $2, 'retention-payment', 'Monthly', 5000)`, [waId, user.id]);
-    await db.query("INSERT INTO crm_activity_log (wa_id, user_id, action) VALUES ($1, $2, 'note_added')", [waId, user.id]);
+    await db.query("INSERT INTO crm_activity_log (wa_id, user_id, action, created_at) VALUES ($1, $2, 'note_added', $3)", [waId, user.id, OLD]);
     const recorded = await leadUsage.record({ wa_id: waId, phone: waId }, { at: NOW });
     assert.strictEqual(recorded.counted, true);
     const usageBefore = await db.many('SELECT * FROM lead_usage');
@@ -144,6 +147,7 @@ test('deletion removes lead data, including payment links and activity, but keep
       assert.strictEqual((await db.one(`SELECT COUNT(*)::int AS n FROM ${table} WHERE wa_id = $1`, [waId])).n, 0, table);
     }
     assert.deepStrictEqual(await db.many('SELECT * FROM lead_usage'), usageBefore);
+    assert.strictEqual(await db.one("SELECT id FROM outbound_messages WHERE dedup_key = 'retention:alert'"), null, 'staff alert about the lead deleted');
     assert.strictEqual((await leadUsage.usage({ now: NOW })).count, 1);
   });
 });
@@ -320,4 +324,48 @@ test('an approved surge (retentionAllowSurgeUntil) deletes up to the per-run cap
   } finally {
     await registry.update(1, { settings: { retentionAllowSurgeUntil: '' } });
   }
+});
+
+test('staff work today saves an old lead: a note, an outcome, a future follow-up or a queued message', async () => {
+  const user = await tenancy.run(1, () => db.one(`INSERT INTO crm_users (email, name, role, password_hash)
+    VALUES ('staffwork@example.test', 'Staff', 'owner', 'unused-test-hash') RETURNING id`));
+  const cases = [
+    ['note', k => db.query("INSERT INTO crm_lead_notes (wa_id, user_id, body) VALUES ($1, $2, 'called today')", [k, user.id])],
+    ['outcome', k => db.query("INSERT INTO crm_lead_outcomes (wa_id, user_id, outcome) VALUES ($1, $2, 'no_answer')", [k, user.id])],
+    ['follow-up due later', k => db.query("INSERT INTO crm_follow_ups (wa_id, user_id, title, due_at, created_at) VALUES ($1, $2, 'Call', $3, $4)", [k, user.id, '2031-01-10T10:00:00Z', OLD])],
+    ['webhook event waiting', k => db.query("INSERT INTO webhook_events (event_key, wa_id, payload) VALUES ($1, $2, '{}')", [`evt-${k}`, k])]
+  ];
+  let i = 0;
+  for (const [, add] of cases) {
+    i++;
+    await insertLead(1, phone(i));
+    await tenancy.run(1, () => add(phone(i)));
+  }
+  assert.deepStrictEqual(await run(), { deleted: 0, due: 0, months: 24 });
+  assert.strictEqual((await leadKeys()).length, cases.length);
+});
+
+test('a lead that becomes active during the run is re-checked under a lock and kept', async () => {
+  const leadDeletion = require('../src/services/leadDeletion');
+  await insertLead(1, phone(1));
+  const saved = leadDeletion.deleteLead;
+  // Right before its turn, the lead writes in (its activity is refreshed).
+  leadDeletion.deleteLead = async (key, opts) => {
+    await db.query('UPDATE leads SET last_inbound_message_at = $2 WHERE wa_id = $1', [key, NOW.toISOString()]);
+    return saved(key, opts);
+  };
+  try {
+    assert.deepStrictEqual(await run(), { deleted: 0, due: 1, months: 24 });
+  } finally {
+    leadDeletion.deleteLead = saved;
+  }
+  assert.deepStrictEqual(await leadKeys(), [phone(1)]);
+});
+
+test('the surge check counts every due lead, not just one night\'s batch', async () => {
+  await insertBatch(1, '918315', 1500, OLD);
+  const r = await run();
+  assert.strictEqual(r.skipped, 'surge');
+  assert.strictEqual(r.due, 1500);
+  assert.strictEqual((await leadKeys()).length, 1500);
 });

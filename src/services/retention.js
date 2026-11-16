@@ -11,9 +11,12 @@ const { captureException } = require('../utils/sentry');
  * a lead is deleted when its last interaction is older than the client's retention period
  * (tenant setting `retentionMonths`, default 24).
  *
- * Last interaction = the latest of: their last message, our last message, first contact, and the
- * lead's last update (a status change, note or outcome by staff updates the lead). A lead with no
- * WhatsApp message yet (a form lead) still has first contact, so it never looks infinitely old.
+ * Last interaction = the latest of everything about the lead: first contact, its last update, every
+ * message in or out (sent or still queued), a webhook event still waiting to be processed, staff
+ * notes, outcomes, follow-ups (a follow-up due in the future keeps the lead), assignments, hand-offs
+ * and the activity log. A lead with no WhatsApp message yet (a form lead) still has first contact.
+ * Each lead is checked again under a row lock right before it is deleted, so a message or a staff
+ * action during the run saves it.
  *
  * Deletion goes through leadDeletion.deleteLead (the same path as a deletion request). Kept:
  * the hashed monthly lead count (billing, no personal data) and reply times (no lead key).
@@ -43,14 +46,32 @@ const monthsFor = tenant => {
   return Number.isInteger(n) && n >= 1 && n <= 120 ? n : DEFAULT_MONTHS;
 };
 
-const LAST_INTERACTION = `GREATEST(COALESCE(last_inbound_message_at, first_contact_at), COALESCE(last_outbound_message_at, first_contact_at),
-  first_contact_at, COALESCE(updated_at, first_contact_at))`;
+// The latest activity of lead row `l` (GREATEST ignores NULLs). Every table is indexed by wa_id.
+const LAST_ACTIVITY = `GREATEST(l.first_contact_at, l.last_inbound_message_at, l.last_outbound_message_at, l.updated_at,
+  (SELECT MAX(m.timestamp) FROM messages m WHERE m.wa_id = l.wa_id),
+  (SELECT MAX(o.created_at) FROM outbound_messages o WHERE o.wa_id = l.wa_id),
+  (SELECT MAX(w.created_at) FROM webhook_events w WHERE w.wa_id = l.wa_id),
+  (SELECT MAX(n.created_at) FROM crm_lead_notes n WHERE n.wa_id = l.wa_id),
+  (SELECT MAX(c.created_at) FROM crm_lead_outcomes c WHERE c.wa_id = l.wa_id),
+  (SELECT MAX(GREATEST(f.created_at, f.completed_at, f.due_at)) FROM crm_follow_ups f WHERE f.wa_id = l.wa_id),
+  (SELECT MAX(a.assigned_at) FROM crm_lead_assignments a WHERE a.wa_id = l.wa_id),
+  (SELECT MAX(GREATEST(h.created_at, h.resolved_at)) FROM handoffs h WHERE h.wa_id = l.wa_id),
+  (SELECT MAX(g.created_at) FROM crm_activity_log g WHERE g.wa_id = l.wa_id))`;
+const IS_DUE = `${LAST_ACTIVITY} < $1::timestamptz - make_interval(months => $2)`;
 
 /** Leads due for deletion in the current tenant, oldest first (at most `limit`). */
 async function dueLeads(months, now = new Date(), limit = MAX_PER_RUN + 1) {
-  return db.many(`SELECT wa_id FROM leads WHERE ${LAST_INTERACTION} < $1::timestamptz - make_interval(months => $2)
-    ORDER BY ${LAST_INTERACTION} LIMIT $3`, [now.toISOString(), months, limit]);
+  return db.many(`SELECT l.wa_id FROM leads l WHERE ${IS_DUE} ORDER BY ${LAST_ACTIVITY} LIMIT $3`, [now.toISOString(), months, limit]);
 }
+
+/** How many leads are due in all (no cap), for the surge check. */
+async function countDue(months, now = new Date()) {
+  return (await db.one(`SELECT COUNT(*)::int AS n FROM leads l WHERE ${IS_DUE}`, [now.toISOString(), months])).n;
+}
+
+/** Still due? Checked inside the deletion's transaction, after the lead row is locked. */
+const stillDue = (months, now) => async key => Boolean(await db.one(`SELECT 1 AS yes FROM leads l WHERE l.wa_id = $3 AND ${IS_DUE}`,
+  [now.toISOString(), months, key]));
 
 async function alertOps(text) {
   try {
@@ -79,18 +100,20 @@ async function runTenant(now = new Date()) {
   const due = await dueLeads(months, now);
   if (!due.length) return { deleted: 0, due: 0, months };
   const total = (await db.one('SELECT COUNT(*)::int AS n FROM leads')).n;
+  const dueCount = await countDue(months, now); // all of them, not just this run's batch
   const allowUntil = /^\d{4}-\d{2}-\d{2}$/.test(String(tenant && tenant.retentionAllowSurgeUntil || '')) ? tenant.retentionAllowSurgeUntil : null;
   const surgeApproved = allowUntil && now.toISOString().slice(0, 10) <= allowUntil;
-  if (!surgeApproved && due.length > SURGE_MIN && due.length > total * SURGE_SHARE) {
-    logger.error('Automatic deletion stopped: too many leads due at once', { due: due.length, total, months });
-    await alertOps(`🛑 Automatic deletion stopped: ${due.length > MAX_PER_RUN ? `${MAX_PER_RUN}+` : due.length} of ${total} leads are older than ${months} months at once. Nothing was deleted. Check the server clock and the data. If it is right, approve it for this client with the tenant setting retentionAllowSurgeUntil (YYYY-MM-DD).`);
-    return { deleted: 0, due: due.length, months, skipped: 'surge' };
+  if (!surgeApproved && dueCount > SURGE_MIN && dueCount > total * SURGE_SHARE) {
+    logger.error('Automatic deletion stopped: too many leads due at once', { due: dueCount, total, months });
+    await alertOps(`🛑 Automatic deletion stopped: ${dueCount} of ${total} leads are older than ${months} months at once. Nothing was deleted. Check the server clock and the data. If it is right, approve it for this client with the tenant setting retentionAllowSurgeUntil (YYYY-MM-DD).`);
+    return { deleted: 0, due: dueCount, months, skipped: 'surge' };
   }
   let deleted = 0;
   let failed = 0;
+  const onlyIf = stillDue(months, now);
   for (const { wa_id: key } of due.slice(0, MAX_PER_RUN)) {
     try {
-      const r = await leadDeletion.deleteLead(key, { confirm: true });
+      const r = await leadDeletion.deleteLead(key, { confirm: true, onlyIf });
       if (r.deleted) deleted++;
     } catch (err) { // one bad row must not stop the rest
       failed++;
@@ -143,4 +166,4 @@ async function tick(now = new Date()) {
   return { ran: true, results };
 }
 
-module.exports = { tick, runTenant, dueLeads, monthsFor, MAX_PER_RUN, SURGE_SHARE, SURGE_MIN, _state: state };
+module.exports = { tick, runTenant, dueLeads, countDue, monthsFor, MAX_PER_RUN, SURGE_SHARE, SURGE_MIN, _state: state };

@@ -96,6 +96,7 @@ All settings are environment variables; `.env.example` lists them with comments.
 | `OPS_ALERT_COOLDOWN_MINUTES` | Minutes before the same technical alert repeats (default 30). |
 | `CRM_BASE_URL` | CRM address for "Open in CRM" links in Telegram alerts: `https://crm.goldkraftfitness.com`. |
 | `CRM_HOSTS` | Hostnames served by the CRM, comma-separated, matched without the port. Default `crm.goldkraftfitness.com,crm.localhost`. |
+| `SHARED_CRM_HOSTS` | The shared Dartit CRM, where staff of every client sign in (for example `crm.dartit.com`). Empty = off. The first host is also the CRM link in alerts for clients without their own CRM host. A client can't use it as its `crmHost`. See "Shared CRM" below. |
 | `SESSION_TTL_HOURS` | How long a CRM login lasts (default 12). |
 | `DISPLAY_TIMEZONE`, `USD_TO_INR` | CRM display timezone (default `Asia/Kolkata`) and the rate for showing AI cost in rupees (default 85). |
 | `SEED_USERS_FILE` | Starting staff accounts for `npm run crm:seed` (default `crm/seed/users.example.json`). |
@@ -205,6 +206,17 @@ One Basic dyno ($7/month) and Heroku Postgres Essential-0 ($5/month), about $12/
 10. Check `https://wa.goldkraftfitness.com/health`, then in the Meta app dashboard (**WhatsApp → Configuration**) change the webhook URL to `https://wa.goldkraftfitness.com/webhook` with the same verify token. Send a test message.
 
 11. Retire Render: once Heroku has handled real messages, delete the Render service and remove `render.yaml` from the repo.
+
+## Shared CRM (one address for every client)
+
+Staff of any client sign in at one Dartit address with their phone or email. The CRM finds their business; someone in two businesses picks one. Each session runs as its own client (row-level security as everywhere). The page looks like Dartit (theme, logo) with the business's name; a client's own CRM address (`crm_host`, `CRM_HOSTS`) keeps its own white-label brand.
+
+It's off until a domain is bought. To switch it on:
+1. Buy the domain (for example on Cloudflare). Add a CNAME `crm` to the Heroku DNS target from `heroku domains:add crm.<domain> -a gkf-wa`. Certificates are automatic (ACM, free on our dyno).
+2. `heroku config:set SHARED_CRM_HOSTS=crm.<domain> -a gkf-wa`.
+3. Open `https://crm.<domain>/login` and sign in. Locally it runs on `http://app.localhost:3000` with `SHARED_CRM_HOSTS=app.localhost`.
+
+Never put the shared address on a host that also serves the bot (`wa.*` or the `herokuapp.com` address): the CRM answers every path on it, `/webhook` included.
 
 ## Lead usage and invoicing (K26)
 

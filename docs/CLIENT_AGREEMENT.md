@@ -31,7 +31,7 @@ Checked against the code on 14 Nov 2026. "Before signing" means it must be done 
 | Revenue and ROAS per ad | 3.2 | Revenue per ad built (R6); spend and ROAS wait for K5 | K5 |
 | The Analyser | 3.2 | Not built | K21 |
 | Weekly reports | 3.2 | Not built | R7 |
-| Agency dashboard across Workspaces | A2 | White-label per client built (R12); cross-client dashboard not built | R9 |
+| Agency dashboard across Workspaces | A2 | White-label per client built (R12) on the client's own CRM address; on the shared Dartit address staff see the Dartit look with their business's name; cross-client dashboard not built | R9 |
 | Leads from website forms and portals | 3.3 | Contract agreed | R16 |
 | Meta lead forms | 3.3 | Not built | K6 |
 | Instagram DM capture (one reply that moves the lead to WhatsApp) | 3.3 | Not built | K32 |

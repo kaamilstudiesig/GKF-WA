@@ -63,6 +63,7 @@ flowchart TB
     Router{Host header router<br/>src/app.js}
     Router -->|wa.* host| Bot[Bot routes<br/>/webhook, /health]
     Router -->|CRM_HOSTS| CRM[Staff CRM<br/>crm/ Express + EJS]
+    Router -->|SHARED_CRM_HOSTS| Shared[Shared Dartit CRM<br/>src/routes/sharedCrm.js<br/>client from the session] --> CRM
     Bot --> InQ[Inbound worker<br/>x3]
     OutQ[Outbound worker<br/>x2]
   end

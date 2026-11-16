@@ -30,7 +30,7 @@ function csvCell(v) {
   if (/^[=+\-@\t\r]/.test(s)) s = `'${s}`;
   return /[",\n\r]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
 }
-const { Branding } = require('./branding');
+const { Branding, forPlatform } = require('./branding');
 const { can } = require('./permissions');
 const { LEAD_STATUSES, ROLE_LABELS, ROLES, OUTCOMES, LOST_REASONS, STAGES } = require('./constants');
 
@@ -146,7 +146,8 @@ function createCrmApp({
       user: req.user, csrfToken: req.csrfToken, can, util, LEAD_STATUSES, ROLE_LABELS, ROLES, LOST_REASONS, PLAN_OPTIONS: planOptions(), PAYMENTS_ON: razorpay.enabled(),
       ...namesFor(gymConfig ? gymConfig.profile.type : 'gym'),
       path: req.path, query: req.query, flash: req.query.ok || null, error: req.query.err || null,
-      brand: await branding.get()
+      // The shared CRM always looks like Dartit, with this business's name (src/routes/sharedCrm.js).
+      brand: req.sharedCrm ? forPlatform(await branding.get()) : await branding.get()
     });
     next();
   }));
@@ -457,6 +458,7 @@ function createCrmApp({
       profile: gymConfig.profile, meta: await businessProfile.meta(), verticals: VERTICALS,
       prompt: gymConfig.getSystemPrompt(), limits: businessProfile.LIMITS, brandForm: null,
       queueSettings: await queue.settings(), TIMEZONES, queueBotWired: LeadQueue.botWired,
+      ownBrand: await branding.get(), // the Brand form edits the client's own brand, also on the shared CRM
       zoho: await zoho.summary(), usage: leadUsage ? await leadUsage.usage().catch(() => null) : null, ...extra
     });
   };

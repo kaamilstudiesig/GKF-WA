@@ -62,7 +62,8 @@ Status: K14–K17 are built and K18 is written (PR `k14-k18-new-client`). R12 is
 
 The Dubai client is lost and the 3 portfolio demos (Empire Estates was one of them) are parked. The order below from 7 Nov stays for reference, but the work now is the **MVP**: what the client agreement promises before the first paying client signs.
 
-- **Kaamil builds the rest of the MVP end to end, `crm/` screens included**, so Krishna gets no new MVP work: K26 lead usage meter with its two screens (PR `k26-lead-usage`), the K30 "Opted out" badge on the lead page (today it only exists in the parked R16 branch), K27 uptime and reply time, then R2 backup storage settings and the restore drill (K28).
+- **Kaamil builds the rest of the MVP end to end, `crm/` screens included**, so Krishna gets no new MVP work.
+- **MVP status (17 Nov):** live in v39: K26 lead usage meter with its screens, the K30 "Opted out" badge, K27 reply time. The shared Dartit CRM (one sign-in address for every client) is built and waits for a domain. Left: R2 backup storage settings and the restore drill (K28, needs Kaamil's Cloudflare step), and R19 (#62, needs a rebase on its two doc files).
 - **Krishna:** R19 data export (PR #62) is ready to merge. K25 phone sign-in confirmed in person (16 Nov).
 - **Parked, PRs left open:** R15 currency (#59), R16 lead intake (#63), R17 projects (#65). Review notes for R16 and R17 are on the PRs. R18 value page, R8 wizard, K24 catalog, K5, K21, K7b wait too.
 - **Ops (Kaamil, no code):** 2FA on Heroku, GitHub, Meta, OpenRouter and Zoho; a support email and a WhatsApp support number; an uptime monitor account (K27).
@@ -476,6 +477,10 @@ Failures retry with back-off (2, 4, 8… up to 60 minutes, 6 tries). A broken co
 Changes from Zoho are logged through the CRM's own outcome rules, in the name of the lead's salesperson, else the first owner. A won sale is never undone from Zoho. Loops are avoided: `zoho_links.zoho_state` remembers the last value on each side, so our own writes read back as "unchanged", and a status that came from Zoho is not pushed back over Zoho's value.
 
 Limits today: amounts are taken as they are in Zoho (an AED deal is stored as that number in the ₹ field); a lead converted in Zoho is matched to its Deal only when the Lead Engine ID field is mapped in lead conversion; `zoho_links` is not in backups yet (after a restore, matching falls back to the ID field or mobile); `npm run delete-lead` removes the lead here but not from Zoho (the client deletes it there). Tests: `test/zoho.test.js` against a fake Zoho.
+
+## Shared CRM (built 17 Nov, Kaamil)
+
+One Dartit address where staff of every client sign in (`src/routes/sharedCrm.js`, off until `SHARED_CRM_HOSTS` is set; the domain isn't bought yet). Sign-in looks the phone or email up in every active client and checks the password there; several matches show "Choose your business" (signed 5-minute tickets). The client comes from the session row, so no second cookie. Dartit theme and logo from the brand kit (`crm/public/brand/dartit/`, theme `dartit` in `crm/styles/app.css`, light and dark), with the business's name. A client's own CRM host keeps its R12 white-label. The Brand form always edits the client's own brand.
 
 ## Multi-client tenants (K8, built)
 

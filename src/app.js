@@ -8,6 +8,7 @@ const { webhookRateLimiter } = require('./middleware/rateLimiter');
 const webhookController = require('./controllers/webhookController');
 const { legalRouter } = require('./routes/legal');
 const { connectRouter } = require('./routes/connect');
+const { sharedCrmLayer, isSharedHost } = require('./routes/sharedCrm');
 const logger = require('./utils/logger');
 const { captureException } = require('./utils/sentry');
 const { redactConnectLinks } = require('./utils/redact');
@@ -63,6 +64,17 @@ function createApp({
   const paymentCrm = new Crm(db);
   const crmHostSet = new Set(crmHosts.map(x => x.toLowerCase()));
   app.locals.crmApp = crmApp;
+  // The shared CRM (every client signs in on one address; off unless SHARED_CRM_HOSTS is set).
+  // Built on its first request, so a missing file there can never stop the bot from starting.
+  let sharedCrm = null;
+  app.use((req, res, next) => {
+    if (!isSharedHost(req.hostname)) return next();
+    sharedCrm ||= sharedCrmLayer({ crmApp, secureCookies });
+    sharedCrm(req, res, err => {
+      captureException(err || new Error('Shared CRM fell through'), { component: 'shared_crm', path: req.path });
+      if (!res.headersSent) res.status(500).send('Internal Server Error');
+    });
+  });
   app.use(h(async (req, res, next) => {
     const host = String(req.hostname || '').toLowerCase();
     const tenant = crmHostSet.has(host) ? registry.config(registry.DEFAULT_TENANT_ID) : await registry.byCrmHost(host);

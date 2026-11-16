@@ -2,7 +2,7 @@
 <% const sug = lead.metadata && lead.metadata.suggested_outcome; %>
 <% if (sug) {
   const oneTap = sug.type === 'visited' || sug.type === 'lost' || (sug.type === 'joined' && sug.plan && sug.amount_inr);
-  const details = [sug.plan, sug.amount_inr ? '₹' + Number(sug.amount_inr).toLocaleString('en-IN') : null, sug.when].filter(Boolean).join(' · ');
+  const details = [sug.plan, sug.amount_inr ? money(sug.amount_inr) : null, sug.when].filter(Boolean).join(' · ');
 %>
 <section class="alert alert-info alert-soft mb-4 flex-col items-stretch gap-2 sm:flex-row sm:items-center" aria-label="Suggested outcome">
   <div class="min-w-0 flex-1">

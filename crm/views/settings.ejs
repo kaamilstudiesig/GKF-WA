@@ -108,6 +108,11 @@
     <fieldset class="<%= field %>"><legend class="fieldset-legend">Type of business</legend>
       <select name="type" class="select w-full"><% for (const [k, v] of Object.entries(verticals)) { %><option value="<%= k %>" <%= profile.type === k ? 'selected' : '' %>><%= v.label %></option><% } %></select>
       <p class="label whitespace-normal">Sets how the assistant sells (what it asks, what it offers). More types coming.</p></fieldset>
+    <fieldset class="<%= field %>" id="currency"><legend class="fieldset-legend">Currency</legend>
+      <select name="currency" class="select w-full"><% for (const c of currencyOptions) { %><option value="<%= c.code %>" <%= (profile.currency || 'INR') === c.code ? 'selected' : '' %>><%= c.label %></option><% } %></select>
+      <p class="label whitespace-normal">Sale amounts, reports and the pipeline use it. Payment links work only in rupees.</p>
+      <% if (amounts.sales || amounts.links) { const parts = [amounts.sales ? amounts.sales + ' recorded sale' + (amounts.sales === 1 ? '' : 's') : null, amounts.links ? amounts.links + ' payment link' + (amounts.links === 1 ? '' : 's') : null].filter(Boolean); %><div role="alert" class="alert alert-warning alert-soft mt-1 text-sm"><div>You have <%= parts.join(' and ') %>. Changing the currency doesn't convert them: the same numbers then show in the new currency.
+        <label class="label mt-2 cursor-pointer gap-2 whitespace-normal text-base-content"><input type="checkbox" name="currency_confirm" value="1" class="checkbox checkbox-sm"> I understand. Change the currency anyway.</label></div></div><% } %></fieldset>
     <label class="flex cursor-pointer items-start gap-3 py-1">
       <input type="checkbox" name="health_related" value="1" class="checkbox checkbox-sm mt-0.5" <%= profile.healthRelated ? 'checked' : '' %>>
       <span><span class="text-sm font-medium">Health-related business</span><span class="block text-xs text-base-content/60">Clinics, pharmacies, physiotherapy, wellness. Questions about symptoms, medicines or treatment always go to your team; the assistant only answers services, prices, timings, location and appointments.</span></span>

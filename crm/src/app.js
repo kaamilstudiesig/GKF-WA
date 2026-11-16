@@ -55,7 +55,7 @@ function profileFromForm(b) {
   const names = toArray(b.plan_name); const prices = toArray(b.plan_price); const details = toArray(b.plan_details);
   const pNames = toArray(b.policy_name); const pTexts = toArray(b.policy_text);
   return {
-    name: b.name, type: b.type, healthRelated: b.health_related === '1', area: b.area, address: b.address, parking: b.parking, facility: b.facility,
+    name: b.name, type: b.type, currency: b.currency, healthRelated: b.health_related === '1', area: b.area, address: b.address, parking: b.parking, facility: b.facility,
     latitude: b.latitude, longitude: b.longitude, voice: b.voice,
     hours: b.hours, programs: b.programs, sellingPoints: b.selling_points,
     plans: names.map((n, i) => ({ name: n, price: prices[i], details: details[i] })),
@@ -64,13 +64,14 @@ function profileFromForm(b) {
   };
 }
 const util = require('./util');
+const { currencyOptions } = require('../../src/config/currency');
 const razorpay = require('../../src/services/razorpay');
 const botGuard = require('../../src/services/botGuard');
 const { labelsFor, lostReasonsFor } = require('../../src/config/verticals');
 
 /** Outcome, stage and settings names for the business type (real estate says "Booked", not "Joined"). */
-function namesFor(type) {
-  const l = labelsFor(type);
+function namesFor(type, currency = 'INR') {
+  const l = labelsFor(type, currency);
   const pick = base => Object.fromEntries(Object.entries(base).map(([k, v]) => [k, l[k] || v]));
   return { OUTCOMES: pick(OUTCOMES), STAGES: pick(STAGES), LABELS: l, LOST_REASONS: lostReasonsFor(type) };
 }
@@ -137,10 +138,15 @@ function createCrmApp({
     req.sessionToken = token;
     req.user = session ? session.user : null;
     req.csrfToken = session ? session.csrfToken : null;
+    // R15: the business's currency. Every amount on the page goes through money(); Razorpay
+    // links are INR-only, so they're off for other currencies.
+    const CURRENCY = util.currencyCode(gymConfig ? gymConfig.profile.currency : 'INR');
     Object.assign(res.locals, {
       MIN_AGE_HOURS,
-      user: req.user, csrfToken: req.csrfToken, can, util, LEAD_STATUSES, ROLE_LABELS, ROLES, LOST_REASONS, PLAN_OPTIONS: planOptions(), PAYMENTS_ON: razorpay.enabled(),
-      ...namesFor(gymConfig ? gymConfig.profile.type : 'gym'),
+      user: req.user, csrfToken: req.csrfToken, can, util, LEAD_STATUSES, ROLE_LABELS, ROLES, LOST_REASONS, PLAN_OPTIONS: planOptions(),
+      PAYMENTS_ON: razorpay.enabled() && CURRENCY === 'INR',
+      CURRENCY, CURRENCY_SHORT: util.CURRENCIES[CURRENCY].prefix.trim(), money: v => util.money(v, CURRENCY),
+      ...namesFor(gymConfig ? gymConfig.profile.type : 'gym', CURRENCY),
       path: req.path, query: req.query, flash: req.query.ok || null, error: req.query.err || null,
       // The shared CRM always looks like Dartit, with this business's name (src/routes/sharedCrm.js).
       brand: req.sharedCrm ? forPlatform(await branding.get()) : await branding.get()
@@ -427,7 +433,7 @@ function createCrmApp({
     const L = res.locals.OUTCOMES;
     const AD_KIND_LABEL = { missing: 'Ad (id missing)', none: 'Not from an ad' };
     const cols = [['ad_id', 'adId'], ['platform', 'platform'], ['headline', 'headline'], ['campaign', 'campaignName'], ['leads', 'leads'],
-      ['qualified', 'qualified'], [L.visit_booked, 'visitBooked'], [L.visited, 'visited'], [L.joined, 'won'], ['revenue', 'revenueInr'],
+      ['qualified', 'qualified'], [L.visit_booked, 'visitBooked'], [L.visited, 'visited'], [L.joined, 'won'], [res.locals.CURRENCY === 'INR' ? 'revenue' : `revenue_${res.locals.CURRENCY.toLowerCase()}`, 'revenueInr'], // INR keeps its old column name
       ['win_rate_pct', 'winRate'], ['median_minutes_to_contact', 'medianMinutes'], ['grade', 'grade'], ['spend', 'spend'],
       ['cost_per_sale', 'costPerSale'], ['roas', 'roas']];
     const lines = [cols.map(([h]) => csvCell(h)).join(','),
@@ -448,6 +454,11 @@ function createCrmApp({
   // ---- users (owner only) ----
   const usersPage = async (res, extra = {}) => res.render('users', { list: await users.list(), managers: await users.managers(), form: {}, ...extra });
   // ---- business settings (owner only, K10) ----
+  // R15: stored amounts that a currency change would re-label: recorded sales and payment links.
+  // One query for the Business settings warning and the confirm check, so they can't drift apart.
+  const storedAmounts = async () => (await db.one(`SELECT
+      (SELECT COUNT(*) FROM crm_lead_outcomes WHERE outcome = 'joined' AND amount_inr IS NOT NULL)::int AS sales,
+      (SELECT COUNT(*) FROM crm_payment_links)::int AS links`));
   const settingsPage = async (res, extra = {}) => {
     const { VERTICALS } = require('../../src/config/verticals');
     res.render('settings', {
@@ -455,7 +466,11 @@ function createCrmApp({
       prompt: gymConfig.getSystemPrompt(), limits: businessProfile.LIMITS, brandForm: null,
       queueSettings: await queue.settings(), TIMEZONES, queueBotWired: LeadQueue.botWired,
       ownBrand: await branding.get(), // the Brand form edits the client's own brand, also on the shared CRM
-      zoho: await zoho.summary(), usage: leadUsage ? await leadUsage.usage().catch(() => null) : null, ...extra
+      zoho: await zoho.summary(), usage: leadUsage ? await leadUsage.usage().catch(() => null) : null,
+      // R15: the currency select, and the warning when sales already have amounts.
+      currencyOptions: currencyOptions(),
+      amounts: await storedAmounts(),
+      ...extra
     });
   };
   app.get('/settings', allow(can.manageBusiness), h(async (req, res) => {
@@ -464,14 +479,26 @@ function createCrmApp({
   }));
   app.post('/settings', allow(can.manageBusiness), h(async (req, res) => {
     const submitted = profileFromForm(req.body);
+    const formAgain = message => {
+      res.status(400);
+      return settingsPage(res, { error: message, profile: { ...gymConfig.profile, ...submitted, fallback: submitted.fallback } });
+    };
+    // R15: a new currency re-labels every stored amount (they are not converted), so once sales
+    // exist the owner must tick "I understand" before it changes.
+    const fromCurrency = util.currencyCode(gymConfig.profile.currency);
+    const toCurrency = util.currencyCode(submitted.currency);
+    if (fromCurrency !== toCurrency && req.body.currency_confirm !== '1') {
+      const { sales, links } = await storedAmounts();
+      if (sales || links) return formAgain(`Tick the box under Currency to change it from ${fromCurrency} to ${toCurrency}. Amounts already recorded keep their numbers in the new currency.`);
+    }
     try {
       await businessProfile.save(submitted, req.user.email);
     } catch (err) {
       if (!(err instanceof businessProfile.ProfileError)) throw err;
-      res.status(400);
-      return settingsPage(res, { error: err.message, profile: { ...gymConfig.profile, ...submitted, fallback: submitted.fallback } });
+      return formAgain(err.message);
     }
     await crm.log(req.user, null, 'business_profile_updated');
+    if (fromCurrency !== toCurrency) await crm.log(req.user, null, 'currency_changed', { from: fromCurrency, to: toCurrency });
     res.redirect(withOk('/settings', 'Saved. The WhatsApp assistant uses the new details from its next reply.'));
   }));
 

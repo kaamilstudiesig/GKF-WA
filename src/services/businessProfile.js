@@ -1,6 +1,7 @@
 const db = require('../db');
 const gymConfig = require('../config/gymConfig');
 const { VERTICALS } = require('../config/verticals');
+const { currencyCode } = require('../config/currency');
 const logger = require('../utils/logger');
 const tenancy = require('../tenancy/context');
 const registry = require('../tenancy/registry');
@@ -25,6 +26,8 @@ function normalize(input = {}) {
   const p = {
     name: str(input.name, 80),
     type: VERTICALS[input.type] ? input.type : 'gym',
+    // R15: amounts (sales, reports) are in this currency. Unknown or missing codes are INR.
+    currency: currencyCode(input.currency),
     // K33: clinics, pharmacies, physiotherapy, wellness. Health questions go to staff, never the AI.
     healthRelated: input.healthRelated === true || ['on', '1', 'true'].includes(String(input.healthRelated)),
     area: str(input.area, 120),

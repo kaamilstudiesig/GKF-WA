@@ -173,7 +173,7 @@
       <ul class="mb-4 space-y-2">
         <% for (const o of outcomes.slice(0, 10)) { %>
         <li class="rounded-field bg-base-200 px-3 py-2 text-sm"><strong><%= OUTCOMES[o.outcome] %></strong>
-          <% if (o.outcome === 'joined') { %> · <%= o.plan %> · ₹<%= Number(o.amount_inr).toLocaleString('en-IN') %><% } %>
+          <% if (o.outcome === 'joined') { %> · <%= o.plan %> · <%= money(o.amount_inr) %><% } %>
           <% if (o.outcome === 'visit_booked' && o.visit_at) { %> · for <%= util.fmtDate(o.visit_at) %><% } %>
           <% if (o.outcome === 'lost') { %> · <%= LOST_REASONS[o.lost_reason] || o.lost_reason %><% } %>
           <div class="text-xs text-base-content/50"><%= o.user_name || 'Former staff' %> · <%= util.fmtDate(o.created_at) %><% if (o.note) { %> · <%= o.note %><% } %></div></li>
@@ -227,7 +227,7 @@
           <fieldset class="fieldset py-0"><legend class="fieldset-legend">Plan</legend>
             <input id="plan" name="plan" list="plan-options" maxlength="100" required placeholder="<%= LABELS.planName %>" class="input w-full">
             <datalist id="plan-options"><% for (const p of PLAN_OPTIONS) { %><option value="<%= p %>"><% } %></datalist></fieldset>
-          <fieldset class="fieldset py-0"><legend class="fieldset-legend">Amount paid (₹)</legend><input id="amount" name="amount" inputmode="numeric" pattern="[0-9,₹ ]+" required placeholder="7080" class="input w-full"></fieldset>
+          <fieldset class="fieldset py-0"><legend class="fieldset-legend">Amount paid (<%= CURRENCY_SHORT %>)</legend><input id="amount" name="amount" inputmode="numeric" autocomplete="off" required placeholder="7080" class="input w-full"></fieldset>
           <button class="btn btn-primary w-full" type="submit">Save <%= OUTCOMES.joined.toLowerCase() %></button>
         </form>
       </details>

@@ -49,7 +49,7 @@ For portfolio demos, fill one client with a month of realistic real estate activ
 npm run demo -- --tenant <slug> --preset realestate --region ae
 ```
 
-- `--region ae` (Dubai: AED prices, English, Arabic and Hinglish chats, +971 50 000 xxxx numbers) or `in` (Bengaluru: ₹, English and Hinglish, +91 98000 xxxxx). Default `ae`.
+- `--region ae` (Dubai: AED prices, English, Arabic and Hinglish chats, +971 50 000 xxxx numbers) or `in` (Bengaluru: ₹, English and Hinglish, +91 98000 xxxxx). Default `ae`. When it writes the profile, the region also sets the business's currency (AED or INR, R15).
 - Creates about 60 leads over 30 days (ads and direct WhatsApp; new, qualified, waiting for a person, contacted, no answer, site visit booked, visited, no-show, booked with amount, lost with reason), chats, hand-offs, assignments, follow-ups, AI usage, and a team (1 manager, 4 sales at `@demo-<slug>.test`). The team's one-time passwords are printed once.
 - Writes the business profile (3 projects, unit types with prices, policies) while the profile is still the blank starter, or always with `--profile`. The business name is kept.
 - **Safe to run twice:** the same data each time (seeded by the slug), existing leads and staff are skipped. `--reset` deletes only rows marked `metadata.demo` and recreates them with fresh dates (run it before a demo so nothing looks a week old). The team and any real leads stay.

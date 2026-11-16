@@ -11,6 +11,7 @@ const tenancy = require('../tenancy/context');
 const DEFAULT_PROFILE = {
   name: 'Goldkraft Fitness',
   type: 'gym',
+  currency: 'INR', // R15: the business's currency (src/config/currency.js)
   area: 'J.P. Nagar, South Bengaluru',
   address: 'ITI Layout, 1st Phase, J.P. Nagar, Bengaluru, Karnataka 560078',
   parking: 'Parking available for bikes and cars',

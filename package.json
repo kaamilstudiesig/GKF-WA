@@ -19,6 +19,7 @@
     "demo": "node scripts/demo.js",
     "delete-lead": "node scripts/delete-lead.js",
     "service-levels": "node scripts/service-levels.js",
+    "usage": "node scripts/usage.js",
     "build:css": "tailwindcss -i crm/styles/app.css -o crm/public/css/app.css --minify",
     "predev": "npm run build:css",
     "heroku-postbuild": "npm run build:css"

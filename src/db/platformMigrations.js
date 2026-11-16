@@ -259,6 +259,35 @@ const PLATFORM_MIGRATIONS = [
     up: ['ALTER TABLE leads ADD COLUMN opted_out_at TIMESTAMPTZ']
   },
   {
+    // K26 lead usage meter (src/services/leadUsage.js). One row per person per calendar month
+    // (the client's time zone): the billing count. person_key is a keyed hash of the phone or
+    // Meta user id, never the number itself, so rows can outlive a deleted lead without holding
+    // personal data, and a deletion request never changes an invoice. Id 9: 7 and 8 are taken by
+    // open PRs (R16, R17); the runner applies every missing id, in any order.
+    id: 9,
+    name: 'lead_usage',
+    up: [
+      `CREATE TABLE lead_usage (
+        tenant_id INTEGER NOT NULL DEFAULT ${TENANT_DEFAULT} REFERENCES tenants (id),
+        month TEXT NOT NULL CHECK (month ~ '^[0-9]{4}-[0-9]{2}$'),
+        person_key TEXT NOT NULL,
+        channel TEXT NOT NULL,
+        first_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+        PRIMARY KEY (tenant_id, month, person_key)
+      )`,
+      // The 80% and 100% alerts, once each per client per month.
+      `CREATE TABLE lead_usage_alerts (
+        tenant_id INTEGER NOT NULL DEFAULT ${TENANT_DEFAULT} REFERENCES tenants (id),
+        month TEXT NOT NULL,
+        level INTEGER NOT NULL CHECK (level IN (80, 100)),
+        sent_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+        PRIMARY KEY (tenant_id, month, level)
+      )`,
+      ...tenancyPolicy('lead_usage'),
+      ...tenancyPolicy('lead_usage_alerts')
+    ]
+  },
+  {
     // K27 reply time per automatic reply (src/services/replyTimes.js): from when we received the
     // lead's message to dispatch. Kept 13 months for the Annexure B figures. Id 10: 7 and 8 are
     // taken by open PRs (R16, R17) and 9 by K26; the runner applies every missing id.
@@ -282,6 +311,6 @@ const PLATFORM_MIGRATIONS = [
 ];
 
 // Every table with client data, including ones added after migration 1 (tests and tools use this).
-const ALL_TENANT_TABLES = [...TENANT_TABLES, 'zoho_links', 'zoho_cursors', 'crm_settings', 'reply_times'];
+const ALL_TENANT_TABLES = [...TENANT_TABLES, 'zoho_links', 'zoho_cursors', 'crm_settings', 'lead_usage', 'lead_usage_alerts', 'reply_times'];
 
 module.exports = { PLATFORM_MIGRATIONS, TENANT_TABLES, ALL_TENANT_TABLES, tenancyPolicy, TENANT_DEFAULT };

@@ -19,6 +19,8 @@
         <%- include('partials/status', { status: lead.status }) %>
         <% if (lead.needs_human) { %><span class="badge badge-primary badge-sm">Needs human · <%= util.humanize(lead.handoff_reason) %></span><% } %>
         <span class="badge badge-sm <%= lead.window_open ? 'badge-success badge-soft' : 'badge-ghost' %>"><%= lead.window_open ? 'Reply window open' : 'Reply window closed' %></span>
+        <%# K30: wrote STOP. Templates (welcome, reminders) are refused until they write again. %>
+        <% if (lead.opted_out_at) { %><span class="badge badge-error badge-soft badge-sm" title="Wrote STOP on <%= util.fmtDate(lead.opted_out_at) %>. No template messages until they write again.">Opted out</span><% } %>
       </div>
     </div>
   </div>

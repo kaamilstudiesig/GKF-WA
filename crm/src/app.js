@@ -37,10 +37,17 @@ const { LEAD_STATUSES, ROLE_LABELS, ROLES, OUTCOMES, LOST_REASONS, STAGES } = re
 // The bot's business profile (K10): plan names for "Joined", and the Business settings page.
 let gymConfig = null;
 let businessProfile = null;
+let leadUsage = null;
 try {
   gymConfig = require('../../src/config/gymConfig');
   businessProfile = require('../../src/services/businessProfile');
+  leadUsage = require('../../src/services/leadUsage'); // K26
 } catch (e) { /* standalone CRM without the bot */ }
+// K26: this month's lead count for owners and managers, or null (sales, no bot, or the meter failed).
+const usageFor = async user => {
+  if (!leadUsage || user.role === 'sales') return null;
+  try { return await leadUsage.usage(); } catch (e) { return null; }
+};
 // K27: this month's reply time for the owner's line in Reports (optional: needs the bot).
 let replyTimes = null;
 try { replyTimes = require('../../src/services/replyTimes'); } catch (e) { /* standalone CRM */ }
@@ -287,7 +294,7 @@ function createCrmApp({
   app.get('/', h(async (req, res) => {
     const d = await crm.dashboard(req.user);
     await withClock([...d.attention, ...d.recent]);
-    res.render('dashboard', { d });
+    res.render('dashboard', { d, usage: await usageFor(req.user) });
   }));
 
   // ---- leads ----
@@ -450,7 +457,7 @@ function createCrmApp({
       profile: gymConfig.profile, meta: await businessProfile.meta(), verticals: VERTICALS,
       prompt: gymConfig.getSystemPrompt(), limits: businessProfile.LIMITS, brandForm: null,
       queueSettings: await queue.settings(), TIMEZONES, queueBotWired: LeadQueue.botWired,
-      zoho: await zoho.summary(), ...extra
+      zoho: await zoho.summary(), usage: leadUsage ? await leadUsage.usage().catch(() => null) : null, ...extra
     });
   };
   app.get('/settings', allow(can.manageBusiness), h(async (req, res) => {

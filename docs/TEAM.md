@@ -58,6 +58,15 @@ A possible large client wants the chatbot soon. Until this stage is done, it com
 
 Status: K14–K17 are built and K18 is written (PR `k14-k18-new-client`). R12 is built (PR `r12-white-label`): name from the business profile, logo letters, colour and logo image on Business settings → Brand. GKF names stay only in the default profile (seed data) and the GKF CRM host default. Order: K14 + R12 first (no GKF name in front of the new client), then K15, K16, R13, R2, then K17/K18 in parallel. Ask the client early: business type, number of staff, existing WhatsApp number or new one, who owns their Meta Business Manager.
 
+### MVP focus (from 16 Nov, decided with Kaamil)
+
+The Dubai client is lost and the 3 portfolio demos (Empire Estates was one of them) are parked. The order below from 7 Nov stays for reference, but the work now is the **MVP**: what the client agreement promises before the first paying client signs.
+
+- **Kaamil builds the rest of the MVP end to end, `crm/` screens included**, so Krishna gets no new MVP work: K26 lead usage meter with its two screens (PR `k26-lead-usage`), the K30 "Opted out" badge on the lead page (today it only exists in the parked R16 branch), K27 uptime and reply time, then R2 backup storage settings and the restore drill (K28).
+- **Krishna:** R19 data export (PR #62) is ready to merge. K25 phone sign-in confirmed in person (16 Nov).
+- **Parked, PRs left open:** R15 currency (#59), R16 lead intake (#63), R17 projects (#65). Review notes for R16 and R17 are on the PRs. R18 value page, R8 wizard, K24 catalog, K5, K21, K7b wait too.
+- **Ops (Kaamil, no code):** 2FA on Heroku, GitHub, Meta, OpenRouter and Zoho; a support email and a WhatsApp support number; an uptime monitor account (K27).
+
 ### Now: order of work (from 7 Nov)
 
 **Decided with Kaamil on 7 Nov**
@@ -83,7 +92,7 @@ Status: K14–K17 are built and K18 is written (PR `k14-k18-new-client`). R12 is
 7. **R18 value page per client** (Turiya): one shareable screen for the owner or agency: leads, speed to lead, logging rate, sales, revenue, cost per customer, plus "what the system did" (replies sent, leads qualified, hand-offs timed, sales sent to Meta). Demo data until real numbers exist.
 8. **R8 onboarding wizard** (Turiya: easy onboarding): profile, business-type preset, brand, team (R13), test chat, checklist. Pairs with Kaamil's K9.
 
-Small extras when Kaamil's side is ready: the two K26 screens (lead count on Business settings and the dashboard) and K30's "Opted out" badge. Also confirm K25 (phone sign-in, PR #55), which changed files in `crm/`; see the note under Kaamil's list.
+Small extras: superseded by the MVP focus above (Kaamil builds the K26 screens and the K30 badge; K25 confirmed 16 Nov).
 
 ✅ **R6 revenue per ad** (built, PR #53): `Analytics.byAd` and **Reports → By ad** + CSV, with a lead-quality grade per ad. **For K5 (Kaamil):** fill `Analytics.adSpend(range)` (a `Map` of ad id to `{ spend, campaignId, campaignName }`) from your spend table; cost per sale, ROAS, campaign and the **By campaign** roll-up then show with no other change. Click-to-WhatsApp referrals carry the ad id, not the campaign, so campaigns come from K5.
 
@@ -93,17 +102,24 @@ The client agreement ([CLIENT_AGREEMENT.md](CLIENT_AGREEMENT.md), templates in `
 
 | # | Task | Owner | Done when |
 | --- | --- | --- | --- |
-| K26 | **Lead usage meter.** Count each person once per calendar month across channels (first inbound or intake that month, per tenant). Show "Leads this month: 412 of 500" on Business settings and the dashboard; WhatsApp/Telegram alert to owners at 80% and 100%, once each per month; `npm run usage -- --month 2026-11` prints every client's count for invoicing. No billing | Kaamil (bot side and script), Krishna (the two screens, small contract in the PR) | The count matches a hand count on GKF for one month, and the alert fires once |
+| K26 | ✅ built (PR `k26-lead-usage`): meter, alerts, script and the two screens. **Lead usage meter.** Count each person once per calendar month across channels (first inbound or intake that month, per tenant). Show "Leads this month: 412 of 500" on Business settings and the dashboard; WhatsApp/Telegram alert to owners at 80% and 100%, once each per month; `npm run usage -- --month 2026-11` prints every client's count for invoicing. No billing | Kaamil (bot side and script), Krishna (the two screens, small contract in the PR) | The count matches a hand count on GKF for one month, and the alert fires once |
 | K27 | ✅ reply time built (PR `k27-reply-time`); the uptime monitor account is Kaamil's ops step (OPERATIONS.md). **Uptime and reply time.** An external uptime monitor on `/health/ready` every minute (free tier, alerts to the ops group). Store the reply time per message (last inbound in a burst → reply sent) and show the monthly p95 and availability on an owner-only ops line in Reports | Kaamil | A month of numbers we can quote under Annexure B |
 | K28 | ✅ built (PR `k28-encrypted-backups`; R2 settings and the restore drill still to do). **Encrypted backups.** The off-site daily backup is encrypted (AES-256-GCM, key in a config var) and stored in private object storage, not posted to Telegram. `npm run restore` decrypts. (The Heroku daily backup can't be kept: pg_dump fails under forced row-level security; see OPERATIONS.md step 9.) Do one restore drill and note the date in OPERATIONS.md | Kaamil | No plain lead data leaves Heroku; a restore from the encrypted copy works |
 | K29 | ✅ built (PR `k29-no-ai-training`; routing checked 15 Nov 2026: DeepSeek via InferenceNet, Gemini via Google). **No storage or training by AI providers.** Send OpenRouter's provider preferences on every call (`provider: { data_collection: 'deny' }`, zero data retention where offered), confirm both models still route, and list every provider (Heroku, OpenRouter, Telegram, Sentry, backup storage) on the public privacy page. Test with the fake transport only; one paid check call needs Kaamil's OK | Kaamil | Annexure C can say "Yes" in the no-training column |
-| K30 | ✅ bot side built (PR `k30-opt-out`; CRM badge is Krishna's: show "Opted out" when `leads.opted_out_at` is set); a bare "ok"/"thanks"/👍 after STOP keeps the opt-out with no reply, START or a real message clears it; typed text only, never button titles; staff alerts are exempt). **Opt-out.** STOP, UNSUBSCRIBE or "don't message me" (any language the bot supports) marks the lead opted out (`leads.opted_out_at`, platform migration). Template sends to that lead are refused (not the 24-hour replies the lead starts); START or a new message from them turns it off. The CRM lead page shows "Opted out". Needed before R16 sends welcome templates | Kaamil (bot), Krishna (the badge) | A STOP lead gets no template, and the CRM shows it |
+| K30 | ✅ built (PR `k30-opt-out`; the lead page's "Opted out" badge, PR `k30-opted-out-badge`); a bare "ok"/"thanks"/👍 after STOP keeps the opt-out with no reply, START or a real message clears it; typed text only, never button titles; staff alerts are exempt). **Opt-out.** STOP, UNSUBSCRIBE or "don't message me" (any language the bot supports) marks the lead opted out (`leads.opted_out_at`, platform migration). Template sends to that lead are refused (not the 24-hour replies the lead starts); START or a new message from them turns it off. The CRM lead page shows "Opted out". Needed before R16 sends welcome templates | Kaamil (bot), Krishna (the badge) | A STOP lead gets no template, and the CRM shows it |
 | R19 | **Full data export.** Owners download a ZIP from Business settings: leads, messages, outcomes, notes, assignments and hand-offs as CSV (one file each), for the whole client. Owner only, logged in the activity log. Also what we hand over at exit (clause 12.5) | Krishna | An owner gets every conversation without asking us |
 | K33 | **Health-related businesses.** A business profile setting `healthRelated`. When on: the bot answers only admin questions (services, prices, timings, location, appointments), sends symptoms and medical questions to staff, never gives advice, and Conversions API events carry no health detail. Generic, works for any business type | Kaamil | Only needed before signing a clinic; tests with a sample clinic profile |
 
 Ops, no code (Kaamil): turn on 2FA on Heroku, GitHub, Meta Business, OpenRouter, Zoho and Google admin accounts; set up a support email and a WhatsApp support number for Annexure B; move hosting off student credits (and choose the region) before the first invoice; fill Annexure C with what's true on the day.
 
 Later, listed with a Feature Date until built: **K31 automatic deletion** (delete or anonymise leads with no activity for the client's retention period, default 24 months; before 13 May 2027 for DPDP) and **K32 Instagram DM capture** (an Instagram DM or comment reply gets one automatic answer that moves the lead to WhatsApp, after the Dubai client; needs `instagram_manage_messages` in App Review).
+
+**Contract: K26 lead count (Kaamil built the meter and the two screens, `crm/views/partials/lead-usage.ejs`)**
+
+- Read it with `require('../../src/services/leadUsage').usage()` inside the client's request (tenant context). It returns `{ month: '2026-11', count: 412, limit: 500, percent: 82 }`; `limit` and `percent` are `null` when no limit is set.
+- Business settings (owner only) and the dashboard (owners and managers): "Leads this month: 412 of 500", or "Leads this month: 412" with no limit. Amber from 80%, red from 100%. No other numbers about billing.
+- A lead is a person counted once per calendar month in the client's time zone (Lead queue settings), across channels. Never count from `leads` yourself: deleted leads still count, and the meter is the agreed source (clause 1 "Lead").
+- The limit comes from the plan, set by us with `npm run tenant -- set <slug> file.json` and `{ "settings": { "leadMonthlyLimit": 500 } }`. No screen edits it.
 
 **Contract: R2 hot-lead queue (Krishna builds the CRM side, Kaamil wires it into the bot as K19)**
 
@@ -310,7 +326,7 @@ Build order once agreed (after R15): tables and Projects page, then Send project
 
 **Contract: K9 ↔ R8 (Krishna's wizard).** The CRM gets an owner-only "Connect WhatsApp" button that opens `embeddedSignup.linkUrl(tenantId, { hours: 1 })` (bot host; the popup only works on that allow-listed domain). Show it only when `embeddedSignup.blockedReason(tenant)` is null. Read the result from `tenant.whatsapp.setup` (`mode`, `number`, `steps`, `lastError`); never touch tokens.
 
-**K25 phone sign-in (GKF handover, 12 Nov, PR #55, Kaamil, touches `crm/`):** staff sign in with phone or email. Changes in Krishna's area: login view, Staff page (sign-in phone per person and on Add staff), `Users.findByLogin` / `setLoginPhone` / `throttleKey`, platform migration 5 `login_phone`. Krishna to confirm. Bulk add (R13) does not take a sign-in phone yet.
+**K25 phone sign-in (GKF handover, 12 Nov, PR #55, Kaamil, touches `crm/`):** staff sign in with phone or email. Changes in Krishna's area: login view, Staff page (sign-in phone per person and on Add staff), `Users.findByLogin` / `setLoginPhone` / `throttleKey`, platform migration 5 `login_phone`. ✅ Krishna confirmed (in person, 16 Nov). Bulk add (R13) does not take a sign-in phone yet.
 
 **Needs credentials (do later, from a machine with `.env` or Heroku access).** Nothing here can run in a cloud session without them:
 

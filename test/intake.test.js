@@ -52,6 +52,14 @@ test('phone numbers: international kept, local numbers get the client\'s country
   assert.strictEqual(normalizePhone('098450 12345', '91'), '919845012345');
   assert.strictEqual(normalizePhone('+971 50 123 4567', '91'), DUBAI); // a + number keeps its own code
   assert.strictEqual(normalizePhone('12345', '91'), null);
+  // Indian mobiles can start with 91: decided by length, never by prefix (#63 review).
+  assert.strictEqual(normalizePhone('91234 56789', '91'), '919123456789');
+  assert.strictEqual(normalizePhone('9123456789', '91'), '919123456789');
+  assert.strictEqual(normalizePhone('09123456789', '91'), '919123456789');
+  assert.strictEqual(normalizePhone('919845012345', '91'), '919845012345');
+  assert.strictEqual(normalizePhone('501234567', '971'), DUBAI);
+  assert.strictEqual(normalizePhone('04 123 4567', '971'), '97141234567'); // UAE landline, 8 digits
+  assert.strictEqual(normalizePhone('98450 1234', '91'), null); // 9 digits: not an Indian number
 });
 
 test('signed portal lead: new lead, window closed, note, hand-off, welcome template queued once', async () => {
@@ -288,4 +296,14 @@ test('review fixes (3): refused posts don\'t use up a website\'s form limit; his
   const removed = await tenancy.runAsSystem(() => require('../src/services/leadIntake').cleanup(90));
   assert.strictEqual(removed, 1);
   assert.strictEqual((await many("SELECT id FROM intake_submissions WHERE source = 'dubizzle'")).length, 0);
+});
+
+test('a form or portal lead counts once in the monthly lead meter (K26), together with WhatsApp', async () => {
+  const leadUsage = require('../src/services/leadUsage');
+  const ctx = require('../src/tenancy/context');
+  await ctx.runAsSystem(() => db.query('DELETE FROM lead_usage'));
+  assert.strictEqual((await api({ name: 'Meter One', phone: '050 765 4321', source: 'bayut', sourceRef: 'BY-M1' })).status, 202);
+  assert.strictEqual((await api({ name: 'Meter One', phone: '050 765 4321', source: 'bayut', sourceRef: 'BY-M2' })).status, 202);
+  const u = await ctx.run(acme.id, () => leadUsage.usage());
+  assert.strictEqual(u.count, 1);
 });

@@ -160,6 +160,8 @@ async function handle({ input, cfg, businessName, channel }) {
       WHERE wa_id = $1 RETURNING *`, [lead.wa_id, JSON.stringify(entry), input.name || null, HISTORY_KEEP]);
   }
   const waId = lead.wa_id;
+  // K26: a form or portal lead counts towards this month's leads (once per person, across channels).
+  await require('./leadUsage').record(lead, { channel: channel === 'form' ? 'form' : `portal_${input.source}` });
 
   if (input.message) {
     // Skipped when the same note is already there (a portal retrying after a save that failed half-way).

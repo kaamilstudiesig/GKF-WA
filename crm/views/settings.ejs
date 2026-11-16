@@ -13,6 +13,8 @@
   </div>
 </div>
 
+<div class="mb-4" id="usage"><%- include('partials/lead-usage', { usage: typeof usage !== 'undefined' ? usage : null, detail: true }) %></div>
+
 <%
   const bf = brandForm || { mark: brand.markIsDefault ? '' : brand.mark, color: brand.color };
 %>

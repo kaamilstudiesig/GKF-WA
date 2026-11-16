@@ -33,7 +33,9 @@ const SETTING_KEYS = ['crmBaseUrl', 'telegramChatId', 'telegramOpsChatId', 'meta
   // R14: a demo client (portfolio). Only demo clients can be filled with sample data in production.
   'demo',
   // K9: how the WhatsApp number was connected and which setup steps are done (src/services/embeddedSignup.js).
-  'whatsappSetup'];
+  'whatsappSetup',
+  // K26: leads included per month in the client's plan (Schedule A). Empty = count only, no alerts.
+  'leadMonthlyLimit'];
 
 // Our lead status -> Zoho's standard Lead Status values. A client can override any of them (zohoStatusMap).
 const ZOHO_STATUS_MAP = {
@@ -113,6 +115,8 @@ function resolve(entry) {
       aiMonthlyRequestBudget: limit(s.aiMonthlyRequestBudget, env.aiMonthlyRequestBudget)
     },
     staffAlertTemplate: s.staffAlertTemplate || env.staffAlertTemplate,
+    // K26: no default on purpose; it comes from the client's plan.
+    leadMonthlyLimit: Number.isInteger(Number(s.leadMonthlyLimit)) && Number(s.leadMonthlyLimit) > 0 && !blank(s.leadMonthlyLimit) ? Number(s.leadMonthlyLimit) : null,
     zoho: {
       on: s.zohoSync === 'on' && Boolean(sec.zohoClientId && sec.zohoClientSecret && sec.zohoRefreshToken),
       accountsUrl: String(s.zohoAccountsUrl || 'https://accounts.zoho.com').replace(/\/+$/, ''),

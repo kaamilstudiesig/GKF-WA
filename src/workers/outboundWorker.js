@@ -1,4 +1,5 @@
 const QueueWorker = require('./queueWorker');
+const replyTimes = require('../services/replyTimes');
 const outboundRepository = require('../db/outboundRepository');
 const whatsappService = require('../services/whatsappService');
 const opsAlerts = require('../services/opsAlerts');
@@ -38,6 +39,7 @@ async function sendOne(job) {
         buttons: job.metadata?.buttons, location: job.metadata?.location
       });
     await outboundRepository.markSent(job.id, providerId);
+    await replyTimes.record(job); // K27: reply time for automatic replies (never throws)
   } catch (err) {
     if (err.optedOut) { // K30: expected, not an error: never retry, never page anyone
       logger.info('Template not sent: lead opted out', { id: job.id });
@@ -48,7 +50,9 @@ async function sendOne(job) {
     const detail = err.response?.data ? JSON.stringify(err.response.data) : err.message;
     captureException(err, { component: 'outbound_worker', jobId: job.id, retryable });
     logger.error('WhatsApp send failed', { id: job.id, retryable, error: detail });
-    await outboundRepository.markFailed(job.id, detail, retryable);
+    const final = await outboundRepository.markFailed(job.id, detail, retryable);
+    // K27: a reply that never went out counts as a miss, so failures can't flatter the figure.
+    if (final) await replyTimes.record(job, new Date(), { outcome: 'failed' });
     opsAlerts.sendFailed(err); // pages us when it's an account problem (token, payment, ban)
   }
 }

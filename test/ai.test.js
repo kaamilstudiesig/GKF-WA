@@ -173,3 +173,65 @@ describe('one-call JSON replies', () => {
     assert.strictEqual(aiService.sanitizeReply('Line one\n\nLine two'), 'Line one\n\nLine two');
   });
 });
+
+describe('K29: AI providers may not store or train on the conversation', () => {
+  const savedZdr = env.openRouterZdr;
+  const { AIService } = aiService;
+  const policy404 = { error: 'No endpoints found matching your data policy', status: 404 };
+  afterEach(() => { env.openRouterZdr = savedZdr; AIService.policyMisses.clear(); });
+
+  test('every call, including the follow-up, asks for no data collection and zero retention', async () => {
+    env.openRouterZdr = true;
+    const calls = script(
+      { message: { content: '', tool_calls: [toolCall('notify_staff', { handoff_reason: 'ready_to_book', summary: 'Sat 7am' })] } },
+      { message: { content: 'A coach will call you.' } }
+    );
+    await aiService.reply(await newLead(), 'book me in');
+    assert.strictEqual(calls.length, 2);
+    for (const c of calls) assert.deepStrictEqual(c.provider, { data_collection: 'deny', zdr: true });
+  });
+
+  test('OPENROUTER_ZDR=false still denies data collection', async () => {
+    env.openRouterZdr = false;
+    const calls = script({ message: { content: 'Hi!' } });
+    await aiService.reply(await newLead(), 'hi');
+    assert.deepStrictEqual(calls[0].provider, { data_collection: 'deny' });
+  });
+
+  test('no provider meeting the policy (404) on the main model tries the fallback model', async () => {
+    env.openRouterModel = 'primary/model';
+    env.openRouterFallbackModel = 'backup/model';
+    const calls = script(policy404, { message: { content: 'Hi there!' } }, { message: { content: 'Hello again!' } });
+    const out = await aiService.reply(await newLead(), 'hi');
+    assert.strictEqual(calls.length, 2);
+    assert.strictEqual(calls[1].model, 'backup/model');
+    assert.strictEqual(out.replyText, 'Hi there!');
+    // The next reply skips the main model for a while: no wasted 404 call.
+    await aiService.reply(await newLead('919833333302'), 'hi');
+    assert.strictEqual(calls.length, 3);
+    assert.strictEqual(calls[2].model, 'backup/model');
+  });
+
+  test('a 404 for a wrong model id is not a policy miss: no fallback, hand-off', async () => {
+    env.openRouterModel = 'primary/model';
+    env.openRouterFallbackModel = 'backup/model';
+    const calls = script({ error: 'Model primary/model does not exist', status: 404 });
+    const lead = await newLead();
+    await aiService.reply(lead, 'hi');
+    assert.strictEqual(calls.length, 1);
+    assert.strictEqual((await leadRepository.findByWaId(lead.wa_id)).handoff_reason, 'ai_service_unavailable');
+  });
+
+  test('no compliant provider for either model hands off to staff', async () => {
+    env.openRouterModel = 'primary/model';
+    env.openRouterFallbackModel = 'backup/model';
+    const calls = script(policy404, policy404);
+    const lead = await newLead();
+    const out = await aiService.reply(lead, 'hi');
+    assert.strictEqual(calls.length, 2);
+    assert.match(out.replyText, /get back to you shortly/);
+    const l = await leadRepository.findByWaId(lead.wa_id);
+    assert.strictEqual(l.needs_human, true);
+    assert.strictEqual(l.handoff_reason, 'ai_service_unavailable');
+  });
+});

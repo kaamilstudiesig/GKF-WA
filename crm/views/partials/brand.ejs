@@ -1,4 +1,12 @@
+<% if (brand.platform) { %>
+<%# Shared CRM: the full Dartit logo (at least 120 px wide), then the signed-in business's name. %>
+<a href="/" class="flex min-w-0 flex-col gap-1" aria-label="Dartit">
+  <picture class="block w-32"><source srcset="/static/brand/dartit/dartit-logo-dark-transparent.svg" media="(prefers-color-scheme: dark)"><img src="/static/brand/dartit/dartit-logo-light-transparent.svg" alt="Dartit" class="w-32"></picture>
+  <% if (brand.business) { %><span class="block truncate text-xs font-semibold text-base-content/70"><%= brand.business %></span><% } %>
+</a>
+<% } else { %>
 <a href="/" class="flex min-w-0 items-center gap-2.5">
   <%- include('logo-mark', { size: 'size-9' }) %>
   <span class="min-w-0 leading-tight"><span class="block truncate font-display text-xl tracking-wide"><%= brand.first %><% if (brand.last) { %> <span class="text-primary"><%= brand.last %></span><% } %></span><span class="block text-[11px] text-base-content/60">Staff CRM</span></span>
 </a>
+<% } %>

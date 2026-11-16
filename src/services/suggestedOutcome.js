@@ -3,6 +3,8 @@ const { LOST_REASONS } = require('../config/lostReasons');
 const leadRepository = require('../db/leadRepository');
 const notifyService = require('./notifyService');
 const logger = require('../utils/logger');
+const gymConfig = require('../config/gymConfig');
+const { money, parseAmount } = require('../config/currency');
 
 /**
  * K13: the AI's reply can include an outcome it noticed in the chat ("paid for
@@ -19,7 +21,8 @@ function normalize(raw) {
   const s = { type: raw.type, label: OUTCOMES[raw.type], evidence: str(raw.evidence, 200), when: str(raw.when, 80) };
   if (raw.type === 'joined') {
     s.plan = str(raw.plan, 100);
-    const amount = Number(String(raw.amount_inr ?? '').replace(/[₹,\s]/g, ''));
+    // Whole units of the business's currency (R15): "₹7,080", "AED 950,000" or "7080".
+    const amount = parseAmount(raw.amount_inr).amount;
     s.amount_inr = Number.isInteger(amount) && amount > 0 && amount <= 100000000 ? amount : null; // up to ₹10 crore (real estate)
   }
   if (raw.type === 'lost') s.lost_reason = LOST_REASONS[raw.lost_reason] ? raw.lost_reason : 'other';
@@ -38,7 +41,7 @@ async function save(lead, suggestion) {
   const updated = await leadRepository.update(lead.wa_id, { metadata });
   logger.info('Outcome suggested from chat', { wa_id: lead.wa_id, type: suggestion.type });
 
-  const extra = [suggestion.plan, suggestion.amount_inr ? `₹${suggestion.amount_inr.toLocaleString('en-IN')}` : null, suggestion.when].filter(Boolean).join(' · ');
+  const extra = [suggestion.plan, suggestion.amount_inr ? money(suggestion.amount_inr, gymConfig.profile.currency) : null, suggestion.when].filter(Boolean).join(' · ');
   const name = lead.display_name || lead.wa_id;
   const text = [`🤖 Possible outcome for <b>${esc(name)}</b>: ${esc(suggestion.label)}${extra ? ` (${esc(extra)})` : ''}`,
     suggestion.evidence ? `“${esc(suggestion.evidence)}”` : null, 'Confirm or dismiss it in the CRM.'].filter(Boolean).join('\n');

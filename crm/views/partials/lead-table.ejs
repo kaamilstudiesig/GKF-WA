@@ -11,7 +11,7 @@
       <div class="flex items-center gap-2"><span class="truncate font-semibold"><%= util.leadTitle(l) %></span><%- include('status', { status: l.status }) %></div>
       <div class="truncate text-sm text-base-content/60"><%= l.last_message || util.contactLabel(l) %></div>
       <div class="mt-1 flex flex-wrap items-center gap-1.5 text-xs text-base-content/50">
-        <% if (l.needs_human) { %><span class="badge badge-primary badge-xs">Needs human</span><% } %>
+        <% if (l.needs_human) { %><span class="badge badge-primary badge-xs">Needs human</span><% } %><% if (util.intakeLabel(l.source)) { %><span class="badge badge-info badge-soft badge-xs"><%= util.intakeLabel(l.source) %></span><% } %>
         <%- include('clock', { clock: l.clock }) %>
         <% if (l.open_followups) { %><span class="<%= l.next_followup_at < nowIso ? 'text-error' : '' %>">Follow-up <%= util.timeAgo(l.next_followup_at) %></span><% } %>
         <span><%= l.assignee_name || 'Unassigned' %></span>
@@ -30,7 +30,7 @@
       <td>
         <a class="font-semibold hover:text-primary" href="/leads/<%= l.wa_id %><%= leadHash %>"><%= util.leadTitle(l) %></a>
         <div class="text-xs text-base-content/60"><%= util.contactLabel(l) %></div>
-        <% if (l.needs_human) { %><span class="badge badge-primary badge-xs mt-1" title="<%= util.humanize(l.handoff_reason) %>">Needs human</span><% } %>
+        <% if (l.needs_human) { %><span class="badge badge-primary badge-xs mt-1" title="<%= util.humanize(l.handoff_reason) %>">Needs human</span><% } %><% if (util.intakeLabel(l.source)) { %><span class="badge badge-info badge-soft badge-xs mt-1"><%= util.intakeLabel(l.source) %></span><% } %>
       </td>
       <td><%- include('status', { status: l.status }) %></td>
       <td class="text-sm capitalize"><%= util.humanize(l.interest) || '—' %></td>

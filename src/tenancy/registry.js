@@ -23,7 +23,9 @@ const HOST_RE = /^(?=.{1,253}$)([a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z0-9-]{
 const SECRET_KEYS = ['metaAccessToken', 'metaAppSecret', 'metaVerifyToken', 'razorpayKeyId', 'razorpayKeySecret', 'razorpayWebhookSecret',
   'zohoClientId', 'zohoClientSecret', 'zohoRefreshToken',
   // K9 Embedded Signup: the number's two-step verification PIN we set when registering it.
-  'metaTwoStepPin'];
+  'metaTwoStepPin',
+  // R16: signs server-to-server lead intake (portals, Zapier). Regenerated on Business settings.
+  'intakeSecret'];
 const SETTING_KEYS = ['crmBaseUrl', 'telegramChatId', 'telegramOpsChatId', 'metaDatasetId', 'metaPageId', 'metaCapiTestEventCode',
   'botPauseHours', 'dailyReplyCap', 'aiMonthlyTokenBudget', 'aiMonthlyRequestBudget', 'staffAlertTemplate',
   // K20 Zoho CRM sync (scripts/zoho-connect.js sets these). No env fallback, tenant 1 included:
@@ -33,7 +35,12 @@ const SETTING_KEYS = ['crmBaseUrl', 'telegramChatId', 'telegramOpsChatId', 'meta
   // R14: a demo client (portfolio). Only demo clients can be filled with sample data in production.
   'demo',
   // K9: how the WhatsApp number was connected and which setup steps are done (src/services/embeddedSignup.js).
-  'whatsappSetup'];
+  'whatsappSetup',
+  // R16 lead intake: the website form's public key and allowed origins, the country code for local
+  // phone numbers ("91", "971"), and the approved welcome template (empty = no welcome message).
+  'intakeFormKey', 'intakeOrigins', 'phoneCountry', 'leadWelcomeTemplate', 'leadWelcomeLanguage',
+  // K26: leads included per month in the client's plan (Schedule A). Empty = count only, no alerts.
+  'leadMonthlyLimit'];
 
 // Our lead status -> Zoho's standard Lead Status values. A client can override any of them (zohoStatusMap).
 const ZOHO_STATUS_MAP = {
@@ -90,7 +97,9 @@ function resolve(entry) {
     },
     crm: {
       host: row.crm_host || null,
-      baseUrl: String(pick(s.crmBaseUrl, process.env.CRM_BASE_URL) || (row.crm_host ? `https://${row.crm_host}` : '')).replace(/\/+$/, '')
+      // No own CRM host: links go to the shared CRM (staff sign in there), when it is on.
+      baseUrl: String(pick(s.crmBaseUrl, process.env.CRM_BASE_URL) || (row.crm_host ? `https://${row.crm_host}` : '')
+        || (env.sharedCrmHosts()[0] ? `https://${env.sharedCrmHosts()[0]}` : '')).replace(/\/+$/, '')
     },
     telegram: {
       chatId: pick(s.telegramChatId, process.env.TELEGRAM_CHAT_ID),
@@ -113,6 +122,18 @@ function resolve(entry) {
       aiMonthlyRequestBudget: limit(s.aiMonthlyRequestBudget, env.aiMonthlyRequestBudget)
     },
     staffAlertTemplate: s.staffAlertTemplate || env.staffAlertTemplate,
+    // R16: lead intake from portals and website forms (src/routes/intake.js).
+    intake: {
+      secret: sec.intakeSecret || '',
+      formKey: s.intakeFormKey || '',
+      origins: (Array.isArray(s.intakeOrigins) ? s.intakeOrigins : []).map(o => String(o).trim().toLowerCase().replace(/\/+$/, '')).filter(Boolean),
+      phoneCountry: /^[1-9][0-9]{0,3}$/.test(String(s.phoneCountry || '')) ? String(s.phoneCountry) : '91',
+      welcomeTemplate: s.leadWelcomeTemplate || '',
+      // The template's language code as approved by Meta ("en", "ar", "en_US").
+      welcomeLanguage: /^[a-z]{2,3}(_[A-Z]{2})?$/.test(String(s.leadWelcomeLanguage || '')) ? s.leadWelcomeLanguage : 'en'
+    },
+    // K26: no default on purpose; it comes from the client's plan.
+    leadMonthlyLimit: Number.isInteger(Number(s.leadMonthlyLimit)) && Number(s.leadMonthlyLimit) > 0 && !blank(s.leadMonthlyLimit) ? Number(s.leadMonthlyLimit) : null,
     zoho: {
       on: s.zohoSync === 'on' && Boolean(sec.zohoClientId && sec.zohoClientSecret && sec.zohoRefreshToken),
       accountsUrl: String(s.zohoAccountsUrl || 'https://accounts.zoho.com').replace(/\/+$/, ''),
@@ -226,6 +247,7 @@ const registry = {
     if (host && (others.some(t => t.crm.host === host) || (existingId !== DEFAULT_TENANT_ID && env.crmHosts.includes(host)))) {
       throw new Error('Another tenant already uses this CRM host.');
     }
+    if (host && env.sharedCrmHosts().includes(host)) throw new Error('This is the shared CRM host (SHARED_CRM_HOSTS); a tenant cannot own it.');
     if (others.some(t => t.slug === slug)) throw new Error('Another tenant already uses this slug.');
     for (const k of Object.keys(input.secrets || {})) if (!SECRET_KEYS.includes(k)) throw new Error(`Unknown secret: ${k}`);
     for (const k of Object.keys(input.settings || {})) if (!SETTING_KEYS.includes(k)) throw new Error(`Unknown setting: ${k}`);

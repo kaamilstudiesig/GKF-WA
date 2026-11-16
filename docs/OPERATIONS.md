@@ -77,6 +77,7 @@ All settings are environment variables; `.env.example` lists them with comments.
 | `META_APP_ID`, `META_ES_CONFIG_ID` | Our Meta app id and the Facebook Login for Business configuration id. Both set: clients connect their own WhatsApp number from a connect link (K9, [ONBOARDING.md](ONBOARDING.md)). |
 | `BOT_BASE_URL` | Public https address of the bot host (e.g. `https://wa.goldkraftfitness.com`), used in connect links. Must be an allowed JavaScript SDK domain in the Meta app. |
 | `OPENROUTER_API_KEY` | OpenRouter key. |
+| `OPENROUTER_ZDR` | Default on: OpenRouter only routes to zero-data-retention providers. Every call also sends `data_collection: 'deny'` (no storage or training), whatever this is set to. Set `false` only if a model stops routing, and only with the owner's OK: the privacy page then drops its "do not store" line and Annexure C must say the same; check with `node scripts/ai-privacy-check.js` (one tiny paid call per model, needs the owner's OK). |
 | `OPENROUTER_MODEL`, `OPENROUTER_FALLBACK_MODEL` | Default `deepseek/deepseek-v4.1-flash`, fallback `google/gemini-3.5-flash-lite` (chosen from a 16-model test on GKF lead scenarios, Oct 2026). |
 | `AI_MONTHLY_TOKEN_BUDGET`, `AI_MONTHLY_REQUEST_BUDGET` | Monthly AI limits. |
 | `AI_HISTORY_MESSAGES` | Earlier messages the AI sees with each reply (default 10). |
@@ -95,6 +96,7 @@ All settings are environment variables; `.env.example` lists them with comments.
 | `OPS_ALERT_COOLDOWN_MINUTES` | Minutes before the same technical alert repeats (default 30). |
 | `CRM_BASE_URL` | CRM address for "Open in CRM" links in Telegram alerts: `https://crm.goldkraftfitness.com`. |
 | `CRM_HOSTS` | Hostnames served by the CRM, comma-separated, matched without the port. Default `crm.goldkraftfitness.com,crm.localhost`. |
+| `SHARED_CRM_HOSTS` | The shared Dartit CRM, where staff of every client sign in (for example `crm.dartit.com`). Empty = off. The first host is also the CRM link in alerts for clients without their own CRM host. A client can't use it as its `crmHost`. See "Shared CRM" below. |
 | `SESSION_TTL_HOURS` | How long a CRM login lasts (default 12). |
 | `DISPLAY_TIMEZONE`, `USD_TO_INR` | CRM display timezone (default `Asia/Kolkata`) and the rate for showing AI cost in rupees (default 85). |
 | `SEED_USERS_FILE` | Starting staff accounts for `npm run crm:seed` (default `crm/seed/users.example.json`). |
@@ -204,6 +206,35 @@ One Basic dyno ($7/month) and Heroku Postgres Essential-0 ($5/month), about $12/
 10. Check `https://wa.goldkraftfitness.com/health`, then in the Meta app dashboard (**WhatsApp → Configuration**) change the webhook URL to `https://wa.goldkraftfitness.com/webhook` with the same verify token. Send a test message.
 
 11. Retire Render: once Heroku has handled real messages, delete the Render service and remove `render.yaml` from the repo.
+
+## Shared CRM (one address for every client)
+
+Staff of any client sign in at one Dartit address with their phone or email. The CRM finds their business; someone in two businesses picks one. Each session runs as its own client (row-level security as everywhere). The page looks like Dartit (theme, logo) with the business's name; a client's own CRM address (`crm_host`, `CRM_HOSTS`) keeps its own white-label brand.
+
+It's off until a domain is bought. To switch it on:
+1. Buy the domain (for example on Cloudflare). Add a CNAME `crm` to the Heroku DNS target from `heroku domains:add crm.<domain> -a gkf-wa`. Certificates are automatic (ACM, free on our dyno).
+2. `heroku config:set SHARED_CRM_HOSTS=crm.<domain> -a gkf-wa`.
+3. Open `https://crm.<domain>/login` and sign in. Locally it runs on `http://app.localhost:3000` with `SHARED_CRM_HOSTS=app.localhost`.
+
+Never put the shared address on a host that also serves the bot (`wa.*` or the `herokuapp.com` address): the CRM answers every path on it, `/webhook` included.
+
+## Lead usage and invoicing (K26)
+
+- Every inbound WhatsApp message counts its sender once per calendar month, in the client's time zone (Business settings → Lead queue). Rows hold a keyed hash (from `TENANT_SECRETS_KEY`), never the number, and stay when a lead is deleted. Don't change `TENANT_SECRETS_KEY` mid-month: people would be counted again.
+- Set a client's monthly limit from its plan (Schedule A): a JSON file `{ "settings": { "leadMonthlyLimit": 500 } }`, then `npm run tenant -- set <slug> file.json`. With a limit, the staff Telegram group (and our ops group, if different) gets one alert at 80% and one at 100% each month. Without one, the meter only counts.
+- Month end: `heroku run -a gkf-wa "npm run usage -- --month 2026-11"` prints every client's leads, limit and overage (`--month` is required). If no staff Telegram group is set when a level is reached, the alert waits and goes out with the next new lead after the group is added. A late message from last month counts in that month but never sends an alert. A person whose phone is hidden at first and shared later in the same month may count twice; check by hand if a client disputes.
+
+## Service levels: uptime and reply time (K27, Annexure B)
+
+**Reply time** is measured in the app: each automatic reply, from when we received the lead's last message to when WhatsApp accepted our reply. Staff replies, templates and staff alerts don't count. A reply that fails for good is recorded as a miss. If the dyno stops in the instant between sending and recording, that one reply is not counted. The owner sees this month's figure at the top of Reports. For every client: `heroku run -a gkf-wa "npm run service-levels -- --month 2026-11"` (target: 95% within 30 s). Rows are kept 13 months.
+
+**Uptime** comes from an external monitor (one-time setup, about 10 minutes):
+
+1. Create a free HetrixTools account (its free plan checks every minute, allows commercial use and alerts to Telegram; check the limits on its pricing page when you sign up).
+2. Add an HTTPS uptime monitor on `https://wa.goldkraftfitness.com/health/ready` (and later the product domain), every 1 minute, expecting status 200, from several locations.
+3. Add a second monitor on the CRM login page, expecting 200.
+4. Alerts: connect Telegram and send them to our ops group. Turn on the monthly report email.
+5. Each month, take availability from the monitor's report. Downtime counts only when the Platform is down for all clients through a fault in our control (Annexure B1).
 
 ## Data deletion requests
 

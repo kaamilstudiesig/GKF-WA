@@ -174,3 +174,10 @@ test('R17 review fixes: WhatsApp\'s 4096-character limit, and no projects list t
     assert.strictEqual((await ctx.db.one('SELECT COUNT(*)::int AS c FROM outbound_messages')).c, before);
   } finally { gymConfig.resetToDefault(); await ctx.cleanup(); }
 });
+
+test('unit prices: luxury prices fit, anything past the column limit is refused with a message', () => {
+  const { unitInput, MAX_PRICE } = require('../../crm/src/projects');
+  assert.strictEqual(unitInput({ name: 'Penthouse', price_from: '₹25,00,00,000' }).price_from, 250000000);
+  assert.ok(MAX_PRICE <= 2147483647, 'fits crm_units.price_from INTEGER');
+  assert.throws(() => unitInput({ name: 'Island', price_from: '3000000000' }), /up to 2,000,000,000/);
+});

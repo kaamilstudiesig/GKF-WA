@@ -11,7 +11,7 @@ const { parseAmount, money } = require('./util');
 const STATUSES = ['active', 'sold_out', 'archived'];
 // Meta's limits for one product list message: 30 products in at most 10 sections (one per project).
 const SEND_LIMITS = { units: 30, projects: 10 };
-const MAX_PRICE = 100000000; // whole units of the business's currency, like sales (R15)
+const MAX_PRICE = 2000000000; // 2 billion units (₹200 crore): fits crm_units.price_from INTEGER (max 2,147,483,647)
 const MAX_TEXT = 4096; // WhatsApp's limit for one text message
 
 const str = (v, max) => String(v ?? '').replace(/\s+/g, ' ').trim().slice(0, max);
@@ -47,7 +47,7 @@ function unitInput(b) {
   let price = null;
   if (String(b.price_from ?? '').trim()) {
     const p = parseAmount(b.price_from);
-    if (p.error || p.amount <= 0 || p.amount > MAX_PRICE) throw new HttpError(400, `Price from: ${p.error || 'a whole number up to 100,000,000.'}`);
+    if (p.error || p.amount <= 0 || p.amount > MAX_PRICE) throw new HttpError(400, `Price from: ${p.error || 'a whole number up to 2,000,000,000.'}`);
     price = p.amount;
   }
   return { name, size_sqft: size, price_from: price, photo_url: httpsUrl(b.photo_url, 'Photo link') };
@@ -197,4 +197,4 @@ class Projects {
   }
 }
 
-module.exports = { Projects, catalogNeeds, SEND_LIMITS, STATUSES };
+module.exports = { Projects, catalogNeeds, SEND_LIMITS, STATUSES, unitInput, MAX_PRICE };

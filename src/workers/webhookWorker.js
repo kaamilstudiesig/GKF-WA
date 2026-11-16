@@ -19,6 +19,7 @@ const businessProfile = require('../services/businessProfile');
 const logger = require('../utils/logger');
 const { captureException } = require('../utils/sentry');
 const optOut = require('../services/optOut');
+const leadUsage = require('../services/leadUsage');
 
 /** Text the lead actually sent, including taps on buttons and list items. */
 function textOf(msg) {
@@ -84,6 +85,8 @@ async function processEvent(event) {
         messageId: msg.id, waId, direction: 'in', timestamp,
         text: text !== null ? text : `[${String(msg.type || 'unknown').toUpperCase()} message]`
       });
+      // K26: every contact counts towards this month's leads (once per person), STOP included.
+      await leadUsage.record(lead, { channel: 'whatsapp', at: new Date(timestamp) });
     }
     // K30: STOP is handled before anything else (even a burst or staff pause), with a fixed
     // reply and no AI. START, or any other message from an opted-out lead, opts them back in.

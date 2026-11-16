@@ -156,6 +156,34 @@ What a real estate client sells (contract in `docs/TEAM.md`, "R17: projects and 
 - **Send projects** on the lead page: tick units, and they go as one WhatsApp message (names, sizes, "from" prices, handover, brochure links), grouped by project. Up to 30 units from 10 projects (a WhatsApp product list's limits, so the same choice works once K24 adds the catalog). Only inside the 24-hour window, never to a lead who wrote STOP (K30; normal replies still work), and only if it fits one WhatsApp message (4096 characters); otherwise the section says why and the server refuses. It is a normal CRM reply (`metadata.source = 'crm'`, plus `metadata.units`), so it counts as picking the lead up (R2) and for speed to lead (R5).
 - The WhatsApp assistant still answers from Business settings; the page says so. K24 (Kaamil) adds the Meta catalog sync and product lists.
 
+## Lead sources (R16)
+
+Leads from website forms and property portals (contract in `docs/TEAM.md`, "R16: lead intake"). The endpoint is on the bot host: `POST /intake/<slug>` (`src/routes/intake.js`, `src/services/leadIntake.js`).
+
+- **Portals and other systems** send signed JSON (`X-Intake-Signature: sha256=<HMAC of the body with the client's secret>`): `{ name, phone, email, message, source, sourceRef, utm, consent }`, `source` one of website, property_finder, bayut, dubizzle, other.
+- **Website form**: the snippet on **Business settings → Lead sources** posts urlencoded (no CORS preflight) with the public form key, only from the allowed websites; a hidden honeypot field drops bots silently. 10 per IP per hour and 3 per phone per day, counted in `intake_submissions` so they hold across dynos. Refused requests (bad key, website or signature, and honeypot posts) are recorded too; after 30 from one address in an hour it gets 429. Only those count: a portal's own 400s (no phone, bad email) never do, and a correctly signed call always gets through. Each submission claims its row first and checks only earlier rows, so two portal retries arriving together make one lead, not two; a retry after a half-failed save adds no second note. Only real attempts count towards a website's 10-per-hour form limit. Submissions are kept 90 days (daily clean-up). IPs are stored as a keyed hash (`INTAKE_IP_KEY`, else `TENANT_SECRETS_KEY`; production refuses with 503 when neither is set).
+- **What happens:** a phone is required (local numbers get the client's country code). The lead is matched by phone or created (`source` = `intake_<source>`; `metadata.intake` is the latest submission, `intake_first` the first touch, `intake_history` the last 10), with `last_inbound_message_at` NULL, so its reply window stays closed until it writes on WhatsApp. The message becomes a note shown as **Lead form**. A `form_lead` hand-off goes to the lead queue and alerts staff (one per lead while one is open). With consent and the client's approved template (`leadWelcomeTemplate`, in `leadWelcomeLanguage`, default `en`), one WhatsApp welcome (queued; the hand-off says "queued") per phone per 24 hours, never during a live chat. The same `sourceRef` within 24 hours does nothing.
+- **Business settings → Lead sources** (owner): the address, allowed websites, country code, welcome status, form key + snippet, signing secret (regenerate only, shown once, stored encrypted), and the last 20 submissions (Added, Repeat, Refused, Too many). Each change is in the activity log.
+- **On leads:** a source badge (Website form, Bayut…) on lead cards, the pipeline and the lead page. Lists sort leads with no WhatsApp message after those that wrote (`NULLS LAST`).
+
+## Data export (R19)
+
+**Business settings → Your data → Download all data (ZIP)** (owner only; `GET /settings/export.zip`) gives the client everything we hold for them, so they never have to ask (client agreement 7.6, and what we hand over at exit, 12.5). `crm/src/dataExport.js` builds one CSV per table:
+
+| File | What |
+| --- | --- |
+| `leads.csv` | Every lead, with `metadata` (e.g. the ad it came from) as JSON |
+| `messages.csv` | Every WhatsApp message in and out |
+| `outcomes.csv` | Logged outcomes with plan, amount, lost reason and who logged them |
+| `notes.csv`, `assignments.csv`, `handoffs.csv`, `follow_ups.csv`, `payment_links.csv` | As named, with staff names instead of ids |
+| `staff.csv` | Name, email, role, manager, active (no passwords) |
+| `README.txt` | What each file holds, row counts, the currency of amounts, and that times are UTC |
+
+- Runs in the client's tenant context, so row-level security keeps it to this client's rows. No passwords, sessions or tokens.
+- UTF-8 with a byte order mark (Excel shows ₹, Arabic and Hindi), CRLF lines; formula-looking cells are made inert (`crm/src/csv.js`, shared with the leads and ads CSVs).
+- The ZIP is built in memory with `crm/src/zip.js` (Node's `zlib`, no dependency). Fine for one client's data (tens of MB); stream it if a client ever grows past that.
+- Every download is in the activity log (`data_exported`, with row counts), and the response is `Cache-Control: no-store`.
+
 ## Roles
 
 | | Owner | Manager | Sales |

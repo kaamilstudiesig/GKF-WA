@@ -35,7 +35,9 @@ const SETTING_KEYS = ['crmBaseUrl', 'telegramChatId', 'telegramOpsChatId', 'meta
   // K9: how the WhatsApp number was connected and which setup steps are done (src/services/embeddedSignup.js).
   'whatsappSetup',
   // K26: leads included per month in the client's plan (Schedule A). Empty = count only, no alerts.
-  'leadMonthlyLimit'];
+  'leadMonthlyLimit',
+  // K31: months after a lead's last interaction before it is deleted (Schedule A; default 24).
+  'retentionMonths', 'retentionAllowSurgeUntil'];
 
 // Our lead status -> Zoho's standard Lead Status values. A client can override any of them (zohoStatusMap).
 const ZOHO_STATUS_MAP = {
@@ -117,6 +119,10 @@ function resolve(entry) {
       aiMonthlyRequestBudget: limit(s.aiMonthlyRequestBudget, env.aiMonthlyRequestBudget)
     },
     staffAlertTemplate: s.staffAlertTemplate || env.staffAlertTemplate,
+    // K31: months before an inactive lead is deleted (null = the default, 24), and a date until which a
+    // large first batch is allowed (src/services/retention.js surge check).
+    retentionMonths: s.retentionMonths === undefined || s.retentionMonths === '' ? null : Number(s.retentionMonths),
+    retentionAllowSurgeUntil: s.retentionAllowSurgeUntil || null,
     // K26: no default on purpose; it comes from the client's plan.
     leadMonthlyLimit: Number.isInteger(Number(s.leadMonthlyLimit)) && Number(s.leadMonthlyLimit) > 0 && !blank(s.leadMonthlyLimit) ? Number(s.leadMonthlyLimit) : null,
     zoho: {

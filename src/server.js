@@ -77,8 +77,10 @@ async function main() {
   const dailyNudges = require('./services/dailyNudges');
   // K28: one encrypted off-site backup a day (no Scheduler add-on); alerts ops if it fails or isn't set up.
   const dailyBackup = require('./services/dailyBackup');
+  const retention = require('./services/retention');
   const queueSweep = setInterval(() => {
     dailyBackup.tick().catch(err => logger.error('Daily backup crashed', { error: err.message }));
+    retention.tick().catch(err => logger.error('Automatic deletion crashed', { error: err.message })); // K31
     leadQueue.sweepAll().catch(err => logger.error('Lead queue sweep crashed', { error: err.message }));
     dailyNudges.runAll().catch(err => logger.error('Daily reminder crashed', { error: err.message }));
   }, 60 * 1000);

@@ -25,6 +25,8 @@ function normalize(input = {}) {
   const p = {
     name: str(input.name, 80),
     type: VERTICALS[input.type] ? input.type : 'gym',
+    // K33: clinics, pharmacies, physiotherapy, wellness. Health questions go to staff, never the AI.
+    healthRelated: input.healthRelated === true || ['on', '1', 'true'].includes(String(input.healthRelated)),
     area: str(input.area, 120),
     address: str(input.address, 240),
     parking: str(input.parking, 160),

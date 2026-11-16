@@ -15,6 +15,19 @@ const ALLOWED_HANDOFF_REASONS = [
   'other'
 ];
 
+// K33: symptoms, conditions, medicines and safety questions (English, Hinglish, Hindi, Kannada, Arabic).
+const HEALTH_RE = [
+  /\b(pain|pains|painful|ache|aches|aching|hurts?|hurting|sore|fever|bleeding|blood|swelling|swollen|rash|itch(ing|y)?|infection|infected|pus|dizzy|dizziness|faint(ed|ing)?|vomit(ing)?|nausea|cough(ing)?|cold and cough|breathless(ness)?|headache|migraine|lump|sprain|fracture|injury|injured|burn(ed|t)?)\b/,
+  /\b(diabetes|diabetic|sugar level|blood pressure|bp|thyroid|asthma|cholesterol|pregnan(t|cy)|allerg(y|ic)|cancer|tumou?r|heart (problem|condition|attack)|stroke|epilepsy|depression|anxiety)\b/,
+  /\b(medicine|medicines|medication|tablet|tablets|pill|pills|dose|dosage|prescription|prescribe|side effects?|antibiotic|painkiller|injection|symptoms?|diagnos\w*)\b/,
+  /\b(is it safe|safe for me|can i take|should i take|what should i do|is this normal|is it normal)\b/,
+  /\b(dard|bukhar|bukhaar|khansi|dawai|dawa|ilaaj|ilaj|sujan|chakkar|ulti|khoon|zukham)\b/,
+  /(दर्द|बुखार|खांसी|दवा|दवाई|इलाज|सूजन|चक्कर|उल्टी|खून)/,
+  /(ನೋವು|ಜ್ವರ|ಔಷಧ|ಮಾತ್ರೆ|ರಕ್ತ|ಊತ)/,
+  /(ألم|وجع|حمى|حرارة|دواء|علاج|حبوب|نزيف|حامل|سكري|ضغط الدم)/
+];
+const HEALTH_REPLY = "Thanks for telling us. We can't give medical advice on WhatsApp, so a member of our team will get back to you personally. If it is urgent, please see a doctor or call emergency services.";
+
 class AIPolicy {
   /**
    * Enforces business rules and validation on AI-proposed updates.
@@ -91,6 +104,21 @@ class AIPolicy {
     }
 
     return safeUpdates;
+  }
+
+  /**
+   * K33: health-related businesses (business profile `healthRelated`: clinics, pharmacies,
+   * physiotherapy, wellness). Any message about symptoms, conditions, medicines or safety goes to
+   * staff with a fixed reply and no AI. Business-agnostic wording; deliberately broad (a false alarm
+   * costs one staff call, a miss could be advice). Admin questions (prices, timings, location,
+   * appointments) without those words still reach the assistant.
+   * @returns {{ isHealthQuestion: boolean, replyText: string|null, handoffReason: string|null }}
+   */
+  checkHealthQuestion(text = '') {
+    const t = ` ${String(text).toLowerCase().normalize('NFKC')} `;
+    if (!HEALTH_RE.some(re => re.test(t))) return { isHealthQuestion: false, replyText: null, handoffReason: null };
+    logger.info('Health question in a health-related business: sent to staff, no AI');
+    return { isHealthQuestion: true, replyText: HEALTH_REPLY, handoffReason: 'injury_question' };
   }
 
   /**

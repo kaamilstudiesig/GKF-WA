@@ -36,6 +36,15 @@ function textOf(msg) {
  * Returns { text, buttons?, location? }.
  */
 async function decideReply(lead, text, { burst = false } = {}) {
+  // K33: in a health-related business, any health question goes to staff with a fixed reply (no AI).
+  if (gymConfig.profile.healthRelated) {
+    const health = aiPolicy.checkHealthQuestion(text);
+    if (health.isHealthQuestion) {
+      // The summary stays generic: the details are in the conversation, not copied into alerts.
+      await applyLeadUpdates(lead, { needs_human: true, handoff_reason: health.handoffReason, summary: 'Asked a health question.' });
+      return { text: health.replyText };
+    }
+  }
   const medical = aiPolicy.checkMedicalInjurySafety(text);
   if (medical.isMedicalQuery) {
     await applyLeadUpdates(lead, { needs_human: true, handoff_reason: medical.handoffReason, summary: 'Asked an injury/medical question.' });

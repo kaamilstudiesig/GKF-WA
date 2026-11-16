@@ -477,6 +477,10 @@ Changes from Zoho are logged through the CRM's own outcome rules, in the name of
 
 Limits today: amounts are taken as they are in Zoho (an AED deal is stored as that number in the ₹ field); a lead converted in Zoho is matched to its Deal only when the Lead Engine ID field is mapped in lead conversion; `zoho_links` is not in backups yet (after a restore, matching falls back to the ID field or mobile); `npm run delete-lead` removes the lead here but not from Zoho (the client deletes it there). Tests: `test/zoho.test.js` against a fake Zoho.
 
+## Shared CRM (built 17 Nov, Kaamil)
+
+One Dartit address where staff of every client sign in (`src/routes/sharedCrm.js`, off until `SHARED_CRM_HOSTS` is set; the domain isn't bought yet). Sign-in looks the phone or email up in every active client and checks the password there; several matches show "Choose your business" (signed 5-minute tickets). The client comes from the session row, so no second cookie. Dartit theme and logo from the brand kit (`crm/public/brand/dartit/`, theme `dartit` in `crm/styles/app.css`, light and dark), with the business's name. A client's own CRM host keeps its R12 white-label. The Brand form always edits the client's own brand.
+
 ## Multi-client tenants (K8, built)
 
 One deployment serves many businesses. `tenants` holds each business (slug, WhatsApp number id, WABA, CRM host, settings, encrypted secrets); tenant 1 is GKF and still reads its settings from the env vars. Every client table has `tenant_id` and Postgres row-level security, so a query only ever sees one tenant's rows. **CRM code needs no tenant filters:** the CRM runs as the tenant of its hostname, and the database does the filtering. Rules for new code: a new table with client data gets `tenant_id` + the policy (add it in `src/db/platformMigrations.js`; `test/tenancy.test.js` checks), `ON CONFLICT` targets include `tenant_id`, and anything that runs outside a request or job (a timer, a script) wraps its work in `tenancy.run(id, fn)` or `tenancy.runAsSystem(fn)`. Scripts take `--tenant <slug>`. Add a client with `npm run tenant -- add clients/<client>.json` (see docs/ONBOARDING.md).

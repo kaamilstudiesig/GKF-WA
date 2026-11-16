@@ -326,14 +326,14 @@ test('an approved surge (retentionAllowSurgeUntil) deletes up to the per-run cap
   }
 });
 
-test('staff work today saves an old lead: a note, an outcome, a future follow-up or a queued message', async () => {
+test('staff work "today" (on the test clock) saves an old lead: a note, an outcome, a future follow-up or a queued message', async () => {
   const user = await tenancy.run(1, () => db.one(`INSERT INTO crm_users (email, name, role, password_hash)
     VALUES ('staffwork@example.test', 'Staff', 'owner', 'unused-test-hash') RETURNING id`));
   const cases = [
-    ['note', k => db.query("INSERT INTO crm_lead_notes (wa_id, user_id, body) VALUES ($1, $2, 'called today')", [k, user.id])],
-    ['outcome', k => db.query("INSERT INTO crm_lead_outcomes (wa_id, user_id, outcome) VALUES ($1, $2, 'no_answer')", [k, user.id])],
+    ['note', k => db.query("INSERT INTO crm_lead_notes (wa_id, user_id, body, created_at) VALUES ($1, $2, 'called today', $3)", [k, user.id, NOW.toISOString()])],
+    ['outcome', k => db.query("INSERT INTO crm_lead_outcomes (wa_id, user_id, outcome, created_at) VALUES ($1, $2, 'no_answer', $3)", [k, user.id, NOW.toISOString()])],
     ['follow-up due later', k => db.query("INSERT INTO crm_follow_ups (wa_id, user_id, title, due_at, created_at) VALUES ($1, $2, 'Call', $3, $4)", [k, user.id, '2031-01-10T10:00:00Z', OLD])],
-    ['webhook event waiting', k => db.query("INSERT INTO webhook_events (event_key, wa_id, payload) VALUES ($1, $2, '{}')", [`evt-${k}`, k])]
+    ['webhook event waiting', k => db.query("INSERT INTO webhook_events (event_key, wa_id, payload, created_at) VALUES ($1, $2, '{}', $3)", [`evt-${k}`, k, NOW.toISOString()])]
   ];
   let i = 0;
   for (const [, add] of cases) {

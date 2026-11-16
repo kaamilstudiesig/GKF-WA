@@ -15,7 +15,12 @@ const signals = require('../workers/signals');
 
 const SOURCES = ['website', 'property_finder', 'bayut', 'dubizzle', 'other'];
 const SOURCE_LABELS = { website: 'website', property_finder: 'Property Finder', bayut: 'Bayut', dubizzle: 'Dubizzle', other: 'portal' };
-const LIMITS = { formPerIpPerHour: 10, formPerPhonePerDay: 3, failuresPerIpPerHour: 30 };
+const LIMITS = {
+  formPerIpPerHour: 10, formPerPhonePerDay: 3, failuresPerIpPerHour: 30,
+  formRequestsPerIpPerHour: 30 // every public form post from one address, valid or not, before any other work
+  // Paid welcome templates per client per rolling 24 hours: tenant setting leadWelcomeDailyCap (default 50).
+};
+const PROCESSING_MS = 2 * 60 * 1000; // a claim still 'processing' after this was abandoned (crash): a retry may run
 const HISTORY_KEEP = 10; // submissions kept on a lead (metadata.intake_history)
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -90,45 +95,67 @@ function withIntake(metadata, entry) {
  * duplicate and rate-limit checks count only the rows written before it (lower id). Of two portal
  * retries arriving together, the second always sees the first and becomes the duplicate.
  */
+/** A transaction lock for one client and one key: concurrent requests on the same key take turns. */
+const lock = key => db.query('SELECT pg_advisory_xact_lock($1, hashtext($2))', [require('../tenancy/context').tenantId(), key]);
+
 async function accept({ channel, body, ipHash = null, businessName = '' }) {
   const cfg = registry.config().intake;
+  // Public forms: one budget per address, checked before validation, so junk posts can't grow the table.
+  if (channel === 'form' && ipHash) {
+    const r = await db.one(`SELECT COUNT(*)::int AS n FROM intake_submissions WHERE channel = 'form' AND ip_hash = $1
+      AND received_at > now() - interval '1 hour'`, [ipHash]);
+    if (r.n >= LIMITS.formRequestsPerIpPerHour) return { status: 429, body: { ok: false, error: 'Too many submissions. Try again later.' } };
+  }
   const cleaned = clean(body, { phoneCountry: cfg.phoneCountry, channel });
   if (cleaned.error) {
     await record({ channel, source: text(body && body.source, 30) || null, ipHash, status: 'rejected', error: cleaned.error });
     return { status: 400, body: { ok: false, error: cleaned.error } };
   }
   const input = cleaned.input;
-  const claim = await record({ channel, source: input.source, sourceRef: input.sourceRef, waId: input.phone, ipHash, status: 'accepted' });
+  const row = { channel, source: input.source, sourceRef: input.sourceRef, waId: input.phone, ipHash };
 
-  // Website forms are limited per IP and per phone (signed calls only get the duplicate check).
-  if (channel === 'form') {
-    const c = await db.one(`SELECT
-        (SELECT COUNT(*) FROM intake_submissions WHERE id < $3 AND channel = 'form' AND ip_hash = $1 AND status IN ('accepted', 'limited')
-          AND received_at > now() - interval '1 hour')::int AS ip, -- refused posts (bad key, honeypot, 400s) have their own limit
-        (SELECT COUNT(*) FROM intake_submissions WHERE id < $3 AND channel = 'form' AND wa_id = $2 AND status = 'accepted' AND received_at > now() - interval '1 day')::int AS phone`,
-    [ipHash, input.phone, claim.id]);
-    if (c.ip >= LIMITS.formPerIpPerHour || c.phone >= LIMITS.formPerPhonePerDay) {
-      await setStatus(claim.id, 'limited', c.ip >= LIMITS.formPerIpPerHour ? 'too many from this address' : 'too many for this phone');
-      return { status: 429, body: { ok: false, error: 'Too many submissions. Try again later.' } };
-    }
-  }
+  // The limit and duplicate checks and the claim run under locks (per portal reference, per address,
+  // per phone), so two requests can't both pass: the second waits and then sees the first.
+  const decision = await db.tx(async () => {
+    if (input.sourceRef) await lock(`ref:${input.source}:${input.sourceRef}`);
+    if (channel === 'form') { await lock(`ip:${ipHash}`); await lock(`phone:${input.phone}`); }
 
-  // The same portal reference within 24 hours does nothing (portals retry).
-  if (input.sourceRef) {
-    const dup = await db.one(`SELECT id FROM intake_submissions WHERE id < $3 AND source = $1 AND source_ref = $2 AND status = 'accepted'
-      AND received_at > now() - interval '1 day' LIMIT 1`, [input.source, input.sourceRef, claim.id]);
-    if (dup) {
-      await setStatus(claim.id, 'duplicate');
-      return { status: 202, body: { ok: true, duplicate: true } };
+    // Website forms are limited per IP and per phone (signed calls only get the duplicate check).
+    if (channel === 'form') {
+      const c = await db.one(`SELECT
+          (SELECT COUNT(*) FROM intake_submissions WHERE channel = 'form' AND ip_hash = $1 AND status IN ('accepted', 'processing', 'limited')
+            AND received_at > now() - interval '1 hour')::int AS ip,
+          (SELECT COUNT(*) FROM intake_submissions WHERE channel = 'form' AND wa_id = $2 AND status IN ('accepted', 'processing')
+            AND received_at > now() - interval '1 day')::int AS phone`, [ipHash, input.phone]);
+      if (c.ip >= LIMITS.formPerIpPerHour || c.phone >= LIMITS.formPerPhonePerDay) {
+        await record({ ...row, status: 'limited', error: c.ip >= LIMITS.formPerIpPerHour ? 'too many from this address' : 'too many for this phone' });
+        return { status: 429, body: { ok: false, error: 'Too many submissions. Try again later.' } };
+      }
     }
-  }
+
+    // The same portal reference within 24 hours does nothing (portals retry). One still being saved
+    // asks the portal to retry; one abandoned mid-save (a crash) lets the retry do the work.
+    if (input.sourceRef) {
+      const prior = await db.one(`SELECT status FROM intake_submissions WHERE source = $1 AND source_ref = $2
+        AND (status = 'accepted' OR (status = 'processing' AND received_at > now() - make_interval(secs => $3)))
+        AND received_at > now() - interval '1 day' ORDER BY (status = 'accepted') DESC LIMIT 1`, [input.source, input.sourceRef, PROCESSING_MS / 1000]);
+      if (prior && prior.status === 'accepted') {
+        await record({ ...row, status: 'duplicate' });
+        return { status: 202, body: { ok: true, duplicate: true } };
+      }
+      if (prior) return { status: 409, body: { ok: false, error: 'This lead is still being saved. Try again in a minute.' } };
+    }
+    return { claim: await record({ ...row, status: 'processing' }) };
+  });
+  if (!decision.claim) return decision;
 
   try {
     await handle({ input, cfg, businessName, channel });
   } catch (err) {
-    await setStatus(claim.id, 'rejected', 'could not be saved');
+    await setStatus(decision.claim.id, 'rejected', 'could not be saved');
     throw err;
   }
+  await setStatus(decision.claim.id, 'accepted');
   return { status: 202, body: { ok: true } };
 }
 
@@ -178,21 +205,29 @@ async function handle({ input, cfg, businessName, channel }) {
   else if (!cfg.welcomeTemplate) welcome = 'WhatsApp welcome not sent: template not set up.';
   else if (windowOpen(lead)) welcome = null; // they are chatting with us already
   else {
-    const recent = await db.one(`SELECT id FROM outbound_messages WHERE wa_id = $1 AND metadata ->> 'source' = 'intake'
-      AND created_at > now() - interval '1 day' LIMIT 1`, [input.phone]);
-    if (recent) welcome = null;
-    else {
+    // A welcome is a paid template. The check and the queueing run under a lock per phone (no two
+    // welcomes for one number, even across midnight), and a client-wide daily budget stops anyone
+    // using the public form to make the client pay for messages to many numbers.
+    welcome = await db.tx(async () => {
+      await lock(`welcome:${input.phone}`);
+      await lock('welcome:budget');
+      const recent = await db.one(`SELECT id FROM outbound_messages WHERE wa_id = $1 AND metadata ->> 'source' = 'intake'
+        AND created_at > now() - interval '1 day' LIMIT 1`, [input.phone]);
+      if (recent) return null;
+      const sent = await db.one(`SELECT COUNT(*)::int AS n FROM outbound_messages WHERE metadata ->> 'source' = 'intake'
+        AND created_at > now() - interval '1 day'`);
+      if (sent.n >= cfg.welcomeDailyCap) return `WhatsApp welcome not sent: today's limit of ${cfg.welcomeDailyCap} welcomes is reached.`;
       const outboundRepository = require('../db/outboundRepository');
       const queued = await outboundRepository.enqueue({
-        dedupKey: `lead_welcome:${input.phone}:${Math.floor(Date.now() / DAY_MS)}`,
+        dedupKey: `lead_welcome:${input.phone}:${Date.now()}`,
         waId: input.phone,
         text: `[Welcome template ${cfg.welcomeTemplate}] ${input.name || 'there'} · ${businessName}`,
         metadata: { source: 'intake', template: { name: cfg.welcomeTemplate, language: cfg.welcomeLanguage, body: [input.name || 'there', businessName] } }
       });
-      if (queued) signals.emit('outbound');
       // Queued, not sent: the outbound worker sends it (and K30 may still refuse it).
-      welcome = queued ? 'WhatsApp welcome queued.' : null;
-    }
+      return queued ? 'WhatsApp welcome queued.' : null;
+    });
+    if (welcome === 'WhatsApp welcome queued.') signals.emit('outbound');
   }
 
   // A hand-off, so the lead queue assigns it and staff are alerted. One open hand-off per lead: if

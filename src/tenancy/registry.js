@@ -38,7 +38,7 @@ const SETTING_KEYS = ['crmBaseUrl', 'telegramChatId', 'telegramOpsChatId', 'meta
   'whatsappSetup',
   // R16 lead intake: the website form's public key and allowed origins, the country code for local
   // phone numbers ("91", "971"), and the approved welcome template (empty = no welcome message).
-  'intakeFormKey', 'intakeOrigins', 'phoneCountry', 'leadWelcomeTemplate', 'leadWelcomeLanguage',
+  'intakeFormKey', 'intakeOrigins', 'phoneCountry', 'leadWelcomeTemplate', 'leadWelcomeLanguage', 'leadWelcomeDailyCap',
   // K26: leads included per month in the client's plan (Schedule A). Empty = count only, no alerts.
   'leadMonthlyLimit'];
 
@@ -130,7 +130,9 @@ function resolve(entry) {
       phoneCountry: /^[1-9][0-9]{0,3}$/.test(String(s.phoneCountry || '')) ? String(s.phoneCountry) : '91',
       welcomeTemplate: s.leadWelcomeTemplate || '',
       // The template's language code as approved by Meta ("en", "ar", "en_US").
-      welcomeLanguage: /^[a-z]{2,3}(_[A-Z]{2})?$/.test(String(s.leadWelcomeLanguage || '')) ? s.leadWelcomeLanguage : 'en'
+      welcomeLanguage: /^[a-z]{2,3}(_[A-Z]{2})?$/.test(String(s.leadWelcomeLanguage || '')) ? s.leadWelcomeLanguage : 'en',
+      // Paid welcome templates per rolling 24 hours for the whole client (abuse budget; default 50).
+      welcomeDailyCap: Number.isInteger(Number(s.leadWelcomeDailyCap)) && Number(s.leadWelcomeDailyCap) > 0 ? Number(s.leadWelcomeDailyCap) : 50
     },
     // K26: no default on purpose; it comes from the client's plan.
     leadMonthlyLimit: Number.isInteger(Number(s.leadMonthlyLimit)) && Number(s.leadMonthlyLimit) > 0 && !blank(s.leadMonthlyLimit) ? Number(s.leadMonthlyLimit) : null,

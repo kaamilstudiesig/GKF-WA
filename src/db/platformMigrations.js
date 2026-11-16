@@ -286,7 +286,7 @@ const PLATFORM_MIGRATIONS = [
         source_ref TEXT,
         wa_id TEXT,
         ip_hash TEXT,
-        status TEXT NOT NULL CHECK (status IN ('accepted', 'duplicate', 'rejected', 'limited')),
+        status TEXT NOT NULL CHECK (status IN ('processing', 'accepted', 'duplicate', 'rejected', 'limited')),
         error TEXT
       )`,
       'CREATE INDEX intake_submissions_ref_idx ON intake_submissions (tenant_id, source, source_ref, received_at) WHERE source_ref IS NOT NULL',

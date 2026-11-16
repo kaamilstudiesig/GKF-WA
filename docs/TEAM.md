@@ -113,7 +113,7 @@ The client agreement ([CLIENT_AGREEMENT.md](CLIENT_AGREEMENT.md), templates in `
 
 Ops, no code (Kaamil): turn on 2FA on Heroku, GitHub, Meta Business, OpenRouter, Zoho and Google admin accounts; set up a support email and a WhatsApp support number for Annexure B; move hosting off student credits (and choose the region) before the first invoice; fill Annexure C with what's true on the day.
 
-Later, listed with a Feature Date until built: **K31 automatic deletion** (delete or anonymise leads with no activity for the client's retention period, default 24 months; before 13 May 2027 for DPDP) and **K32 Instagram DM capture** (an Instagram DM or comment reply gets one automatic answer that moves the lead to WhatsApp, after the Dubai client; needs `instagram_manage_messages` in App Review).
+✅ **K31 automatic deletion** built (PR `k31-retention`, `src/services/retention.js`: nightly, default 24 months, guard rails; deletion shared with `npm run delete-lead` in `src/services/leadDeletion.js`, which now also removes payment links). Later, listed with a Feature Date until built: **K32 Instagram DM capture** (an Instagram DM or comment reply gets one automatic answer that moves the lead to WhatsApp, after the Dubai client; needs `instagram_manage_messages` in App Review).
 
 **Contract: K26 lead count (Kaamil built the meter and the two screens, `crm/views/partials/lead-usage.ejs`)**
 

@@ -44,7 +44,7 @@ Checked against the code on 14 Nov 2026. "Before signing" means it must be done 
 | STOP opt-out recorded, templates stop | 5.2 | Built (K30): STOP/UNSUBSCRIBE/"don't message me" in English, Hinglish/Hindi, Kannada, Arabic sets `leads.opted_out_at`, sends a fixed confirmation, and every template send to that lead is refused. The lead page shows an "Opted out" badge. **Before signing** | K30 |
 | Owners export leads, conversations, outcomes and notes | 7.6, 12.5 | Built (PR `r19-data-export`): Business settings → **Your data** downloads a ZIP of CSVs | R19 |
 | Health-related businesses: medical questions go to staff | 5.9 | Not in the presets. Before signing a clinic | K33 |
-| Automatic deletion after the retention period | 7.6, C | Not built. Before 13 May 2027 (DPDP); until then list it with a Feature Date | K31 |
+| Automatic deletion after the retention period | 7.6, C | Built (K31): every night each client's leads with no activity (their message, our message, first contact or a staff update) for `retentionMonths` (default 24) are deleted with everything about them, through the same path as a deletion request. Kept: the hashed monthly lead count (billing, no personal data). Guard rails: `LEAD_RETENTION=off`, at most 200 per client per night, and it stops and alerts ops if over 20% of a client's leads are due at once. Deleted, not anonymised: old sales leave the reports too | K31 |
 | 2FA on our hosting, GitHub, Meta and AI admin accounts | C1 | Settings, not code. **Before signing** | Ops |
 | Support email and WhatsApp support number | B2 | Not set up. **Before signing** | Ops |
 | Breach notice within 24 hours | 7.5 | Runbook in [OPERATIONS.md](OPERATIONS.md#data-breach) | |

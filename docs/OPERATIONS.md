@@ -236,6 +236,15 @@ Never put the shared address on a host that also serves the bot (`wa.*` or the `
 4. Alerts: connect Telegram and send them to our ops group. Turn on the monthly report email.
 5. Each month, take availability from the monitor's report. Downtime counts only when the Platform is down for all clients through a fault in our control (Annexure B1).
 
+## Automatic deletion (K31)
+
+Every night after `RETENTION_HOUR_UTC` (default 22:00 UTC, 03:30 IST) each active client's leads with no activity for its retention period are deleted: no message from them or us, no first contact and no staff update in `retentionMonths` (tenant setting from Schedule A, default 24). It uses the same deletion as `npm run delete-lead`. The ops group gets a line when anything is deleted.
+
+- Off everywhere: `heroku config:set LEAD_RETENTION=off -a gkf-wa`.
+- At most 200 leads per client per night (the rest follow the next nights).
+- If more than 20% of a client's leads (and over 50) are due at once, nothing is deleted for that client and the ops group gets "🛑 Automatic deletion stopped". That usually means a wrong clock or a data problem: check before turning it back on.
+- Change a client's period: `{ "settings": { "retentionMonths": 12 } }` with `npm run tenant -- set <slug> file.json`.
+
 ## Data deletion requests
 
 Leads can send "DELETE MY DATA" (or see `/data-deletion`). The bot confirms and opens a hand-off marked *DATA DELETION REQUEST*. Delete within 30 days:

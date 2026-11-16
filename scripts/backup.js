@@ -23,7 +23,11 @@ const BOT_TABLES = ['leads', 'messages', 'handoffs', 'outbound_messages', 'ai_us
 const CRM_TABLES = ['crm_users', 'crm_lead_assignments', 'crm_lead_notes', 'crm_follow_ups', 'crm_lead_outcomes', 'crm_payment_links', 'crm_branding', 'crm_activity_log', 'crm_settings'];
 // After leads and outcomes: restoring those makes the Zoho trigger add zoho_links rows.
 const ZOHO_TABLES = ['zoho_links', 'zoho_cursors'];
-const TABLES = [...PLATFORM_TABLES, ...BOT_TABLES, ...CRM_TABLES, ...ZOHO_TABLES];
+// K26 billing count (platform migration 9; skipped while a database doesn't have it yet).
+const USAGE_TABLES = ['lead_usage', 'lead_usage_alerts'];
+// K27 reply times (platform migration 10; skipped while a database doesn't have it yet).
+const METRIC_TABLES = ['reply_times'];
+const TABLES = [...PLATFORM_TABLES, ...BOT_TABLES, ...CRM_TABLES, ...ZOHO_TABLES, ...USAGE_TABLES, ...METRIC_TABLES];
 
 /** All tenants' rows (system context). */
 async function createBackup() {
@@ -34,7 +38,7 @@ async function backupAll() {
   const tables = {};
   for (const t of TABLES) {
     // CRM tables exist once the CRM migrations ran (always, on Heroku).
-    if ((CRM_TABLES.includes(t) || ZOHO_TABLES.includes(t)) && !(await db.one('SELECT to_regclass($1) AS t', [t])).t) continue;
+    if ((CRM_TABLES.includes(t) || ZOHO_TABLES.includes(t) || USAGE_TABLES.includes(t) || METRIC_TABLES.includes(t)) && !(await db.one('SELECT to_regclass($1) AS t', [t])).t) continue;
     // Binary values (crm_branding.logo_data) are stored as { $base64 } so JSON keeps them intact.
     const bin = v => (Buffer.isBuffer(v) || v instanceof Uint8Array ? { $base64: Buffer.from(v).toString('base64') } : v);
     tables[t] = (await db.many(`SELECT * FROM ${t} ORDER BY 1`))

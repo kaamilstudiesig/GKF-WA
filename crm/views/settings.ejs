@@ -13,8 +13,12 @@
   </div>
 </div>
 
+<div class="mb-4" id="usage"><%- include('partials/lead-usage', { usage: typeof usage !== 'undefined' ? usage : null, detail: true }) %></div>
+
 <%
-  const bf = brandForm || { mark: brand.markIsDefault ? '' : brand.mark, color: brand.color };
+  // The client's own brand (R12), also on the shared CRM, where the page itself looks like Dartit.
+  const ob = typeof ownBrand !== 'undefined' && ownBrand ? ownBrand : brand;
+  const bf = brandForm || { mark: ob.markIsDefault ? '' : ob.mark, color: ob.color };
 %>
 <%
   const qs = queueSettings;
@@ -65,15 +69,21 @@
   <% } %>
 </section>
 
+<section class="<%= card %> mb-4 scroll-mt-20" id="export">
+  <h2>Your data</h2>
+  <p class="text-sm text-base-content/60">Download everything <%= brand.name %> has here: leads, every WhatsApp conversation, outcomes, notes, assignments, hand-offs, follow-ups, payment links and staff. One ZIP of spreadsheet (CSV) files, with a README that explains each one. Each download is recorded in the activity log.</p>
+  <a class="btn btn-sm mt-1 w-full sm:w-auto" href="/settings/export.zip" download><%- include('partials/icon', { name: 'download', cls: 'size-4' }) %>Download all data (ZIP)</a>
+</section>
+
 <form method="post" action="/settings/brand" id="brand" class="<%= card %> mb-4 scroll-mt-20" data-brand-form>
   <%- include('partials/csrf') %>
   <div class="flex items-center gap-3">
-    <%- include('partials/logo-mark', { size: 'size-12' }) %>
-    <div class="min-w-0"><h2>Brand</h2><p class="text-sm text-base-content/60">How the CRM looks for your team. The name comes from <em>Business name</em> below.</p></div>
+    <%- include('partials/logo-mark', { size: 'size-12', brand: ob }) %>
+    <div class="min-w-0"><h2>Brand</h2><p class="text-sm text-base-content/60">How the CRM looks for your team. The name comes from <em>Business name</em> below.<% if (brand.platform) { %> It shows on your own CRM address; this shared Dartit address keeps the Dartit look.<% } %></p></div>
   </div>
   <div class="grid gap-3 sm:grid-cols-[8rem_12rem_1fr]">
     <fieldset class="<%= field %>"><legend class="fieldset-legend">Logo letters</legend>
-      <input name="mark" maxlength="3" value="<%= bf.mark %>" placeholder="<%= brand.markIsDefault ? brand.mark : '' %>" autocapitalize="characters" class="input w-full uppercase">
+      <input name="mark" maxlength="3" value="<%= bf.mark %>" placeholder="<%= ob.markIsDefault ? ob.mark : '' %>" autocapitalize="characters" class="input w-full uppercase">
       <p class="label whitespace-normal">Up to 3. Empty uses initials.</p></fieldset>
     <fieldset class="<%= field %>"><legend class="fieldset-legend">Brand colour</legend>
       <label class="input w-full"><input type="color" value="<%= bf.color %>" aria-label="Pick brand colour" class="size-6 shrink-0 cursor-pointer rounded border-0 bg-transparent p-0" data-color-pick><input name="color" required maxlength="7" value="<%= bf.color %>" pattern="#?[0-9a-fA-F]{3}([0-9a-fA-F]{3})?" class="grow" data-color-text></label>
@@ -82,8 +92,8 @@
       <input type="file" accept="image/png,image/jpeg,image/webp" class="file-input w-full" data-logo-file aria-label="Logo image">
       <input type="hidden" name="logo" data-logo-data>
       <p class="label whitespace-normal" data-logo-hint>Square PNG, JPEG or WebP under 40 KB. Replaces the letters.</p>
-      <% if (!brand.logoSquarePng) { %><p class="label whitespace-normal text-warning"><%= brand.logoUrl ? 'Your logo is not a square PNG, so phones use a plain tile in your brand colour as the app icon. Upload a square PNG (180×180 or larger) to use your logo.' : 'For the app icon on iPhones, upload a square PNG (180×180 or larger). Without one, iPhones show a plain tile in your brand colour.' %></p><% } %>
-      <% if (brand.logoUrl) { %><label class="label mt-1 cursor-pointer gap-2"><input type="checkbox" name="remove_logo" value="1" class="checkbox checkbox-sm"> Remove the current logo</label><% } %>
+      <% if (!ob.logoSquarePng) { %><p class="label whitespace-normal text-warning"><%= ob.logoUrl ? 'Your logo is not a square PNG, so phones use a plain tile in your brand colour as the app icon. Upload a square PNG (180×180 or larger) to use your logo.' : 'For the app icon on iPhones, upload a square PNG (180×180 or larger). Without one, iPhones show a plain tile in your brand colour.' %></p><% } %>
+      <% if (ob.logoUrl) { %><label class="label mt-1 cursor-pointer gap-2"><input type="checkbox" name="remove_logo" value="1" class="checkbox checkbox-sm"> Remove the current logo</label><% } %>
     </fieldset>
   </div>
   <button class="btn btn-primary w-full sm:w-auto" type="submit">Save brand</button>

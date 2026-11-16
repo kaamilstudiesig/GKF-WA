@@ -13,7 +13,7 @@ function capi() {
 /**
  * Meta Conversions API for business messaging (click-to-WhatsApp ads).
  * Tells Meta which chats turned into real results so ads find more people like them:
- *   Visit booked -> QualifiedLead, Joined -> Purchase (₹ value).
+ *   Visit booked -> QualifiedLead, Joined -> Purchase (value in the business's currency, R15).
  * https://developers.facebook.com/docs/marketing-api/conversions-api/business-messaging/
  * Meta does not de-duplicate these events; the caller must send each one once.
  */
@@ -42,7 +42,7 @@ class ConversionsApi {
    * Matching: the ad click ID when the lead came from a click-to-WhatsApp ad, else the
    * hashed phone + Facebook Page ID (Meta only attributes those within 7 days of the ad).
    */
-  buildEvent(outcome, lead) {
+  buildEvent(outcome, lead, { currency = 'INR' } = {}) {
     const eventName = EVENTS[outcome.outcome];
     if (!eventName) return { skip: 'not_a_meta_event' };
     const c = capi();
@@ -63,7 +63,8 @@ class ConversionsApi {
       messaging_channel: 'whatsapp',
       user_data: userData
     };
-    if (eventName === 'Purchase') event.custom_data = { currency: 'INR', value: Number(outcome.amount_inr) || 0 };
+    // R15: amounts are whole units of the business's currency (the amount_inr name is historical).
+    if (eventName === 'Purchase') event.custom_data = { currency, value: Number(outcome.amount_inr) || 0 };
     return { event };
   }
 

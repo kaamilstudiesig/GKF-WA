@@ -24,23 +24,29 @@ const { LeadQueue, QueueError, TIMEZONES } = require('./queue');
 const { MIN_AGE_HOURS } = require('./nudges');
 const { Analytics, GRADE_MIN_LEADS } = require('./analytics');
 
-/** One CSV cell: quoted when needed, and formula-looking text made inert (spreadsheet injection). */
-function csvCell(v) {
-  let s = v === null || v === undefined ? '' : String(v);
-  if (/^[=+\-@\t\r]/.test(s)) s = `'${s}`;
-  return /[",\n\r]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
-}
-const { Branding } = require('./branding');
+const { csvCell } = require('./csv'); // shared with the R19 data export
+const { buildExport } = require('./dataExport');
+const { Branding, forPlatform } = require('./branding');
 const { can } = require('./permissions');
 const { LEAD_STATUSES, ROLE_LABELS, ROLES, OUTCOMES, LOST_REASONS, STAGES } = require('./constants');
 
 // The bot's business profile (K10): plan names for "Joined", and the Business settings page.
 let gymConfig = null;
 let businessProfile = null;
+let leadUsage = null;
 try {
   gymConfig = require('../../src/config/gymConfig');
   businessProfile = require('../../src/services/businessProfile');
+  leadUsage = require('../../src/services/leadUsage'); // K26
 } catch (e) { /* standalone CRM without the bot */ }
+// K26: this month's lead count for owners and managers, or null (sales, no bot, or the meter failed).
+const usageFor = async user => {
+  if (!leadUsage || user.role === 'sales') return null;
+  try { return await leadUsage.usage(); } catch (e) { return null; }
+};
+// K27: this month's reply time for the owner's line in Reports (optional: needs the bot).
+let replyTimes = null;
+try { replyTimes = require('../../src/services/replyTimes'); } catch (e) { /* standalone CRM */ }
 const planOptions = () => (gymConfig ? gymConfig.pricingTiers.map(t => `${t.name} (${t.price})`) : []);
 const toArray = v => (Array.isArray(v) ? v : v === undefined ? [] : [v]);
 
@@ -142,7 +148,8 @@ function createCrmApp({
       CURRENCY, CURRENCY_SHORT: util.CURRENCIES[CURRENCY].prefix.trim(), money: v => util.money(v, CURRENCY),
       ...namesFor(gymConfig ? gymConfig.profile.type : 'gym', CURRENCY),
       path: req.path, query: req.query, flash: req.query.ok || null, error: req.query.err || null,
-      brand: await branding.get()
+      // The shared CRM always looks like Dartit, with this business's name (src/routes/sharedCrm.js).
+      brand: req.sharedCrm ? forPlatform(await branding.get()) : await branding.get()
     });
     next();
   }));
@@ -290,7 +297,7 @@ function createCrmApp({
   app.get('/', h(async (req, res) => {
     const d = await crm.dashboard(req.user);
     await withClock([...d.attention, ...d.recent]);
-    res.render('dashboard', { d });
+    res.render('dashboard', { d, usage: await usageFor(req.user) });
   }));
 
   // ---- leads ----
@@ -415,7 +422,8 @@ function createCrmApp({
       : a.ads;
     res.render('reports', {
       r: await crm.reports(req.user, { days, includeAiCost: can.viewAiCost(req.user), usdToInr }),
-      a, adRows, adSort, GRADE_MIN_LEADS
+      a, adRows, adSort, GRADE_MIN_LEADS,
+      replyStats: replyTimes && req.user.role === 'owner' ? await replyTimes.monthStats().catch(() => null) : null
     });
   }));
   // R6: the "By ad" table as a spreadsheet (same scope and period as the page).
@@ -457,7 +465,8 @@ function createCrmApp({
       profile: gymConfig.profile, meta: await businessProfile.meta(), verticals: VERTICALS,
       prompt: gymConfig.getSystemPrompt(), limits: businessProfile.LIMITS, brandForm: null,
       queueSettings: await queue.settings(), TIMEZONES, queueBotWired: LeadQueue.botWired,
-      zoho: await zoho.summary(),
+      ownBrand: await branding.get(), // the Brand form edits the client's own brand, also on the shared CRM
+      zoho: await zoho.summary(), usage: leadUsage ? await leadUsage.usage().catch(() => null) : null,
       // R15: the currency select, and the warning when sales already have amounts.
       currencyOptions: currencyOptions(),
       amounts: await storedAmounts(),
@@ -491,6 +500,20 @@ function createCrmApp({
     await crm.log(req.user, null, 'business_profile_updated');
     if (fromCurrency !== toCurrency) await crm.log(req.user, null, 'currency_changed', { from: fromCurrency, to: toCurrency });
     res.redirect(withOk('/settings', 'Saved. The WhatsApp assistant uses the new details from its next reply.'));
+  }));
+
+  // R19: the full data export. Owner only; every download is in the activity log.
+  app.get('/settings/export.zip', allow(can.manageBusiness), h(async (req, res) => {
+    const profile = gymConfig ? gymConfig.profile : {};
+    const when = new Date();
+    const { zip, counts } = await buildExport(db, {
+      businessName: profile.name || res.locals.brand.name, currency: profile.currency || 'INR', when
+    });
+    await crm.log(req.user, null, 'data_exported', { files: counts, bytes: zip.length });
+    res.setHeader('Content-Type', 'application/zip');
+    res.setHeader('Content-Disposition', `attachment; filename="${res.locals.brand.fileSlug}-data-${util.localDay(when.toISOString())}.zip"`);
+    res.setHeader('Cache-Control', 'no-store'); // private data: never kept by a browser or proxy cache
+    res.send(zip);
   }));
 
   // Branding (R12): logo letters, colour and logo image, on the Business settings page.

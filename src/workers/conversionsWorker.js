@@ -1,6 +1,9 @@
 const QueueWorker = require('./queueWorker');
 const db = require('../db');
 const conversionsApi = require('../services/conversionsApi');
+const businessProfile = require('../services/businessProfile');
+const gymConfig = require('../config/gymConfig');
+const { currencyCode } = require('../config/currency');
 const opsAlerts = require('../services/opsAlerts');
 const logger = require('../utils/logger');
 
@@ -37,7 +40,8 @@ async function sendOne(outcome) {
     return;
   }
   const lead = await db.one('SELECT wa_id, phone, metadata FROM leads WHERE wa_id = $1', [outcome.wa_id]);
-  const built = conversionsApi.buildEvent(outcome, lead);
+  await businessProfile.ensureLoaded(); // this client's currency (R15), not the default profile's
+  const built = conversionsApi.buildEvent(outcome, lead, { currency: currencyCode(gymConfig.profile.currency) });
   if (built.skip) {
     await mark(outcome.id, 'skipped', { error: built.skip });
     logger.info('Conversions API: outcome not sent', { id: outcome.id, reason: built.skip });

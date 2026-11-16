@@ -54,6 +54,21 @@ prefixed `crm_`.
 
 Every lead page starts with **Log outcome** (`#outcome`, also where Telegram's "✅ Log outcome" button lands): one tap for *Called, spoke · No answer · WhatsApp sent · Visited · No-show*, and short forms for *Visit booked* (date/time), *Joined* (plan + ₹ paid) and *Lost* (reason). Each outcome updates the lead's status, resolves the bot's hand-off once someone has actually been in touch, and books the next follow-up automatically (no answer → retry in 2h, next day, 3 days, weekly). The rules are in `docs/TEAM.md` under "Lead outcomes".
 
+## Currency (R15)
+
+**Until Kaamil's bot side (TEAM.md, R15) merges, don't switch a live client off INR:** Purchase events would reach Meta as INR (`src/services/conversionsApi.js`), Telegram/WhatsApp alert amounts would show ₹ (`suggestedOutcome`, payment alerts), and Zoho deals carry the number with no currency. Demo clients (`npm run demo`) are fine: they send nothing to Meta.
+
+Each business has one currency: `profile.currency` (`INR` default, `AED`, `SAR`, `USD`), chosen on **Business settings → Basics**. Unknown or missing codes are INR, so GKF is unchanged.
+
+- **Stored:** every `amount_inr` column (`crm_lead_outcomes`, `crm_payment_links`) holds **whole units of the business's currency**, despite its name (AED 950000 for a Dubai sale). No migration. The largest sale is 100,000,000 units in any currency.
+- **Shown:** `src/config/currency.js` (shared with the bot): `money(amount, currency)` gives `₹7,080` / `₹9,50,000` (Indian grouping only for INR), `AED 950,000`, `SAR 950,000`, `$950,000`. Pages use `money()` from `res.locals` (the business's currency); `util.money` re-exports it. Lead page, outcome sheet, pipeline, suggested outcome and Reports all use it; Reports headers say "Revenue (AED)" (GKF keeps "Revenue"), and the ads CSV's column is `revenue_<code>`.
+- **Typed:** `parseAmount(text)` reads "₹7,080", "Rs 7080", "AED 950,000", "950000" and refuses decimals. The outcome sheet's field says "Amount paid (AED)".
+- **Payment links:** Razorpay is INR-only, so **Send payment link** is hidden and the route refuses (400) when the currency isn't INR.
+- **AI cost on Reports** stays in USD (our cost); the ₹ estimate shows only for INR businesses.
+- **Ad spend** (R6, from K5) is assumed to be in the business's currency; K5 converts it if the Meta ad account bills in another one.
+- **Changing it:** allowed. Once sales or payment links exist, Business settings warns that amounts are not converted, the owner must tick **I understand** to change it, and the change is logged (`currency_changed`, from and to). Text already sent with ₹ (messages, activity) stays as sent.
+- The plan-price example on Business settings follows the currency (`labelsFor(type, currency)`, `planPriceByCurrency` in `src/config/verticals.js`).
+
 ## Analytics (R5)
 
 `crm/src/analytics.js`: `new Analytics(db).summary(user, { days, now, names, lostNames | type })` returns plain objects (the Reports page renders them; K21 and scripts can call it with no user for the whole business, inside `tenancy.run`). `names` is `namesFor(type).OUTCOMES`, so stage labels follow the business type (real estate: Site visit booked, Booked). Lost reasons use the business type's words: pass `lostNames` (`namesFor(type).LOST_REASONS`, as the Reports page does) or `type`; with neither, the current client's own business type (from its business profile) is used.
@@ -142,6 +157,24 @@ Leads from website forms and property portals (contract in `docs/TEAM.md`, "R16:
 - **What happens:** a phone is required (local numbers get the client's country code). The lead is matched by phone or created (`source` = `intake_<source>`; `metadata.intake` is the latest submission, `intake_first` the first touch, `intake_history` the last 10), with `last_inbound_message_at` NULL, so its reply window stays closed until it writes on WhatsApp. The message becomes a note shown as **Lead form**. A `form_lead` hand-off goes to the lead queue and alerts staff (one per lead while one is open). With consent and the client's approved template (`leadWelcomeTemplate`, in `leadWelcomeLanguage`, default `en`), one WhatsApp welcome (queued; the hand-off says "queued") per phone per 24 hours, never during a live chat. The same `sourceRef` within 24 hours does nothing.
 - **Business settings → Lead sources** (owner): the address, allowed websites, country code, welcome status, form key + snippet, signing secret (regenerate only, shown once, stored encrypted), and the last 20 submissions (Added, Repeat, Refused, Too many). Each change is in the activity log.
 - **On leads:** a source badge (Website form, Bayut…) on lead cards, the pipeline and the lead page. Lists sort leads with no WhatsApp message after those that wrote (`NULLS LAST`).
+
+## Data export (R19)
+
+**Business settings → Your data → Download all data (ZIP)** (owner only; `GET /settings/export.zip`) gives the client everything we hold for them, so they never have to ask (client agreement 7.6, and what we hand over at exit, 12.5). `crm/src/dataExport.js` builds one CSV per table:
+
+| File | What |
+| --- | --- |
+| `leads.csv` | Every lead, with `metadata` (e.g. the ad it came from) as JSON |
+| `messages.csv` | Every WhatsApp message in and out |
+| `outcomes.csv` | Logged outcomes with plan, amount, lost reason and who logged them |
+| `notes.csv`, `assignments.csv`, `handoffs.csv`, `follow_ups.csv`, `payment_links.csv` | As named, with staff names instead of ids |
+| `staff.csv` | Name, email, role, manager, active (no passwords) |
+| `README.txt` | What each file holds, row counts, the currency of amounts, and that times are UTC |
+
+- Runs in the client's tenant context, so row-level security keeps it to this client's rows. No passwords, sessions or tokens.
+- UTF-8 with a byte order mark (Excel shows ₹, Arabic and Hindi), CRLF lines; formula-looking cells are made inert (`crm/src/csv.js`, shared with the leads and ads CSVs).
+- The ZIP is built in memory with `crm/src/zip.js` (Node's `zlib`, no dependency). Fine for one client's data (tens of MB); stream it if a client ever grows past that.
+- Every download is in the activity log (`data_exported`, with row counts), and the response is `Cache-Control: no-store`.
 
 ## Roles
 

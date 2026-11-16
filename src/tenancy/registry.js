@@ -38,7 +38,9 @@ const SETTING_KEYS = ['crmBaseUrl', 'telegramChatId', 'telegramOpsChatId', 'meta
   'whatsappSetup',
   // R16 lead intake: the website form's public key and allowed origins, the country code for local
   // phone numbers ("91", "971"), and the approved welcome template (empty = no welcome message).
-  'intakeFormKey', 'intakeOrigins', 'phoneCountry', 'leadWelcomeTemplate', 'leadWelcomeLanguage'];
+  'intakeFormKey', 'intakeOrigins', 'phoneCountry', 'leadWelcomeTemplate', 'leadWelcomeLanguage',
+  // K26: leads included per month in the client's plan (Schedule A). Empty = count only, no alerts.
+  'leadMonthlyLimit'];
 
 // Our lead status -> Zoho's standard Lead Status values. A client can override any of them (zohoStatusMap).
 const ZOHO_STATUS_MAP = {
@@ -95,7 +97,9 @@ function resolve(entry) {
     },
     crm: {
       host: row.crm_host || null,
-      baseUrl: String(pick(s.crmBaseUrl, process.env.CRM_BASE_URL) || (row.crm_host ? `https://${row.crm_host}` : '')).replace(/\/+$/, '')
+      // No own CRM host: links go to the shared CRM (staff sign in there), when it is on.
+      baseUrl: String(pick(s.crmBaseUrl, process.env.CRM_BASE_URL) || (row.crm_host ? `https://${row.crm_host}` : '')
+        || (env.sharedCrmHosts()[0] ? `https://${env.sharedCrmHosts()[0]}` : '')).replace(/\/+$/, '')
     },
     telegram: {
       chatId: pick(s.telegramChatId, process.env.TELEGRAM_CHAT_ID),
@@ -128,6 +132,8 @@ function resolve(entry) {
       // The template's language code as approved by Meta ("en", "ar", "en_US").
       welcomeLanguage: /^[a-z]{2,3}(_[A-Z]{2})?$/.test(String(s.leadWelcomeLanguage || '')) ? s.leadWelcomeLanguage : 'en'
     },
+    // K26: no default on purpose; it comes from the client's plan.
+    leadMonthlyLimit: Number.isInteger(Number(s.leadMonthlyLimit)) && Number(s.leadMonthlyLimit) > 0 && !blank(s.leadMonthlyLimit) ? Number(s.leadMonthlyLimit) : null,
     zoho: {
       on: s.zohoSync === 'on' && Boolean(sec.zohoClientId && sec.zohoClientSecret && sec.zohoRefreshToken),
       accountsUrl: String(s.zohoAccountsUrl || 'https://accounts.zoho.com').replace(/\/+$/, ''),
@@ -241,6 +247,7 @@ const registry = {
     if (host && (others.some(t => t.crm.host === host) || (existingId !== DEFAULT_TENANT_ID && env.crmHosts.includes(host)))) {
       throw new Error('Another tenant already uses this CRM host.');
     }
+    if (host && env.sharedCrmHosts().includes(host)) throw new Error('This is the shared CRM host (SHARED_CRM_HOSTS); a tenant cannot own it.');
     if (others.some(t => t.slug === slug)) throw new Error('Another tenant already uses this slug.');
     for (const k of Object.keys(input.secrets || {})) if (!SECRET_KEYS.includes(k)) throw new Error(`Unknown secret: ${k}`);
     for (const k of Object.keys(input.settings || {})) if (!SETTING_KEYS.includes(k)) throw new Error(`Unknown setting: ${k}`);

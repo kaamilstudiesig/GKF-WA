@@ -131,6 +131,7 @@ function profile(name, region) {
   return {
     name,
     type: 'realestate',
+    currency: r.currency, // R15: AED for 'ae', INR for 'in'
     area: r.area,
     address: r.address,
     parking: 'Visitor parking at every project',

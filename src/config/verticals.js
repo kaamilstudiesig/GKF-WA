@@ -135,6 +135,8 @@ const realestate = {
   },
   labels: {
     programs: 'Projects and properties', plans: 'Unit types and prices', planName: '2 BHK', planPrice: '₹85L onwards',
+    // R15: the plan-price example in other currencies (labelsFor picks the business's).
+    planPriceByCurrency: { AED: 'AED 1.1M onwards', SAR: 'SAR 1.1M onwards', USD: '$300K onwards' },
     visit_booked: 'Site visit booked', visited: 'Site visited', no_show: 'Missed site visit', joined: 'Booked'
   },
   examples(profile) {
@@ -152,12 +154,22 @@ const realestate = {
 
 const VERTICALS = { gym, services, realestate };
 
-const DEFAULT_LABELS = { programs: 'Programs and services', plans: 'Plans and prices', planName: 'Plan name', planPrice: '₹4,040/month' };
+const DEFAULT_LABELS = {
+  programs: 'Programs and services', plans: 'Plans and prices', planName: 'Plan name', planPrice: '₹4,040/month',
+  planPriceByCurrency: { AED: 'AED 400/month', SAR: 'SAR 400/month', USD: '$100/month' }
+};
 
-/** Display names for a business type: prompt/settings labels and outcome/stage names. */
-function labelsFor(type) {
+/**
+ * Display names for a business type: prompt/settings labels and outcome/stage names.
+ * `currency` (R15) picks the plan-price example in the business's currency.
+ */
+function labelsFor(type, currency = 'INR') {
   const v = VERTICALS[type] || gym;
-  return { ...DEFAULT_LABELS, ...(v.labels || {}) };
+  const l = { ...DEFAULT_LABELS, ...(v.labels || {}) };
+  const byCurrency = { ...DEFAULT_LABELS.planPriceByCurrency, ...(v.labels && v.labels.planPriceByCurrency) };
+  if (currency !== 'INR' && byCurrency[currency]) l.planPrice = byCurrency[currency];
+  delete l.planPriceByCurrency;
+  return l;
 }
 
 /** Lost-reason wording for a business type, by key; missing keys use the neutral defaults. */

@@ -15,6 +15,9 @@ const ROLE_LABELS = { owner: 'Owner', manager: 'Manager', sales: 'Sales' };
 // WhatsApp only allows free-form replies within 24h of the lead's last message.
 const WINDOW_MS = 24 * 60 * 60 * 1000;
 
+// Money (R15): every amount_inr column (crm_lead_outcomes, crm_payment_links) holds whole units of
+// the business's currency (profile.currency: INR, AED, SAR or USD), not always rupees; the name is
+// historical. Format and read amounts with util.money / util.parseAmount (src/config/currency.js).
 // One-tap outcomes staff log after following up a lead (R1). Order = order on screen.
 const OUTCOMES = {
   called_connected: 'Called, spoke',

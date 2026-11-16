@@ -2,7 +2,7 @@ const crypto = require('crypto');
 const { Params } = require('./util');
 const { leadScope, staffScope, canAssignTo } = require('./permissions');
 const { LEAD_STATUSES, WINDOW_MS, OUTCOMES, LOST_REASONS, STAGES } = require('./constants');
-const { localDay, leadPhone } = require('./util');
+const { localDay, leadPhone, parseAmount, money, currencyCode, CURRENCIES } = require('./util');
 const { waitingSql, SINCE_SQL } = require('./nudges');
 const razorpay = require('../../src/services/razorpay');
 const signals = require('../../src/workers/signals');
@@ -10,7 +10,8 @@ const signals = require('../../src/workers/signals');
 const MAX_MESSAGE_LENGTH = 4096; // WhatsApp text limit
 const PAGE_SIZE = 25;
 const MAX_INT = 2147483647;
-// Largest sale we accept: ₹10 crore (real estate). Payment links stay at ₹10 lakh (Razorpay limits).
+// Largest sale we accept: 100,000,000 whole units of the business's currency (₹10 crore, AED 100M;
+// fits the INTEGER amount_inr columns, R15). Payment links stay at ₹10 lakh (Razorpay limits).
 const MAX_SALE_INR = 100000000;
 
 class HttpError extends Error {
@@ -18,6 +19,12 @@ class HttpError extends Error {
 }
 
 const now = () => new Date().toISOString();
+// R15: the business's currency (business profile). Amounts in amount_inr are whole units of it.
+const businessCurrency = () => {
+  try { return currencyCode(require('../../src/config/gymConfig').profile.currency); } catch (e) { return 'INR'; } // standalone CRM
+};
+// "rupees", "AED", "SAR", "US dollars": for messages that ask for an amount.
+const CURRENCY_WORDS = { INR: 'rupees', AED: 'AED', SAR: 'SAR', USD: 'US dollars' };
 const isId = id => Number.isInteger(id) && id > 0 && id <= MAX_INT;
 /** jsonb arrives as an object from both drivers; tolerate a string just in case. */
 function asObject(v) {
@@ -325,8 +332,10 @@ class Crm {
     if (!razorpay.enabled()) throw new HttpError(503, 'Payment links are not set up yet.');
     const plan = String(input.plan || '').trim().slice(0, 100);
     if (!plan) throw new HttpError(400, 'Which plan is the link for?');
-    const amount = Number(String(input.amount ?? '').replace(/[₹,\s]/g, ''));
-    if (!Number.isInteger(amount) || amount <= 0 || amount > 1000000) throw new HttpError(400, 'Enter the amount in rupees (whole number).');
+    // Razorpay links are INR-only (R15): refused here too, not just hidden on the page.
+    if (businessCurrency() !== 'INR') throw new HttpError(400, `Payment links work only in rupees. This business uses ${CURRENCIES[businessCurrency()].name}s.`);
+    const { amount } = parseAmount(input.amount);
+    if (!Number.isInteger(amount) || amount <= 0 || amount > 1000000) throw new HttpError(400, 'Enter the amount in rupees (whole number, up to ₹10,00,000).');
     const lead = await this.requireLead(user, waId);
 
     const referenceId = `lead-${crypto.randomUUID()}`;
@@ -339,7 +348,7 @@ class Crm {
     await this.log(user, waId, 'payment_link_created', { plan, amount_inr: amount });
 
     if (!lead.window_open) return { url: link.short_url, sent: false };
-    await this.queueMessage(user, waId, `Here is your payment link for ${plan} (₹${amount.toLocaleString('en-IN')}):\n${link.short_url}`);
+    await this.queueMessage(user, waId, `Here is your payment link for ${plan} (${money(amount, 'INR')}):\n${link.short_url}`);
     return { url: link.short_url, sent: true };
   }
 
@@ -390,8 +399,10 @@ class Crm {
     if (outcome === 'joined') {
       row.plan = String(input.plan || '').trim().slice(0, 100);
       if (!row.plan) throw new HttpError(400, 'Which plan did they join?');
-      const amount = Number(String(input.amount ?? '').replace(/[₹,\s]/g, ''));
-      if (!Number.isInteger(amount) || amount <= 0 || amount > MAX_SALE_INR) throw new HttpError(400, 'Enter the amount paid in rupees (whole number).');
+      const { amount } = parseAmount(input.amount); // "₹7,080", "AED 950,000", "950000"
+      if (!Number.isInteger(amount) || amount <= 0 || amount > MAX_SALE_INR) {
+        throw new HttpError(400, `Enter the amount paid in ${CURRENCY_WORDS[businessCurrency()]} (whole number).`);
+      }
       row.amount_inr = amount;
     }
     if (outcome === 'lost') {

@@ -5,7 +5,7 @@
   <h1 class="page-title max-lg:hidden">Dashboard</h1>
 </div>
 
-<div class="mb-4 grid grid-cols-2 gap-3 lg:grid-cols-7">
+<div class="mb-4 grid grid-cols-2 gap-3 <%= typeof usage !== 'undefined' && usage ? 'lg:grid-cols-8' : 'lg:grid-cols-7' %>">
   <% const kpis = [
        ['/leads?needs_human=1', 'Needs human', d.needsHuman, d.needsHuman ? 'text-primary' : ''],
        ['/leads?waiting=1&sort=waiting', 'No outcome yet', d.waitingCount, d.waitingCount ? 'text-warning' : ''],
@@ -21,6 +21,7 @@
       <div class="mt-1 text-3xl font-bold tabular-nums <%= cls %>"><%= value %></div>
     </a>
   <% } %>
+  <%- include('partials/lead-usage', { usage: typeof usage !== 'undefined' ? usage : null, detail: false }) %>
 </div>
 
 <% if (d.waiting.length) { %>

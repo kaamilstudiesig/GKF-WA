@@ -90,4 +90,7 @@ function intakeLabel(source) {
   return m ? (INTAKE_LABELS[m[1]] || 'Form') : null;
 }
 
-module.exports = { intakeLabel, Params, localInputToIso, localDay, fmtDate, fmtTime, dayLabel, timeAgo, cleanWaId, leadPhone, contactLabel, leadTitle, humanize, tzOffsetMs };
+// R15: amounts in the business's currency (src/config/currency.js; shared with the bot).
+const { money, parseAmount, currencyCode, CURRENCIES } = require('../../src/config/currency');
+
+module.exports = { intakeLabel, money, parseAmount, currencyCode, CURRENCIES, Params, localInputToIso, localDay, fmtDate, fmtTime, dayLabel, timeAgo, cleanWaId, leadPhone, contactLabel, leadTitle, humanize, tzOffsetMs };

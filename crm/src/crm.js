@@ -104,10 +104,11 @@ class Crm {
     }
 
     const orders = {
-      recent: 'l.last_inbound_message_at DESC',
-      oldest: 'l.last_inbound_message_at ASC',
+      // R16: form leads have no WhatsApp message yet (NULL); they sort after leads that wrote.
+      recent: 'l.last_inbound_message_at DESC NULLS LAST',
+      oldest: 'l.last_inbound_message_at ASC NULLS LAST',
       created: 'l.first_contact_at DESC',
-      attention: 'l.needs_human DESC, l.last_inbound_message_at DESC',
+      attention: 'l.needs_human DESC, l.last_inbound_message_at DESC NULLS LAST',
       followup: 'next_followup_at ASC NULLS LAST',
       waiting: `${SINCE_SQL} ASC NULLS LAST` // longest waiting first
     };
@@ -516,7 +517,7 @@ class Crm {
         LEFT JOIN crm_users u ON u.id = a.user_id
         WHERE ${leadScope(user, q)}
       ) x
-      ORDER BY x.needs_human DESC, x.last_inbound_message_at DESC
+      ORDER BY x.needs_human DESC, x.last_inbound_message_at DESC NULLS LAST
     `, q.values);
     const columns = Object.entries(STAGES).map(([stage, label]) => ({ stage, label, total: 0, revenue: 0, leads: [] }));
     const byStage = Object.fromEntries(columns.map(c => [c.stage, c]));

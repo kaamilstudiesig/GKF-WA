@@ -11,6 +11,9 @@
  * (tenancyPolicy below). test/tenancy.test.js fails for a table without them.
  */
 
+// The bot's original hand-off reasons (frozen in migration 1); R16 adds form_lead below.
+const { HANDOFF_REASONS } = require('./schema');
+
 // The current tenant, set per connection by src/db/index.js. Empty outside a tenant.
 const TENANT_DEFAULT = "NULLIF(current_setting('app.tenant_id', true), '')::integer";
 // A row is visible when it belongs to the current tenant, or when system work (all tenants) runs.
@@ -259,6 +262,40 @@ const PLATFORM_MIGRATIONS = [
     up: ['ALTER TABLE leads ADD COLUMN opted_out_at TIMESTAMPTZ']
   },
   {
+    // R16: leads from portals and website forms (src/routes/intake.js; contract in docs/TEAM.md).
+    id: 7,
+    name: 'lead_intake',
+    up: [
+      // A form lead has never written on WhatsApp, so its 24-hour reply window is closed: it keeps
+      // last_inbound_message_at NULL until the first real message (windowOpen(null) is false in the
+      // bot and the CRM; the bot's upsert uses GREATEST, which ignores NULL). New inbound leads still
+      // default to now().
+      'ALTER TABLE leads ALTER COLUMN last_inbound_message_at DROP NOT NULL',
+      // A hand-off opened by a form or portal lead. Not an AI reason (src/services/aiPolicy.js).
+      'ALTER TABLE handoffs DROP CONSTRAINT handoffs_reason_check',
+      `ALTER TABLE handoffs ADD CONSTRAINT handoffs_reason_check CHECK (reason IN (${[...HANDOFF_REASONS, 'form_lead'].map(r => `'${r}'`).join(', ')}))`,
+      // Every submission, accepted or not: duplicate sourceRef checks, rate limits that hold across
+      // dynos, and the "last 20" list on Business settings -> Lead sources. ip_hash is a keyed hash,
+      // never the raw IP.
+      `CREATE TABLE intake_submissions (
+        id INTEGER GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+        tenant_id INTEGER NOT NULL DEFAULT ${TENANT_DEFAULT} REFERENCES tenants (id),
+        received_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+        channel TEXT NOT NULL CHECK (channel IN ('form', 'api')),
+        source TEXT,
+        source_ref TEXT,
+        wa_id TEXT,
+        ip_hash TEXT,
+        status TEXT NOT NULL CHECK (status IN ('processing', 'accepted', 'duplicate', 'rejected', 'limited')),
+        error TEXT
+      )`,
+      'CREATE INDEX intake_submissions_ref_idx ON intake_submissions (tenant_id, source, source_ref, received_at) WHERE source_ref IS NOT NULL',
+      'CREATE INDEX intake_submissions_ip_idx ON intake_submissions (tenant_id, ip_hash, received_at)',
+      'CREATE INDEX intake_submissions_lead_idx ON intake_submissions (tenant_id, wa_id, received_at)',
+      ...tenancyPolicy('intake_submissions')
+    ]
+  },
+  {
     // K26 lead usage meter (src/services/leadUsage.js). One row per person per calendar month
     // (the client's time zone): the billing count. person_key is a keyed hash of the phone or
     // Meta user id, never the number itself, so rows can outlive a deleted lead without holding
@@ -326,6 +363,6 @@ const PLATFORM_MIGRATIONS = [
 ];
 
 // Every table with client data, including ones added after migration 1 (tests and tools use this).
-const ALL_TENANT_TABLES = [...TENANT_TABLES, 'zoho_links', 'zoho_cursors', 'crm_settings', 'lead_usage', 'lead_usage_alerts', 'reply_times', 'opt_out_list'];
+const ALL_TENANT_TABLES = [...TENANT_TABLES, 'zoho_links', 'zoho_cursors', 'crm_settings', 'intake_submissions', 'lead_usage', 'lead_usage_alerts', 'reply_times', 'opt_out_list'];
 
 module.exports = { PLATFORM_MIGRATIONS, TENANT_TABLES, ALL_TENANT_TABLES, tenancyPolicy, TENANT_DEFAULT };

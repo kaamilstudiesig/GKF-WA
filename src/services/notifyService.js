@@ -6,6 +6,7 @@ const tenancy = require('../tenancy/context');
 
 const REASON_LABELS = {
   ready_to_book: 'Ready to book a trial',
+  form_lead: 'New lead from a form or portal', // R16
   price_negotiation: 'Price negotiation',
   custom_program: 'Wants a custom program',
   injury_question: 'Injury / medical question',

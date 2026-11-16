@@ -8,6 +8,7 @@ const { webhookRateLimiter } = require('./middleware/rateLimiter');
 const webhookController = require('./controllers/webhookController');
 const { legalRouter } = require('./routes/legal');
 const { connectRouter } = require('./routes/connect');
+const { intakeRouter } = require('./routes/intake');
 const { sharedCrmLayer, isSharedHost } = require('./routes/sharedCrm');
 const logger = require('./utils/logger');
 const { captureException } = require('./utils/sentry');
@@ -148,6 +149,9 @@ function createApp({
     () => handleRazorpay(req, res));
   app.post('/razorpay/webhook', razorpayWebhook);
   app.post('/razorpay/webhook/:slug', tenantFromSlug, razorpayWebhook);
+
+  // R16: leads from portals (signed JSON) and website forms (src/routes/intake.js).
+  app.use(intakeRouter());
 
   async function handleRazorpay(req, res) {
     if (!razorpay.enabled()) return res.status(404).json({ error: 'Not found' });

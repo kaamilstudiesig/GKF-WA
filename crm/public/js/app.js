@@ -140,6 +140,13 @@ document.addEventListener('DOMContentLoaded', () => {
     t.addEventListener('input', grow);
   });
 
+  // Forms that undo something ask first (data-confirm="question"). Inline handlers are blocked by the CSP.
+  document.querySelectorAll('form[data-confirm]').forEach(f => {
+    f.addEventListener('submit', e => { if (!window.confirm(f.dataset.confirm)) e.preventDefault(); });
+  });
+  // Read-only fields meant for copying (addresses, codes, secrets) select all on click.
+  document.querySelectorAll('[data-select]').forEach(el => el.addEventListener('click', () => el.select()));
+
   // Bottom sheets open via #hash (works without JS); Escape closes them.
   document.addEventListener('keydown', e => {
     if (e.key !== 'Escape' || !document.querySelector('.modal:target')) return;

@@ -28,6 +28,7 @@ const { csvCell } = require('./csv'); // shared with the R19 data export
 const { buildExport } = require('./dataExport');
 const { Branding, forPlatform } = require('./branding');
 const { can } = require('./permissions');
+const intakeSettings = require('./intakeSettings');
 const { LEAD_STATUSES, ROLE_LABELS, ROLES, OUTCOMES, LOST_REASONS, STAGES } = require('./constants');
 
 // The bot's business profile (K10): plan names for "Joined", and the Business settings page.
@@ -466,13 +467,50 @@ function createCrmApp({
       prompt: gymConfig.getSystemPrompt(), limits: businessProfile.LIMITS, brandForm: null,
       queueSettings: await queue.settings(), TIMEZONES, queueBotWired: LeadQueue.botWired,
       ownBrand: await branding.get(), // the Brand form edits the client's own brand, also on the shared CRM
-      zoho: await zoho.summary(), usage: leadUsage ? await leadUsage.usage().catch(() => null) : null,
+      zoho: await zoho.summary(), usage: leadUsage ? await leadUsage.usage().catch(() => null) : null, intake: await intakePage(),
       // R15: the currency select, and the warning when sales already have amounts.
       currencyOptions: currencyOptions(),
       amounts: await storedAmounts(),
       ...extra
     });
   };
+  // R16: Business settings -> Lead sources. The client's intake settings live in the tenant registry.
+  const intakePage = async () => {
+    if (!registry) return null; // standalone CRM: no bot host to receive leads
+    const t = registry.config(tenancy.tenantId());
+    if (!t) return null;
+    const env = require('../../src/config/env');
+    return intakeSettings.intakeView(db, { cfg: t.intake, slug: t.slug, botBaseUrl: env.botBaseUrl, businessName: gymConfig ? gymConfig.profile.name : t.name });
+  };
+  const saveIntake = async (req, res, input, message) => {
+    await registry.update(tenancy.tenantId(), input);
+    res.redirect(withOk('/settings', message) + '#lead-sources');
+  };
+  app.post('/settings/intake', allow(can.manageBusiness), h(async (req, res) => {
+    let origins; let country;
+    try {
+      origins = intakeSettings.parseOrigins(req.body.origins);
+      country = intakeSettings.parseCountry(req.body.phone_country);
+    } catch (err) {
+      res.status(400);
+      return settingsPage(res, { error: err.message });
+    }
+    await crm.log(req.user, null, 'intake_settings_updated', { origins: origins.length, phone_country: country });
+    await saveIntake(req, res, { settings: { intakeOrigins: origins, phoneCountry: country } }, 'Lead sources saved.');
+  }));
+  // A new public form key: forms already on websites stop working until the snippet is updated.
+  app.post('/settings/intake/form-key', allow(can.manageBusiness), h(async (req, res) => {
+    await crm.log(req.user, null, 'intake_form_key_created');
+    await saveIntake(req, res, { settings: { intakeFormKey: intakeSettings.newFormKey() } }, 'New form key made. Copy the snippet again to your website.');
+  }));
+  // The signing secret is shown once, right after it is made; it is stored encrypted and can't be shown again.
+  app.post('/settings/intake/secret', allow(can.manageBusiness), h(async (req, res) => {
+    const secret = intakeSettings.newSecret();
+    await registry.update(tenancy.tenantId(), { secrets: { intakeSecret: secret } });
+    await crm.log(req.user, null, 'intake_secret_regenerated');
+    res.set('Cache-Control', 'no-store');
+    await settingsPage(res, { newIntakeSecret: secret, flash: 'New signing secret made. Copy it now: it is not shown again. The old one stops working.' });
+  }));
   app.get('/settings', allow(can.manageBusiness), h(async (req, res) => {
     if (!businessProfile) return res.status(404).render('error', { status: 404, message: 'Business settings need the WhatsApp bot.' });
     await settingsPage(res);

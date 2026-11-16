@@ -344,10 +344,25 @@ const PLATFORM_MIGRATIONS = [
       'CREATE INDEX reply_times_sent_idx ON reply_times (tenant_id, sent_at)',
       ...tenancyPolicy('reply_times')
     ]
+  },
+  {
+    // K30 + K31: a STOP outlives the lead's deletion (src/services/optOutList.js). A keyed hash of the
+    // number, never the number. Id 11: 7 and 8 belong to open PRs (R16, R17).
+    id: 11,
+    name: 'opt_out_list',
+    up: [
+      `CREATE TABLE opt_out_list (
+        tenant_id INTEGER NOT NULL DEFAULT ${TENANT_DEFAULT} REFERENCES tenants (id),
+        person_key TEXT NOT NULL,
+        opted_out_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+        PRIMARY KEY (tenant_id, person_key)
+      )`,
+      ...tenancyPolicy('opt_out_list')
+    ]
   }
 ];
 
 // Every table with client data, including ones added after migration 1 (tests and tools use this).
-const ALL_TENANT_TABLES = [...TENANT_TABLES, 'zoho_links', 'zoho_cursors', 'crm_settings', 'intake_submissions', 'lead_usage', 'lead_usage_alerts', 'reply_times'];
+const ALL_TENANT_TABLES = [...TENANT_TABLES, 'zoho_links', 'zoho_cursors', 'crm_settings', 'intake_submissions', 'lead_usage', 'lead_usage_alerts', 'reply_times', 'opt_out_list'];
 
 module.exports = { PLATFORM_MIGRATIONS, TENANT_TABLES, ALL_TENANT_TABLES, tenancyPolicy, TENANT_DEFAULT };

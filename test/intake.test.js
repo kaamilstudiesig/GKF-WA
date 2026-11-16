@@ -348,3 +348,19 @@ test('Codex review fixes: junk public-form posts from one address hit a limit be
   const rows = await asAcme(() => db.one("SELECT COUNT(*)::int AS n FROM intake_submissions WHERE channel = 'form'"));
   assert.strictEqual(rows.n, 30); // the refused 31st left no row
 });
+
+test('K31 + R16: a deleted lead who wrote STOP and comes back through a form stays opted out (no welcome)', async () => {
+  const { deleteLead } = require('../src/services/leadDeletion');
+  const phone = '971501250001';
+  assert.strictEqual((await api({ name: 'S', phone, source: 'bayut', consent: true })).status, 202);
+  await asAcme(async () => {
+    await db.query('UPDATE leads SET opted_out_at = now() WHERE wa_id = $1', [phone]);
+    await db.query('DELETE FROM outbound_messages WHERE wa_id = $1', [phone]);
+    assert.strictEqual((await deleteLead(phone, { confirm: true })).deleted, true);
+  });
+  assert.strictEqual((await api({ name: 'S', phone, source: 'bayut', sourceRef: 'BY-BACK', consent: true })).status, 202);
+  const lead = await asAcme(() => db.one('SELECT opted_out_at FROM leads WHERE wa_id = $1', [phone]));
+  assert.ok(lead.opted_out_at);
+  const welcomes = await asAcme(() => db.one("SELECT COUNT(*)::int AS n FROM outbound_messages WHERE wa_id = $1 AND metadata ->> 'source' = 'intake'", [phone]));
+  assert.strictEqual(welcomes.n, 0);
+});

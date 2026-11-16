@@ -187,6 +187,9 @@ async function handle({ input, cfg, businessName, channel }) {
       WHERE wa_id = $1 RETURNING *`, [lead.wa_id, JSON.stringify(entry), input.name || null, HISTORY_KEEP]);
   }
   const waId = lead.wa_id;
+  // K31: someone deleted after writing STOP is back through a form: their opt-out returns first.
+  const restored = await require('./optOutList').restore(lead);
+  if (restored) lead = { ...lead, opted_out_at: restored };
   // K26: a form or portal lead counts towards this month's leads (once per person, across channels).
   await require('./leadUsage').record(lead, { channel: channel === 'form' ? 'form' : `portal_${input.source}` });
 

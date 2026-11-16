@@ -43,6 +43,67 @@ test('STOP, UNSUBSCRIBE and "don\'t message me" in each language are opt-outs; e
   assert.strictEqual(optOut.languageOf('توقف'), 'ar');
 });
 
+test('reviewed opt-out wording is recognized with the right reply language', () => {
+  const phrasesByLanguage = {
+    kn: [
+      'ನನಗೆ ಮೆಸೇಜ್ ಬೇಡ', 'ಸಂದೇಶಗಳನ್ನು ಕಳುಹಿಸಬೇಡಿ', 'ಮೆಸೇಜ್ ಕಳಿಸ್ಬೇಡಿ',
+      'nanage message beda', 'message kalisabedi', 'msg maadabedi'
+    ],
+    hi: ['msg mt kro', 'msg mat bhejiye', 'message band kar do', 'मैसेज मत भेजिए', 'मैसेज नहीं चाहिए'],
+    ar: ['ما أبي رسايل', 'ما أبغى رسائل', 'وقفوا الرسايل', 'شيلوني من القائمة', 'لا عاد ترسل']
+  };
+  for (const [language, phrases] of Object.entries(phrasesByLanguage)) {
+    for (const t of phrases) {
+      assert.strictEqual(optOut.classify(t), 'stop', t);
+      assert.strictEqual(optOut.languageOf(t), language, t);
+    }
+  }
+});
+
+test('cancel and instructions about a specific item are not opt-outs', () => {
+  for (const t of ['الغاء', 'إلغاء', 'paise mat bhejo', 'paise na bhejo', 'पैसे मत भेजो',
+    'لا ترسل الفاتورة الآن', 'لا ترسل', 'لا ترسل ليث',
+    'لا ترسل لي الفاتورة', 'لا ترسل لي الفاتورة الآن', 'لا ترسلوا لي الفاتورة الآن',
+    'لا ترسل رسالة الغاء', 'لا ترسل لي رسالة الغاء', 'لا ترسل لي رسائل الفاتورة الآن',
+    'please paise mat bhejo', 'कृपया पैसे मत भेजो',
+    'message bedazzled', 'ಮೆಸೇಜ್ ಬೇಡಿಕೆ', 'मैसेज नहीं चाहिएगा']) {
+    assert.strictEqual(optOut.classify(t), null, t);
+  }
+});
+
+test('clear Hindi and Kannada opt-outs allow prefixes and suffixes', () => {
+  const phrasesByLanguage = {
+    hi: ['please msg mt kro', 'msg mat bhejiye please', 'mujhe message band kar do',
+      'कृपया मैसेज मत भेजिए', 'मैसेज नहीं चाहिए अब', 'आगे मत भेजो', 'please aage mat bhejo'],
+    kn: ['ದಯವಿಟ್ಟು ನನಗೆ ಮೆಸೇಜ್ ಬೇಡ', 'ದಯವಿಟ್ಟು ಸಂದೇಶಗಳನ್ನು ಕಳುಹಿಸಬೇಡಿ', 'ಮೆಸೇಜ್ ಕಳಿಸ್ಬೇಡಿ ದಯವಿಟ್ಟು',
+      'please nanage message beda', 'message kalisabedi please', 'please msg maadabedi', 'msg beda please']
+  };
+  for (const [language, phrases] of Object.entries(phrasesByLanguage)) {
+    for (const t of phrases) {
+      assert.strictEqual(optOut.classify(t), 'stop', t);
+      assert.strictEqual(optOut.languageOf(t), language, t);
+    }
+  }
+  assert.notStrictEqual(optOut.languageOf('beda'), 'kn');
+  assert.notStrictEqual(optOut.languageOf('hello beda'), 'kn');
+});
+
+test('Arabic send-me commands accept only message or again endings', () => {
+  for (const t of ['لا ترسل لي رسائل', 'لا ترسلوا لي رسايل', 'لا ترسل لي مرة ثانية',
+    'لا ترسلوا لي ثاني', 'لا ترسل لي بعد الآن', 'لا ترسل لي رسائل مرة ثانية',
+    'لا ترسلوا لي رسايل بعد الآن', 'لا ترسل لي رسالة', 'لا ترسلوا رسالة', 'لا ترسل لي!']) {
+    assert.strictEqual(optOut.classify(t), 'stop', t);
+  }
+});
+
+test('bare stop commands, subscription cancellation and Arabic message objects remain opt-outs', () => {
+  for (const t of ['mat bhejo', 'na bhejo', 'मत भेजो', 'band karo', 'बंद करो', 'ನಿಲ್ಲಿಸಿ', 'ನಿಲ್ಲಿಸು', 'توقف', 'قف',
+    'الغاء الاشتراك', 'إلغاء الاشتراك', 'لا ترسل لي', 'لا ترسل رسائل', 'لا ترسل رسايل', 'لا ترسل رسالة',
+    'لا ترسلوا لي', 'لا تراسلني', 'لا تراسلوني']) {
+    assert.strictEqual(optOut.classify(t), 'stop', t);
+  }
+});
+
 test('STOP marks the lead, sends a fixed confirmation in their language, and never calls the AI', async () => {
   await converse(LEAD, 'hi');
   const before = aiCalls;

@@ -116,6 +116,17 @@ const leadRepository = {
   },
 
   /** Messages from the lead since our last reply (queued or sent). More than 1 means a burst. */
+  /** K33: the texts of the lead's messages since our last reply (newest first, at most 10). */
+  async unansweredInboundTexts(waId) {
+    const rows = await db.many(`SELECT m.text FROM messages m
+      WHERE m.wa_id = $1 AND m.direction = 'in'
+        AND m.timestamp > GREATEST(
+          COALESCE((SELECT MAX(created_at) FROM outbound_messages WHERE wa_id = $1), '-infinity'::timestamptz),
+          COALESCE((SELECT MAX(timestamp) FROM messages WHERE wa_id = $1 AND direction = 'out'), '-infinity'::timestamptz))
+      ORDER BY m.timestamp DESC LIMIT 10`, [waId]);
+    return rows.map(r => r.text).filter(Boolean);
+  },
+
   async unansweredInboundCount(waId) {
     const row = await db.one(`SELECT COUNT(*)::int AS n FROM messages m
       WHERE m.wa_id = $1 AND m.direction = 'in'

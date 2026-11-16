@@ -55,3 +55,15 @@ test('a bad form shows the problem and keeps what was typed', async () => {
     assert.strictEqual(gymConfig.gymName, 'Goldkraft Fitness');
   } finally { await ctx.cleanup(); gymConfig.resetToDefault(); }
 });
+
+test('K33: the Health-related business switch is saved, shown and cleared', async () => {
+  const ctx = await setup();
+  try {
+    const owner = await login(ctx.app, 'owner');
+    await owner.agent.post('/settings').type('form').send(form(owner.csrf, { health_related: '1' }));
+    assert.strictEqual(gymConfig.profile.healthRelated, true);
+    assert.match((await owner.agent.get('/settings')).text, /name="health_related"[^>]*checked/);
+    await owner.agent.post('/settings').type('form').send(form(owner.csrf));
+    assert.strictEqual(gymConfig.profile.healthRelated, false);
+  } finally { await ctx.cleanup(); gymConfig.resetToDefault(); }
+});

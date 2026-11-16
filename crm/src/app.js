@@ -55,7 +55,7 @@ function profileFromForm(b) {
   const names = toArray(b.plan_name); const prices = toArray(b.plan_price); const details = toArray(b.plan_details);
   const pNames = toArray(b.policy_name); const pTexts = toArray(b.policy_text);
   return {
-    name: b.name, type: b.type, currency: b.currency, area: b.area, address: b.address, parking: b.parking, facility: b.facility,
+    name: b.name, type: b.type, currency: b.currency, healthRelated: b.health_related === '1', area: b.area, address: b.address, parking: b.parking, facility: b.facility,
     latitude: b.latitude, longitude: b.longitude, voice: b.voice,
     hours: b.hours, programs: b.programs, sellingPoints: b.selling_points,
     plans: names.map((n, i) => ({ name: n, price: prices[i], details: details[i] })),

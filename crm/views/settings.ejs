@@ -69,6 +69,12 @@
   <% } %>
 </section>
 
+<section class="<%= card %> mb-4 scroll-mt-20" id="export">
+  <h2>Your data</h2>
+  <p class="text-sm text-base-content/60">Download everything <%= brand.name %> has here: leads, every WhatsApp conversation, outcomes, notes, assignments, hand-offs, follow-ups, payment links and staff. One ZIP of spreadsheet (CSV) files, with a README that explains each one. Each download is recorded in the activity log.</p>
+  <a class="btn btn-sm mt-1 w-full sm:w-auto" href="/settings/export.zip" download><%- include('partials/icon', { name: 'download', cls: 'size-4' }) %>Download all data (ZIP)</a>
+</section>
+
 <form method="post" action="/settings/brand" id="brand" class="<%= card %> mb-4 scroll-mt-20" data-brand-form>
   <%- include('partials/csrf') %>
   <div class="flex items-center gap-3">

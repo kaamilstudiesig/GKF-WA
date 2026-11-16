@@ -133,6 +133,24 @@ Staff install the CRM on their phone from their own CRM host. It opens full scre
 
 Each person sees only their own leads, as everywhere else. Logging any outcome takes the lead off the list until the bot opens a new hand-off. A hand-off staff resolved without logging an outcome still counts (that is the gap this closes); the 2-hour and 30-day bounds are inclusive. **Limit:** a hot lead with no hand-off is timed from its first message (we don't store when it turned hot), so it is tracked only for 30 days after first contact; one that first wrote 5 weeks ago and turned hot yesterday doesn't show. Leads that need a person almost always get a hand-off from the bot, which restarts the clock.
 
+## Data export (R19)
+
+**Business settings → Your data → Download all data (ZIP)** (owner only; `GET /settings/export.zip`) gives the client everything we hold for them, so they never have to ask (client agreement 7.6, and what we hand over at exit, 12.5). `crm/src/dataExport.js` builds one CSV per table:
+
+| File | What |
+| --- | --- |
+| `leads.csv` | Every lead, with `metadata` (e.g. the ad it came from) as JSON |
+| `messages.csv` | Every WhatsApp message in and out |
+| `outcomes.csv` | Logged outcomes with plan, amount, lost reason and who logged them |
+| `notes.csv`, `assignments.csv`, `handoffs.csv`, `follow_ups.csv`, `payment_links.csv` | As named, with staff names instead of ids |
+| `staff.csv` | Name, email, role, manager, active (no passwords) |
+| `README.txt` | What each file holds, row counts, the currency of amounts, and that times are UTC |
+
+- Runs in the client's tenant context, so row-level security keeps it to this client's rows. No passwords, sessions or tokens.
+- UTF-8 with a byte order mark (Excel shows ₹, Arabic and Hindi), CRLF lines; formula-looking cells are made inert (`crm/src/csv.js`, shared with the leads and ads CSVs).
+- The ZIP is built in memory with `crm/src/zip.js` (Node's `zlib`, no dependency). Fine for one client's data (tens of MB); stream it if a client ever grows past that.
+- Every download is in the activity log (`data_exported`, with row counts), and the response is `Cache-Control: no-store`.
+
 ## Roles
 
 | | Owner | Manager | Sales |

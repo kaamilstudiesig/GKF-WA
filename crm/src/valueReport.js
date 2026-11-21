@@ -40,8 +40,13 @@ class ValueReport {
   async period(user, { days, now, names }) {
     const s = await this.analytics.summary(user, { days, now, names });
     const range = await this.analytics.range({ days, now });
-    const spend = [...(await this.analytics.adSpend(range)).values()].reduce((t, x) => t + (Number(x.spend) || 0), 0);
     const sales = s.logging.salesRecorded;
+    // Cost per customer = ad spend ÷ sales from those same ads (the R6 rows carry each ad's spend
+    // and sales), not ÷ all sales, which include WhatsApp and form leads that cost nothing.
+    // Owners only: spend is for the whole business, so a manager's team share can't be worked out yet.
+    const adRows = s.ads.filter(a => a.kind === 'ad' && a.spend !== null);
+    const spend = user.role === 'owner' ? adRows.reduce((t, a) => t + a.spend, 0) : 0;
+    const adSales = adRows.reduce((t, a) => t + a.won, 0);
     return {
       since: s.since, until: s.until,
       leads: s.funnel.leads,
@@ -53,9 +58,10 @@ class ValueReport {
       loggingRate: s.logging.rate,
       sales, revenue: s.logging.revenueInr,
       salesAutomatic: s.logging.salesRecordedAutomatically,
-      // Cost per customer needs ad spend (K5); until then it is null and the page says so.
+      // Needs ad spend (K5); until then null and the page says so.
       spend: spend || null,
-      costPerCustomer: spend && sales ? Math.round(spend / sales) : null,
+      costPerCustomer: spend && adSales ? Math.round(spend / adSales) : null,
+      costScoped: user.role === 'owner', // false: the page explains it's owners only
       bestAd: s.ads.find(a => a.kind === 'ad' && (a.revenueInr > 0 || a.won > 0)) || s.ads.find(a => a.kind === 'ad') || null,
       work: await this.systemWork(user, range)
     };

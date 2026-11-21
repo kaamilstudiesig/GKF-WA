@@ -91,3 +91,42 @@ test('R18 value page: owners and managers, print button and print colours, money
     assert.strictEqual((await sales.agent.get('/value')).status, 403);
   } finally { gymConfig.resetToDefault(); await ctx.cleanup(); }
 });
+
+test('R18 review fixes: cost per customer from ad sales only, owners only; managers see only their team; period edges', async () => {
+  const ctx = await setup();
+  try {
+    const db = ctx.db;
+    const salesId = await ctx.userId('sales'); // in the seeded manager's team
+    await seed(db, salesId);
+    const analytics = new Analytics(db);
+    // Spend on the ad that sold (777) and on one with no leads here: only ads in the rows count,
+    // and the divisor is the 1 sale from ad 777, not every sale.
+    analytics.adSpend = async () => new Map([['777', { spend: 1000 }]]);
+    await db.query(`INSERT INTO crm_lead_outcomes (wa_id, user_id, outcome, amount_inr, created_at) VALUES ('918300000003', $1, 'joined', 900, '2030-01-25T10:00:00Z')`, [salesId]);
+    const owner = await new ValueReport(db, analytics).build(undefined, { days: 30, now: NOW });
+    assert.deepStrictEqual([owner.current.sales, owner.current.spend, owner.current.costPerCustomer, owner.current.costScoped], [2, 1000, 1000, true]);
+
+    // A manager: no cost per customer (spend can't be split by team), and only their team's and unassigned leads.
+    const other = await db.one(`INSERT INTO crm_users (email, name, role, password_hash, active) VALUES ('other-v@x.com', 'Other', 'sales', 'x', true) RETURNING id`);
+    await db.query("INSERT INTO leads (wa_id, status, first_contact_at) VALUES ('918300000077', 'new', '2030-01-22T09:00:00Z')");
+    await db.query("INSERT INTO crm_lead_assignments (wa_id, user_id, assigned_at) VALUES ('918300000077', $1, '2030-01-22T09:00:00Z')", [other.id]);
+    await db.query(`INSERT INTO outbound_messages (dedup_key, wa_id, text, metadata, status, created_at) VALUES ('bot:other', '918300000077', 'x', '{}'::jsonb, 'sent', '2030-01-22T09:01:00Z')`);
+    const manager = await db.one("SELECT * FROM crm_users WHERE role = 'manager' ORDER BY id LIMIT 1");
+    const m = await new ValueReport(db, analytics).build(manager, { days: 30, now: NOW });
+    const all = await new ValueReport(db, analytics).build(undefined, { days: 30, now: NOW });
+    assert.strictEqual(all.current.leads, 4);
+    assert.strictEqual(m.current.leads, 3); // the other team's lead is left out
+    assert.deepStrictEqual([all.current.work.botReplies, m.current.work.botReplies], [2, 1]);
+    assert.deepStrictEqual([m.current.costPerCustomer, m.current.costScoped], [null, false]);
+
+    // Period edges: a sale logged exactly at the start counts in all three sales numbers; one a second before, in none.
+    const since = all.current.since;
+    const before = new Date(new Date(since).getTime() - 1000).toISOString();
+    for (const [waId, t] of [['918300000002', since], ['918300000003', before]]) {
+      await db.query("INSERT INTO crm_lead_outcomes (wa_id, user_id, outcome, amount_inr, created_at, meta_status) VALUES ($1, $2, 'joined', 100, $3, 'sent')", [waId, salesId, t]);
+      await db.query(`INSERT INTO crm_payment_links (wa_id, user_id, reference_id, plan, amount_inr, status, paid_at) VALUES ($1, $2, $3, 'P', 100, 'paid', $4)`, [waId, salesId, `ref-${waId}`, t]);
+    }
+    const edge = (await new ValueReport(db, new Analytics(db)).build(undefined, { days: 30, now: NOW })).current;
+    assert.deepStrictEqual([edge.sales, edge.salesAutomatic, edge.work.salesToMeta], [all.current.sales + 1, all.current.salesAutomatic + 1, all.current.work.salesToMeta + 1]);
+  } finally { await ctx.cleanup(); }
+});

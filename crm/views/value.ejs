@@ -36,7 +36,7 @@
       ['Revenue', money(c.revenue), 'revenue', 'from those sales'],
       ['Speed to lead', minText(c.medianMinutes), 'medianMinutes', `median, working hours · ${pctText(c.withinFive)} within 5 min`, true],
       ['Logging rate', pctText(c.loggingRate), 'loggingRate', 'hand-offs with an outcome in 24 h'],
-      ['Cost per customer', c.costPerCustomer === null ? '—' : money(c.costPerCustomer), null, c.costPerCustomer === null ? 'shown once ad spend is imported' : 'ad spend ÷ sales']
+      ['Cost per customer', c.costPerCustomer === null ? '—' : money(c.costPerCustomer), null, !c.costScoped ? 'owners only: ad spend is for the whole business' : c.costPerCustomer === null ? 'shown once ad spend is imported' : 'ad spend ÷ sales from those ads']
     ]) { %>
     <div class="<%= card %>">
       <div class="text-xs text-base-content/60"><%= label %></div>

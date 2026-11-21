@@ -144,6 +144,8 @@ document.addEventListener('DOMContentLoaded', () => {
   document.querySelectorAll('form[data-confirm]').forEach(f => {
     f.addEventListener('submit', e => { if (!window.confirm(f.dataset.confirm)) e.preventDefault(); });
   });
+  // Print buttons (R18 value page: "Save as PDF" is the browser's print dialog).
+  document.querySelectorAll('[data-print]').forEach(b => b.addEventListener('click', () => window.print()));
   // Read-only fields meant for copying (addresses, codes, secrets) select all on click.
   document.querySelectorAll('[data-select]').forEach(el => el.addEventListener('click', () => el.select()));
 

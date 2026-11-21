@@ -4,7 +4,7 @@
       const dockItems = [['/', 'Home', 'home'], ['/leads', 'Leads', 'users'], ['/followups', 'Follow-ups', 'calendar'], ['/pipeline', 'Pipeline', 'kanban']];
     %>
     <% if (!(typeof hideDock !== 'undefined' && hideDock)) { %>
-    <nav class="dock dock-md z-30 border-t border-base-300 bg-base-100 lg:hidden" aria-label="Main">
+    <nav class="dock dock-md z-30 border-t border-base-300 bg-base-100 lg:hidden print:hidden" aria-label="Main">
       <% for (const [href, label, icon] of dockItems) { %>
         <a href="<%= href %>" class="<%= isActive(href) ? 'dock-active text-primary' : 'text-base-content/70' %>" <%= isActive(href) ? 'aria-current=page' : '' %>>
           <%- include('icon', { name: icon }) %><span class="dock-label"><%= label %></span>
@@ -15,13 +15,14 @@
     <% } %>
   </div>
 
-  <div class="drawer-side z-40">
+  <div class="drawer-side z-40 print:hidden">
     <label for="nav-drawer" aria-label="Close menu" class="drawer-overlay"></label>
     <aside class="flex min-h-full w-72 flex-col gap-6 border-r border-base-300 bg-base-100 p-4">
       <div class="px-2 pt-2"><%- include('brand') %></div>
       <%
         const nav = [['/', 'Dashboard', 'home'], ['/leads', 'Leads', 'users'], ['/followups', 'Follow-ups', 'calendar'], ['/pipeline', 'Pipeline', 'kanban']];
         if (can.viewReports(user)) nav.push(['/reports', 'Reports', 'chart']);
+        if (can.viewReports(user)) nav.push(['/value', 'Value', 'clipboard']); // R18
         if (typeof SHOW_PROJECTS !== 'undefined' && SHOW_PROJECTS && can.manageProjects(user)) nav.push(['/projects', 'Projects', 'building']); // R17
         if (can.manageUsers(user)) nav.push(['/users', 'Staff', 'user']);
         if (can.manageBusiness && can.manageBusiness(user)) nav.push(['/settings', 'Business', 'clipboard']);

@@ -23,6 +23,7 @@ const bulkStaff = require('./bulkStaff');
 const { LeadQueue, QueueError, TIMEZONES } = require('./queue');
 const { MIN_AGE_HOURS } = require('./nudges');
 const { Analytics, GRADE_MIN_LEADS } = require('./analytics');
+const { ValueReport } = require('./valueReport');
 
 const { csvCell } = require('./csv'); // shared with the R19 data export
 const { buildExport } = require('./dataExport');
@@ -112,6 +113,7 @@ function createCrmApp({
   const projects = new Projects(db);
   const businessCurrency = () => util.currencyCode(gymConfig ? gymConfig.profile.currency : 'INR');
   const analytics = new Analytics(db);
+  const valueReport = new ValueReport(db, analytics); // R18
   const throttle = new auth.LoginThrottle();
   const branding = new Branding(db, () => (gymConfig ? gymConfig.gymName : ''));
 
@@ -442,6 +444,11 @@ function createCrmApp({
       a, adRows, adSort, GRADE_MIN_LEADS,
       replyStats: replyTimes && req.user.role === 'owner' ? await replyTimes.monthStats().catch(() => null) : null
     });
+  }));
+  // R18: the value page. Signed in (owners and managers, scoped like Reports); a print layout makes it a PDF.
+  app.get('/value', allow(can.viewReports), h(async (req, res) => {
+    const days = [7, 30, 90].includes(Number(req.query.days)) ? Number(req.query.days) : 30;
+    res.render('value', { v: await valueReport.build(req.user, { days, names: res.locals.OUTCOMES }) });
   }));
   // R6: the "By ad" table as a spreadsheet (same scope and period as the page).
   app.get('/reports/ads.csv', allow(can.viewReports), h(async (req, res) => {

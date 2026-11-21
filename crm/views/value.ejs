@@ -1,0 +1,91 @@
+<%- include('partials/header', { title: 'Value' }) %>
+<%
+  const card = 'rounded-box border border-base-300 bg-base-100 p-4 break-inside-avoid';
+  const c = v.current;
+  const pctText = n => (n === null || n === undefined ? '—' : n + '%');
+  const minText = n => (n === null || n === undefined ? '—' : n < 60 ? n + ' min' : (n / 60).toFixed(1) + ' h');
+  const day = iso => util.dayLabel(iso); // "12 Nov 2026", "Yesterday", "Today"
+  // Change against the previous period. lowerIsBetter: speed to lead.
+  const delta = (key, lowerIsBetter = false) => {
+    const d = v.changes[key];
+    if (d === null || d === undefined || d === 0) return '';
+    const good = lowerIsBetter ? d < 0 : d > 0;
+    return `<span class="text-xs font-medium ${good ? 'text-success' : 'text-error'}">${d > 0 ? '↑' : '↓'} ${Math.abs(d)}%</span>`;
+  };
+%>
+<%# Printing: daisyUI colours switch to a light palette, so the dark theme prints readable on white paper. %>
+<div class="space-y-4 print:space-y-3 print:text-[#111827] print:[--color-base-100:#ffffff] print:[--color-base-200:#f4f4f5] print:[--color-base-300:#d4d4d8] print:[--color-base-content:#111827]">
+  <div class="flex flex-wrap items-end justify-between gap-3">
+    <div class="min-w-0">
+      <p class="text-sm text-base-content/60"><%= brand.name %> · <%= day(c.since) %> to <%= day(c.until) %></p>
+      <h1 class="page-title">What your leads turned into</h1>
+    </div>
+    <div class="flex items-center gap-2 print:hidden">
+      <div role="tablist" class="tabs tabs-box tabs-sm">
+        <% for (const d of [7, 30, 90]) { %><a role="tab" href="/value?days=<%= d %>" class="tab <%= v.days === d ? 'tab-active' : '' %>"><%= d %>d</a><% } %>
+      </div>
+      <button type="button" class="btn btn-primary btn-sm" data-print><%- include('partials/icon', { name: 'download', cls: 'size-4' }) %>Save as PDF</button>
+    </div>
+  </div>
+
+  <section class="grid grid-cols-2 gap-3 lg:grid-cols-4" aria-label="Results">
+    <% for (const [label, value, key, hint, lower] of [
+      ['Leads', c.leads, 'leads', `new in ${v.days} days`],
+      ['Qualified', c.qualified, 'qualified', 'ready for a conversation'],
+      [OUTCOMES.joined, c.sales, 'sales', c.salesAutomatic ? `${c.salesAutomatic} logged by payment link` : 'sales logged'],
+      ['Revenue', money(c.revenue), 'revenue', 'from those sales'],
+      ['Speed to lead', minText(c.medianMinutes), 'medianMinutes', `median, working hours · ${pctText(c.withinFive)} within 5 min`, true],
+      ['Logging rate', pctText(c.loggingRate), 'loggingRate', 'hand-offs with an outcome in 24 h'],
+      ['Cost per customer', c.costPerCustomer === null ? '—' : money(c.costPerCustomer), null, c.costPerCustomer === null ? 'shown once ad spend is imported' : 'ad spend ÷ sales']
+    ]) { %>
+    <div class="<%= card %>">
+      <div class="text-xs text-base-content/60"><%= label %></div>
+      <div class="mt-1 flex flex-wrap items-baseline gap-x-2"><span class="text-2xl font-bold tabular-nums sm:text-3xl"><%= value %></span><%- key ? delta(key, lower) : '' %></div>
+      <div class="text-[11px] text-base-content/50"><%= hint %></div>
+    </div>
+    <% } %>
+  </section>
+
+  <div class="grid gap-4 lg:grid-cols-2">
+    <section class="<%= card %>">
+      <h2 class="mb-2">What the system did</h2>
+      <ul class="space-y-2 text-sm">
+        <% for (const [n, text] of [
+          [c.work.botReplies, 'WhatsApp replies sent by the assistant, day and night'],
+          [`${c.handoffsTimed} of ${c.handoffs}`, 'hand-offs to your team, each one timed until someone responded'],
+          [c.qualified, 'leads qualified before your team stepped in'],
+          [c.work.formLeads, `${c.work.formLeads === 1 ? 'lead' : 'leads'} from your website and portals, in the same inbox as WhatsApp`],
+          [c.work.welcomes, 'WhatsApp welcome messages to those leads'],
+          [c.salesAutomatic, 'sales recorded automatically when a payment link was paid'],
+          [c.work.salesToMeta, 'sales reported to Meta, so your ads find more buyers like them']
+        ]) { %>
+        <li class="flex items-baseline gap-3"><span class="min-w-16 shrink-0 whitespace-nowrap text-right text-lg font-semibold tabular-nums text-primary"><%= n %></span><span class="text-base-content/80"><%= text %></span></li>
+        <% } %>
+      </ul>
+    </section>
+
+    <section class="<%= card %>">
+      <h2 class="mb-2"><%= c.bestAd && c.bestAd.won ? 'Best ad' : 'Ad with the most leads' %></h2>
+      <% if (!c.bestAd) { %>
+      <p class="text-sm text-base-content/60">No leads from Instagram or Facebook ads in this period.</p>
+      <% } else { const a = c.bestAd; %>
+      <p class="font-medium"><%= a.headline || ('Ad ' + a.adId) %></p>
+      <p class="text-xs text-base-content/60"><span class="capitalize"><%= a.platform || 'meta' %></span><%= a.campaignName ? ' · ' + a.campaignName : '' %></p>
+      <dl class="mt-3 grid grid-cols-3 gap-2 text-sm">
+        <div><dt class="text-xs text-base-content/60">Leads</dt><dd class="text-lg font-semibold tabular-nums"><%= a.leads %></dd></div>
+        <div><dt class="text-xs text-base-content/60"><%= OUTCOMES.joined %></dt><dd class="text-lg font-semibold tabular-nums"><%= a.won %></dd></div>
+        <div><dt class="text-xs text-base-content/60">Revenue</dt><dd class="text-lg font-semibold tabular-nums"><%= money(a.revenueInr) %></dd></div>
+      </dl>
+      <a class="link link-primary mt-2 inline-block text-sm print:hidden" href="/reports?days=<%= v.days %>#ads">All ads</a>
+      <% } %>
+    </section>
+  </div>
+
+  <p class="text-xs text-base-content/50">
+    Compared with the <%= v.days %> days before (<%= day(v.previous.since) %> to <%= day(v.previous.until) %>).
+    Leads: people who first wrote or filled a form in the period. Revenue: sales logged in the period. Speed to lead counts working hours only.
+    <% if (user.role !== 'owner') { %>Your team and unassigned leads only.<% } %>
+    Made <%= util.fmtDate(new Date().toISOString()) %>.
+  </p>
+</div>
+<%- include('partials/footer') %>

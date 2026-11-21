@@ -10,7 +10,7 @@
     <% if (typeof mobileBar !== 'undefined' && mobileBar) { %>
       <%- include(mobileBar) %>
     <% } else { %>
-    <header class="navbar sticky top-0 z-30 min-h-14 gap-1 border-b border-base-300 bg-base-200/90 px-2 backdrop-blur lg:hidden">
+    <header class="navbar sticky top-0 z-30 min-h-14 gap-1 border-b border-base-300 bg-base-200/90 px-2 backdrop-blur lg:hidden print:hidden">
       <div class="navbar-start w-auto">
         <% if (backHref) { %>
           <a href="<%= backHref %>" class="btn btn-ghost btn-square" aria-label="Back"><%- include('icon', { name: 'back', cls: 'size-6' }) %></a>

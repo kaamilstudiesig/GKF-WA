@@ -184,6 +184,16 @@ Leads from website forms and property portals (contract in `docs/TEAM.md`, "R16:
 - The ZIP is built in memory with `crm/src/zip.js` (Node's `zlib`, no dependency). Fine for one client's data (tens of MB); stream it if a client ever grows past that.
 - Every download is in the activity log (`data_exported`, with row counts), and the response is `Cache-Control: no-store`.
 
+## Value page (R18)
+
+**Value** in the menu (`/value`, owners and managers; managers see their team and unassigned leads, like Reports). One screen for the owner or their agency, for 7, 30 or 90 days, each number compared with the period before:
+
+- **Results:** leads, qualified, sales (the business type's word), revenue, speed to lead (working minutes, share within 5), logging rate, and cost per customer once ad spend is imported (K5; until then "shown once ad spend is imported").
+- **What the system did:** WhatsApp replies the assistant sent (not staff replies, welcome templates or staff alerts), hand-offs timed, leads qualified, leads from website forms and portals (R16) and the welcome messages they got, sales logged by payment link, and sales reported to Meta (Conversions API).
+- **Best ad** (by revenue; "Ad with the most leads" when no ad has a sale yet).
+
+`crm/src/valueReport.js` builds it from R5/R6 (`Analytics.summary`, `byAd`, `adSpend`) plus a few counts. **Save as PDF** opens the browser's print dialog: menus are hidden on paper (`print:hidden`), and the page switches daisyUI's colours to a light palette when printing, so the gold and Dartit dark themes print readable on white.
+
 ## Roles
 
 | | Owner | Manager | Sales |

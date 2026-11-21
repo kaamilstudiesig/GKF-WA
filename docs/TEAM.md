@@ -95,7 +95,7 @@ Status: K14–K17 are built and K18 is written (PR `k14-k18-new-client`). R12 is
 - **Phone numbers:** use `identity.normalizePhone(phone, country)`.
 
 **Your queue now (one PR each, nothing urgent for the MVP):**
-1. **R18 value page per client** (see item 7 below).
+1. ✅ **R18 value page per client** (see item 7 below): built in PR `r18-value-page` as a signed-in page (`/value`, owners and managers) with a print layout, so "Save as PDF" makes the copy for the agency. No share link yet: a link that opens without signing in needs a stored token (a migration, id 12) and Kaamil's OK first.
 2. **R8 onboarding wizard**, with the K9 ↔ R8 contract (item 8 below).
 3. **R7 weekly owner summary.**
 

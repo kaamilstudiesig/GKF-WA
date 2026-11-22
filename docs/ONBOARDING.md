@@ -113,7 +113,7 @@ If the client gets leads from their website or property portals:
 
 ## Test checklist
 
-From a phone that has never chatted with the number, send each and check the reply and the CRM:
+The owner has this list on **Setup → Test it** (R8) and ticks it there. From a phone that has never chatted with the number, send each and check the reply and the CRM:
 
 | # | Message | Expect |
 | --- | --- | --- |
@@ -131,6 +131,5 @@ From a phone that has never chatted with the number, send each and check the rep
 
 ## What comes next
 
-- **R8 onboarding wizard** (Krishna, with K9): an owner-only "Connect WhatsApp" button in the CRM that opens the same connect page (`embeddedSignup.linkUrl(tenantId)`), then profile, brand, team and test chat in one flow.
 - Coexistence echoes and history in the CRM (see the limits above).
 - `catalog_management` and `whatsapp_business_manage_events` for other clients' numbers need their own App Review (K24 catalog, K7b Conversions API).

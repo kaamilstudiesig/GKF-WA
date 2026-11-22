@@ -1,0 +1,145 @@
+<%- include('partials/header', { title: 'Setup' }) %>
+<%
+  const field = 'fieldset py-0';
+  const lines = v => (Array.isArray(v) ? v.join('\n') : (v || ''));
+  const step = key => s.steps.find(x => x.key === key);
+  const plans = [...(profile.plans || [])];
+  while (plans.length < Math.min(limits.plans, (profile.plans || []).length + 2)) plans.push({});
+  const badge = x => (x.done ? ['badge-success', 'Done'] : x.optional ? ['badge-ghost', 'Optional'] : ['badge-warning', 'To do']);
+  const locked = amounts.sales || amounts.links; // R15: sales have amounts, so the currency changes on Business settings
+%>
+<div class="mx-auto max-w-3xl">
+  <div class="mb-4">
+    <p class="text-sm text-base-content/60">Get <%= profile.name %> live on WhatsApp</p>
+    <h1 class="page-title max-lg:hidden">Setup</h1>
+    <div class="mt-2 flex items-center gap-3">
+      <progress class="progress progress-primary flex-1" value="<%= s.done %>" max="<%= s.total %>" aria-label="Setup steps done"></progress>
+      <span class="text-sm tabular-nums text-base-content/70"><%= s.done %> of <%= s.total %> done</span>
+    </div>
+    <% if (s.complete) { %><div role="status" class="alert alert-success alert-soft mt-3 text-sm"><%- include('partials/icon', { name: 'check' }) %><span>All set. You can come back here to change anything.</span></div><% } %>
+  </div>
+
+  <ol class="space-y-3">
+    <% s.steps.forEach((x, i) => { const [badgeCls, badgeText] = badge(x); %>
+    <li class="scroll-mt-20 rounded-box bg-base-100" id="step-<%= x.key %>">
+      <details class="collapse collapse-arrow" <%= open === x.key ? 'open' : '' %>>
+        <summary class="collapse-title flex items-center gap-3 pr-10">
+          <span class="grid size-7 shrink-0 place-items-center rounded-full text-sm font-semibold <%= x.done ? 'bg-success text-success-content' : 'bg-base-300 text-base-content' %>"><% if (x.done) { %><%- include('partials/icon', { name: 'check', cls: 'size-4' }) %><% } else { %><%= i + 1 %><% } %></span>
+          <span class="min-w-0 flex-1 font-semibold"><%= x.title %></span>
+          <span class="badge badge-sm badge-soft <%= badgeCls %>"><%= badgeText %></span>
+        </summary>
+        <div class="collapse-content space-y-3">
+
+        <% if (x.key === 'profile') { %>
+          <p class="text-sm text-base-content/60">What the assistant tells people. It never makes up anything that is not here.<% if (x.missing.length) { %> Still needed: <strong class="text-base-content"><%= x.missing.join(', ') %></strong>.<% } %></p>
+          <form method="post" action="/setup/profile" class="grid gap-3 sm:grid-cols-2">
+            <%- include('partials/csrf') %>
+            <fieldset class="<%= field %>"><legend class="fieldset-legend">Business name</legend><input name="name" required maxlength="80" value="<%= profile.name || '' %>" class="input w-full"></fieldset>
+            <fieldset class="<%= field %>"><legend class="fieldset-legend">Type of business</legend>
+              <select name="type" class="select w-full"><% for (const [k, v] of Object.entries(verticals)) { %><option value="<%= k %>" <%= profile.type === k ? 'selected' : '' %>><%= v.label %></option><% } %></select></fieldset>
+            <fieldset class="<%= field %> sm:col-span-2"><legend class="fieldset-legend">Full address</legend><input name="address" required maxlength="240" value="<%= profile.address || '' %>" class="input w-full"></fieldset>
+            <fieldset class="<%= field %>"><legend class="fieldset-legend">Area (how people say it)</legend><input name="area" maxlength="120" value="<%= profile.area || '' %>" class="input w-full"></fieldset>
+            <fieldset class="<%= field %>"><legend class="fieldset-legend">Currency</legend>
+              <select name="currency" class="select w-full" <%= locked ? 'disabled' : '' %>><% for (const c of currencyOptions) { %><option value="<%= c.code %>" <%= (profile.currency || 'INR') === c.code ? 'selected' : '' %>><%= c.label %></option><% } %></select>
+              <% if (locked) { %><p class="label whitespace-normal"><span>You have sales already, so change it on <a class="link" href="/settings#currency">Business settings</a>.</span></p><% } %></fieldset>
+            <fieldset class="<%= field %>"><legend class="fieldset-legend">Opening hours (one line each)</legend><textarea name="hours" rows="3" required class="textarea w-full"><%= lines(profile.hours) %></textarea></fieldset>
+            <fieldset class="<%= field %>"><legend class="fieldset-legend"><%= LABELS.programs %> (one per line)</legend><textarea name="programs" rows="3" class="textarea w-full"><%= lines(profile.programs) %></textarea></fieldset>
+            <fieldset class="<%= field %> sm:col-span-2"><legend class="fieldset-legend"><%= LABELS.plans %></legend>
+              <div class="space-y-2"><% plans.forEach((p, n) => { %>
+                <div class="grid grid-cols-2 gap-2">
+                  <input name="plan_name" maxlength="60" value="<%= p.name || '' %>" placeholder="<%= LABELS.planName %>" aria-label="Plan <%= n + 1 %> name" class="input w-full">
+                  <input name="plan_price" maxlength="60" value="<%= p.price || '' %>" placeholder="<%= LABELS.planPrice %>" aria-label="Plan <%= n + 1 %> price" class="input w-full">
+                  <input type="hidden" name="plan_details" value="<%= p.details || '' %>">
+                </div>
+              <% }); %></div></fieldset>
+            <div class="flex flex-wrap items-center gap-3 sm:col-span-2">
+              <button class="btn btn-primary max-sm:w-full" type="submit">Save and continue</button>
+              <a class="link text-sm text-base-content/70" href="/settings">Policies, parking, selling points and more</a>
+            </div>
+          </form>
+
+        <% } else if (x.key === 'brand') { %>
+          <p class="text-sm text-base-content/60">Your logo and colour on this CRM, for your team. <%= x.done ? (x.logo ? 'Logo and colour are set.' : 'Colour and letters are set. You can add a logo any time.') : 'Until you set them, your initials are used.' %></p>
+          <a class="btn btn-sm" href="/settings#brand"><%= x.done ? 'Change brand' : 'Set your brand' %></a>
+
+        <% } else if (x.key === 'team') { %>
+          <p class="text-sm text-base-content/60">The people who follow leads up. They get their own sign-in, and WhatsApp alerts when a lead needs a person.</p>
+          <ul class="space-y-1 text-sm">
+            <li><strong class="tabular-nums"><%= x.staff %></strong> <%= x.staff === 1 ? 'person' : 'people' %> besides owners<%= x.staff ? ' (' + x.sales + ' in sales)' : '' %></li>
+            <li class="<%= x.alerts ? '' : 'text-warning' %>"><strong class="tabular-nums"><%= x.alerts %></strong> get<%= x.alerts === 1 ? 's' : '' %> WhatsApp alerts<%= x.alerts ? '' : ': add a number on Staff so no lead waits' %></li>
+          </ul>
+          <div class="flex flex-wrap gap-2">
+            <a class="btn btn-sm <%= x.done ? '' : 'btn-primary' %>" href="/users/bulk">Add your team</a>
+            <a class="btn btn-sm" href="/users">Staff and alerts</a>
+          </div>
+          <p class="text-xs text-base-content/50">Working alone? Put your own number under WhatsApp alerts on Staff, and this step is done.</p>
+
+        <% } else if (x.key === 'whatsapp') { const w = x.whatsapp; %>
+          <% if (w.state === 'connected' || w.state === 'problem') { %>
+            <p class="text-sm"><strong><%= w.number || 'A WhatsApp number' %></strong> is connected<%= w.name ? ' as ' + w.name : '' %><%= w.mode === 'coexistence' ? ', and you can keep using the WhatsApp Business app' : '' %>.</p>
+            <% if (w.steps.length) { %><ul class="space-y-1 text-sm text-base-content/70"><% for (const n of w.steps) { %><li class="flex items-center gap-2"><%- include('partials/icon', { name: 'check', cls: 'size-4 text-success' }) %><%= n %></li><% } %></ul><% } %>
+            <% if (w.error) { %><div role="alert" class="alert alert-warning alert-soft text-sm"><div><p class="font-medium">One setup step did not finish.</p><p><%= w.error %></p><p>We have been told and will finish it. Contact us if it stays.</p></div></div><% } %>
+            <% if (w.daysLeft !== null) { %><p class="text-sm <%= w.daysLeft <= 14 ? 'text-warning' : 'text-base-content/60' %>"><%= w.daysLeft < 0 ? 'The connection has expired. Contact us to connect again.' : 'The connection must be renewed within ' + w.daysLeft + (w.daysLeft === 1 ? ' day.' : ' days.') %></p><% } %>
+          <% } else if (w.state === 'ready') { %>
+            <p class="text-sm text-base-content/60">Connect the WhatsApp number your ads send people to. You sign in with Facebook on our connect page, choose the number, and come back here. Have the phone with that number next to you.</p>
+            <a class="btn btn-primary max-sm:w-full" href="/setup/connect" target="_blank" rel="noopener noreferrer"><%- include('partials/icon', { name: 'message', cls: 'size-5' }) %>Connect WhatsApp</a>
+            <p class="text-xs text-base-content/50">Opens in a new tab; the link works for one hour. Reload this page when you are done.</p>
+          <% } else { %>
+            <p class="text-sm text-base-content/70"><%= w.reason %></p>
+          <% } %>
+
+        <% } else if (x.key === 'test') { %>
+          <div class="space-y-2">
+            <h3 class="text-sm font-semibold">Try the fixed answers</h3>
+            <p class="text-sm text-base-content/60">See what a new lead would get from your profile. Free: nothing is sent or saved.</p>
+            <form method="post" action="/setup/try#step-test" class="flex gap-2">
+              <%- include('partials/csrf') %>
+              <input name="text" required maxlength="300" value="<%= tried ? tried.text : '' %>" placeholder="Hi, what are your prices?" aria-label="Message to try" class="input min-w-0 flex-1">
+              <button class="btn" type="submit">Try</button>
+            </form>
+            <% if (tried) { %>
+            <div class="rounded-field bg-base-200 p-3 text-sm" role="status">
+              <% if (tried.kind === 'fixed') { %>
+                <p class="whitespace-pre-line"><%= tried.reply %></p>
+                <% if (tried.buttons.length) { %><p class="mt-2 flex flex-wrap gap-1"><% for (const b of tried.buttons) { %><span class="badge badge-sm badge-outline"><%= b %></span><% } %></p><% } %>
+                <% if (tried.handoff) { %><p class="mt-2 text-xs text-base-content/60">It also hands the lead to your team.</p><% } %>
+              <% } else { %><p class="text-base-content/70">The AI answers this one, from your profile. Try it on WhatsApp.</p><% } %>
+            </div>
+            <% } %>
+          </div>
+
+          <div class="space-y-2 border-t border-base-300 pt-3">
+            <h3 class="text-sm font-semibold">Seen working</h3>
+            <ul class="grid gap-1 text-sm sm:grid-cols-2"><% for (const e of x.seen) { %><li class="flex items-center gap-2 <%= e.done ? '' : 'text-base-content/60' %>"><% if (e.done) { %><%- include('partials/icon', { name: 'check', cls: 'size-4 text-success' }) %><% } else { %><span class="inline-block size-4 shrink-0 rounded-full border border-base-content/30" aria-hidden="true"></span><% } %><%= e.label %><span class="sr-only"><%= e.done ? ' (yes)' : ' (not yet)' %></span></li><% } %></ul>
+          </div>
+
+          <div class="space-y-2 border-t border-base-300 pt-3">
+            <div class="flex items-baseline justify-between gap-2"><h3 class="text-sm font-semibold">Test on WhatsApp</h3><span class="text-xs tabular-nums text-base-content/60"><%= x.ticked %> of <%= x.items.length %></span></div>
+            <p class="text-sm text-base-content/60"><% if (x.live) { %>Leads are already writing to you, so this list is optional. Use it after big changes.<% } else { %>From a phone that has never written to your number, send each one and tick it when the answer is right.<% } %></p>
+            <ul class="divide-y divide-base-300">
+              <% for (const t of x.items) { %>
+              <li class="flex items-start gap-3 py-2">
+                <form method="post" action="/setup/check" class="shrink-0">
+                  <%- include('partials/csrf') %>
+                  <input type="hidden" name="key" value="<%= t.key %>"><input type="hidden" name="done" value="<%= t.tick ? '0' : '1' %>">
+                  <button type="submit" class="btn btn-square size-11 <%= t.tick ? 'btn-success' : 'btn-outline' %>" aria-pressed="<%= t.tick ? 'true' : 'false' %>" aria-label="<%= t.say %>: <%= t.tick ? 'done, tap to undo' : 'mark as right' %>"><% if (t.tick) { %><%- include('partials/icon', { name: 'check', cls: 'size-4' }) %><% } %></button>
+                </form>
+                <div class="min-w-0 text-sm"><p class="font-medium"><%= t.say %></p><p class="text-base-content/60"><%= t.expect %></p><% if (t.tick) { %><p class="text-xs text-base-content/50"><%= t.tick.by || 'Former staff' %> · <%= util.timeAgo(t.tick.at) %></p><% } %></div>
+              </li>
+              <% } %>
+            </ul>
+          </div>
+
+        <% } else if (x.key === 'ads') { %>
+          <p class="text-sm text-base-content/60"><% if (x.done) { %>Visits and sales your team logs are reported to Meta, so your ads find more people who buy.<% } else { %>Once we connect your Meta dataset, the visits and sales your team logs are reported to Meta, so your ads find more people who buy. Ask us to switch it on.<% } %></p>
+          <% if (SHOW_PROJECTS) { %><a class="btn btn-sm" href="/projects">Add your projects</a><% } %>
+          <a class="btn btn-sm" href="/settings#lead-sources">Website form and portals</a>
+        <% } %>
+
+        </div>
+      </details>
+    </li>
+    <% }); %>
+  </ol>
+</div>
+<%- include('partials/footer') %>

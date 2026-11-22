@@ -536,7 +536,7 @@ TEAM lists these remaining product features:
 - K12 lead scoring and early qualified events; K6 Lead Ads capture and stages.
 - K24 Meta catalog sync and product messages; K32 Instagram DM capture.
 - K22 general CRM connectors beyond the built Zoho connector.
-- R8 onboarding wizard, R9 agency dashboard and R10 subscription billing UI.
+- R9 agency dashboard and R10 subscription billing UI.
 - Coexistence echoes and history in the CRM; later benchmarks and win-back tools.
 
 Fair queue claims across tenants are also pending. Current queues preserve lead order but use FIFO across clients.

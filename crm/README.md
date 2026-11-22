@@ -184,6 +184,24 @@ Leads from website forms and property portals (contract in `docs/TEAM.md`, "R16:
 - The ZIP is built in memory with `crm/src/zip.js` (Node's `zlib`, no dependency). Fine for one client's data (tens of MB); stream it if a client ever grows past that.
 - Every download is in the activity log (`data_exported`, with row counts), and the response is `Cache-Control: no-store`.
 
+## Setup wizard (R8)
+
+**Setup** (`/setup`, owners only; linked from the dashboard until it is done, and from Business settings). `crm/src/setup.js` works every step's state out from what is really there, so nothing can drift:
+
+| Step | Done when |
+| --- | --- |
+| Your business | No starting-profile text is left in the address, hours, offer or prices. The short form (name, type, area, address, currency, hours, offer, prices) saves over the profile and keeps the rest; a currency change after sales goes through Business settings |
+| Your brand (optional) | Brand saved once |
+| Your team | Someone besides owners, or anyone with WhatsApp alerts on (an owner working alone) |
+| WhatsApp | A number is connected and no setup step failed |
+| Test it | A message arrived, a reply went out, a lead was handed over and an outcome was logged; and every test is ticked, or 25 leads have written (already live) |
+| Ads (optional) | Sales are reported to Meta (Conversions API on) |
+
+- **Connect WhatsApp** follows the K9 ↔ R8 contract in `docs/TEAM.md`: shown only when `embeddedSignup.blockedReason` is null and a link can be made; `GET /setup/connect` makes a one-hour link on the click (no-store, no-referrer, logged) and redirects to the bot host. The state comes from `tenant.whatsapp.setup`; the page never gets a token.
+- **Try the fixed answers** (`crm/src/replyPreview.js`) runs the bot's own free checks in the bot's order (STOP, health-related mode, medical safety, fixed replies) for a new lead. No AI call; nothing is saved or sent. When the AI would answer, it says so. Keep the order in step with `src/workers/webhookWorker.js`.
+- **Ticks** are `crm_activity_log` rows (`setup_check`, the latest per test wins), so they show who and when and need no table.
+- Demo clients (`demo: true`) don't get the dashboard card.
+
 ## Roles
 
 | | Owner | Manager | Sales |

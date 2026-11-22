@@ -28,6 +28,8 @@ const { csvCell } = require('./csv'); // shared with the R19 data export
 const { buildExport } = require('./dataExport');
 const { Branding, forPlatform } = require('./branding');
 const { can } = require('./permissions');
+const { Setup, whatsappState } = require('./setup');
+const { replyPreview } = require('./replyPreview');
 const intakeSettings = require('./intakeSettings');
 const { LEAD_STATUSES, ROLE_LABELS, ROLES, OUTCOMES, LOST_REASONS, STAGES } = require('./constants');
 
@@ -110,6 +112,7 @@ function createCrmApp({
   try { registry = require('../../src/tenancy/registry'); } catch (e) { if (e.code !== 'MODULE_NOT_FOUND') throw e; /* standalone */ }
   const zoho = new ZohoStatus(db, registry || { config: () => ({}) });
   const projects = new Projects(db);
+  const setup = new Setup(db); // R8
   const businessCurrency = () => util.currencyCode(gymConfig ? gymConfig.profile.currency : 'INR');
   const analytics = new Analytics(db);
   const throttle = new auth.LoginThrottle();
@@ -303,7 +306,9 @@ function createCrmApp({
   app.get('/', h(async (req, res) => {
     const d = await crm.dashboard(req.user);
     await withClock([...d.attention, ...d.recent]);
-    res.render('dashboard', { d, usage: await usageFor(req.user) });
+    // R8: owners see what is left to set up, until it is done. Demo clients never do. Never breaks the page.
+    const left = can.manageBusiness(req.user) ? await setupStatus().catch(err => { console.error('Setup status failed', err.message); return null; }) : null;
+    res.render('dashboard', { d, usage: await usageFor(req.user), setupLeft: left && !left.complete && !left.demo ? left : null });
   }));
 
   // ---- leads ----
@@ -511,6 +516,96 @@ function createCrmApp({
 
   // ---- users (owner only) ----
   const usersPage = async (res, extra = {}) => res.render('users', { list: await users.list(), managers: await users.managers(), form: {}, ...extra });
+  // ---- setup wizard (R8, owner only) ----
+  // Contract K9 <-> R8: ask embeddedSignup.blockedReason / linkUrl and read tenant.whatsapp.setup; never tokens.
+  const setupStatus = async () => {
+    if (!businessProfile || !registry) return null; // standalone CRM without the bot
+    const embeddedSignup = require('../../src/services/embeddedSignup');
+    const tenant = registry.config(tenancy.tenantId());
+    if (!tenant) return null;
+    const type = gymConfig.profile.type;
+    const whatsapp = whatsappState(tenant, {
+      blockedReason: embeddedSignup.blockedReason,
+      canLink: () => { try { return Boolean(embeddedSignup.linkUrl(tenant.id, { hours: 1 })); } catch (e) { return false; } }
+    });
+    const status = await setup.status({
+      profile: gymConfig.profile, starter: businessProfile.starterProfile({ name: tenant.name, type }),
+      labels: labelsFor(type), visit: verticalFor(type).visit, whatsapp,
+      reportsToMeta: Boolean(require('../../src/services/conversionsApi').enabled)
+    });
+    return { ...status, demo: tenant.demo };
+  };
+  const setupPage = async (req, res, extra = {}) => {
+    const { VERTICALS } = require('../../src/config/verticals');
+    const status = await setupStatus();
+    if (!status) return res.status(404).render('error', { status: 404, message: 'Setup needs the WhatsApp bot.' });
+    res.render('setup', {
+      s: status, open: req.query.step || status.next, profile: gymConfig.profile, verticals: VERTICALS,
+      limits: businessProfile.LIMITS, currencyOptions: currencyOptions(), amounts: await storedAmounts(),
+      tried: null, ownBrand: await branding.get(), ...extra
+    });
+  };
+  app.get('/setup', allow(can.manageBusiness), h(async (req, res) => {
+    // The number may have been connected on another server a moment ago.
+    if (registry) await registry.load();
+    await setupPage(req, res);
+  }));
+  // The facts every assistant needs, on one short form. Everything else in the profile stays as it is.
+  app.post('/setup/profile', allow(can.manageBusiness), h(async (req, res) => {
+    if (!businessProfile) return res.status(404).render('error', { status: 404, message: 'Setup needs the WhatsApp bot.' });
+    const b = req.body; const cur = gymConfig.profile;
+    const names = toArray(b.plan_name); const prices = toArray(b.plan_price); const details = toArray(b.plan_details);
+    const submitted = {
+      ...cur, name: b.name, type: b.type || cur.type, currency: b.currency || cur.currency, area: b.area, address: b.address,
+      hours: b.hours, programs: b.programs, plans: names.map((n, i) => ({ name: n, price: prices[i], details: details[i] }))
+    };
+    const again = async message => {
+      res.status(400);
+      return setupPage(req, res, { error: message, open: 'profile', profile: submitted });
+    };
+    const from = util.currencyCode(cur.currency); const to = util.currencyCode(submitted.currency);
+    const { sales, links } = await storedAmounts();
+    if (from !== to && (sales || links)) return again('Sales already have amounts. Change the currency on Business settings, where you confirm it.');
+    try {
+      await businessProfile.save(submitted, req.user.email);
+    } catch (err) {
+      if (!(err instanceof businessProfile.ProfileError)) throw err;
+      return again(err.message);
+    }
+    await crm.log(req.user, null, 'business_profile_updated', { from: 'setup' });
+    if (from !== to) await crm.log(req.user, null, 'currency_changed', { from, to });
+    res.redirect(withOk('/setup', 'Saved. The assistant uses it from its next reply.'));
+  }));
+  // Opens the connect page (bot host) with a link that works for one hour. A plain link, not a form:
+  // the CSP allows form posts to this site only.
+  app.get('/setup/connect', allow(can.manageBusiness), h(async (req, res) => {
+    if (!registry) throw new HttpError(404, 'Setup needs the WhatsApp bot.');
+    const embeddedSignup = require('../../src/services/embeddedSignup');
+    await registry.load();
+    const tenant = registry.config(tenancy.tenantId());
+    const reason = embeddedSignup.blockedReason(tenant);
+    if (reason) throw new HttpError(409, reason);
+    let url;
+    try { url = embeddedSignup.linkUrl(tenant.id, { hours: 1 }); } catch (err) {
+      console.error('Connect link failed', err.message);
+      throw new HttpError(503, 'WhatsApp connection is not switched on yet. Contact us.');
+    }
+    await crm.log(req.user, null, 'whatsapp_connect_opened');
+    res.setHeader('Cache-Control', 'no-store'); // the link itself is the key
+    res.setHeader('Referrer-Policy', 'no-referrer');
+    res.redirect(url);
+  }));
+  // Free preview of the fixed answers: no AI call, nothing saved, nothing sent.
+  app.post('/setup/try', allow(can.manageBusiness), h(async (req, res) => {
+    if (!gymConfig) return res.status(404).render('error', { status: 404, message: 'Setup needs the WhatsApp bot.' });
+    await setupPage(req, res, { tried: replyPreview(req.body.text, gymConfig.profile), open: 'test' });
+  }));
+  app.post('/setup/check', allow(can.manageBusiness), h(async (req, res) => {
+    const check = Setup.checkInput(req.body);
+    await crm.log(req.user, null, 'setup_check', check);
+    res.redirect('/setup?step=test#step-test');
+  }));
+
   // ---- business settings (owner only, K10) ----
   // R15: stored amounts that a currency change would re-label: recorded sales and payment links.
   // One query for the Business settings warning and the confirm check, so they can't drift apart.

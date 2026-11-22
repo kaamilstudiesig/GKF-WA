@@ -4,6 +4,7 @@
   <p class="text-sm text-base-content/60"><%= user.role === 'sales' ? 'My leads' : user.role === 'manager' ? 'My team' : 'All of ' + brand.name %></p>
   <h1 class="page-title max-lg:hidden">Dashboard</h1>
 </div>
+<%- include('partials/setup-card', { left: typeof setupLeft !== 'undefined' ? setupLeft : null }) %>
 
 <div class="mb-4 grid grid-cols-2 gap-3 <%= typeof usage !== 'undefined' && usage ? 'lg:grid-cols-8' : 'lg:grid-cols-7' %>">
   <% const kpis = [

@@ -11,6 +11,7 @@
     <p class="text-sm text-base-content/60">What the WhatsApp assistant knows<% if (meta && meta.updated_at) { %> · saved <%= util.timeAgo(meta.updated_at) %><%= meta.updated_by && meta.updated_by !== 'defaults' ? ' by ' + meta.updated_by : '' %><% } %></p>
     <h1 class="page-title max-lg:hidden">Business settings</h1>
   </div>
+  <a href="/setup" class="btn btn-sm">Setup steps</a>
 </div>
 
 <div class="mb-4" id="usage"><%- include('partials/lead-usage', { usage: typeof usage !== 'undefined' ? usage : null, detail: true }) %></div>
